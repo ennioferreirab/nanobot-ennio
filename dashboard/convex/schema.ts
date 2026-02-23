@@ -27,6 +27,7 @@ export default defineSchema({
     interAgentTimeout: v.optional(v.number()),
     executionPlan: v.optional(v.any()),
     stalledAt: v.optional(v.string()),
+    isManual: v.optional(v.boolean()),
     deletedAt: v.optional(v.string()),
     previousStatus: v.optional(v.string()),
     createdAt: v.string(),
@@ -57,6 +58,7 @@ export default defineSchema({
     displayName: v.string(),
     role: v.string(),
     prompt: v.optional(v.string()),
+    soul: v.optional(v.string()),
     skills: v.array(v.string()),
     status: v.union(
       v.literal("active"),
@@ -96,6 +98,7 @@ export default defineSchema({
       v.literal("agent_activated"),
       v.literal("agent_deactivated"),
       v.literal("bulk_clear_done"),
+      v.literal("manual_task_status_changed"),
     ),
     description: v.string(),
     timestamp: v.string(),
@@ -112,6 +115,11 @@ export default defineSchema({
     always: v.optional(v.boolean()),
     available: v.boolean(),
     requires: v.optional(v.string()),
+  }).index("by_name", ["name"]),
+
+  taskTags: defineTable({
+    name: v.string(),
+    color: v.string(), // one of: blue|green|red|amber|violet|pink|orange|teal
   }).index("by_name", ["name"]),
 
   settings: defineTable({

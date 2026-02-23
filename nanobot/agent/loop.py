@@ -59,6 +59,8 @@ class AgentLoop:
         restrict_to_workspace: bool = False,
         session_manager: SessionManager | None = None,
         mcp_servers: dict | None = None,
+        allowed_skills: list[str] | None = None,
+        global_skills_dir: Path | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
         self.bus = bus
@@ -73,8 +75,9 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
+        self.allowed_skills = allowed_skills
 
-        self.context = ContextBuilder(workspace)
+        self.context = ContextBuilder(workspace, global_skills_dir=global_skills_dir)
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
@@ -303,6 +306,7 @@ class AgentLoop:
             messages = self.context.build_messages(
                 history=session.get_history(max_messages=self.memory_window),
                 current_message=msg.content, channel=channel, chat_id=chat_id,
+                skill_names=self.allowed_skills,
             )
             final_content, _ = await self._run_agent_loop(messages)
             session.add_message("user", f"[System: {msg.sender_id}] {msg.content}")
@@ -378,6 +382,7 @@ class AgentLoop:
         initial_messages = self.context.build_messages(
             history=session.get_history(max_messages=self.memory_window),
             current_message=msg.content,
+            skill_names=self.allowed_skills,
             media=msg.media if msg.media else None,
             channel=msg.channel, chat_id=msg.chat_id,
         )

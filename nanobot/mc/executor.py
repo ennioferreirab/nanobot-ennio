@@ -88,6 +88,7 @@ async def _run_agent_on_task(
     agent_model: str | None,
     task_title: str,
     task_description: str | None,
+    agent_skills: list[str] | None = None,
 ) -> str:
     """Run the nanobot agent loop on a task and return the result.
 
@@ -99,6 +100,9 @@ async def _run_agent_on_task(
 
     workspace = Path.home() / ".nanobot" / "agents" / agent_name
     workspace.mkdir(parents=True, exist_ok=True)
+
+    # Global workspace skills (installed via ClawHub or manually)
+    global_skills_dir = Path.home() / ".nanobot" / "workspace" / "skills"
 
     # Build the message from task title + description
     message = task_title
@@ -120,6 +124,8 @@ async def _run_agent_on_task(
         provider=provider,
         workspace=workspace,
         model=resolved_model,
+        allowed_skills=agent_skills,
+        global_skills_dir=global_skills_dir,
     )
 
     result = await loop.process_direct(
@@ -162,6 +168,13 @@ class TaskExecutor:
                 task_id = task_data.get("id")
                 if not task_id or task_id in self._known_assigned_ids:
                     continue
+                # Skip manual tasks — user-managed, no agent execution
+                if task_data.get("is_manual"):
+                    logger.info(
+                        "[executor] Skipping manual task '%s' (%s)",
+                        task_data.get("title", ""), task_id,
+                    )
+                    continue
                 self._known_assigned_ids.add(task_id)
                 asyncio.create_task(self._pickup_task(task_data))
 
@@ -202,18 +215,23 @@ class TaskExecutor:
         # Execute the task
         await self._execute_task(task_id, title, description, agent_name, trust_level)
 
-    def _load_agent_config(self, agent_name: str) -> tuple[str | None, str | None]:
-        """Load prompt and model from the agent's YAML config file.
+    def _load_agent_config(
+        self, agent_name: str
+    ) -> tuple[str | None, str | None, list[str] | None]:
+        """Load prompt, model, and skills from the agent's YAML config file.
 
         Returns:
-            Tuple of (prompt, model). Either may be None if not configured.
+            Tuple of (prompt, model, skills). prompt/model may be None if not
+            configured; skills is None when no config exists (meaning "no
+            filtering"), or the actual list from config (possibly empty,
+            meaning "only always-on skills").
         """
         from nanobot.mc.gateway import AGENTS_DIR
         from nanobot.mc.yaml_validator import validate_agent_file
 
         config_file = AGENTS_DIR / agent_name / "config.yaml"
         if not config_file.exists():
-            return None, None
+            return None, None, None
 
         result = validate_agent_file(config_file)
         if isinstance(result, list):
@@ -221,9 +239,9 @@ class TaskExecutor:
             logger.warning(
                 "[executor] Agent '%s' config invalid: %s", agent_name, result
             )
-            return None, None
+            return None, None, None
 
-        return result.prompt, result.model
+        return result.prompt, result.model, result.skills
 
     async def _handle_provider_error(
         self,
@@ -297,8 +315,19 @@ class TaskExecutor:
         trust_level: str,
     ) -> None:
         """Run the agent on the task and handle completion or crash."""
-        # Load agent prompt and model from YAML config
-        agent_prompt, agent_model = self._load_agent_config(agent_name)
+        # Load agent prompt, model, and skills from YAML config
+        agent_prompt, agent_model, agent_skills = self._load_agent_config(agent_name)
+
+        if agent_skills is not None:
+            logger.info(
+                "[executor] Agent '%s' allowed_skills=%s (only these + always-on skills visible)",
+                agent_name, agent_skills,
+            )
+        else:
+            logger.info(
+                "[executor] Agent '%s' has no skills filter (all skills visible)",
+                agent_name,
+            )
 
         try:
             result = await _run_agent_on_task(
@@ -307,6 +336,7 @@ class TaskExecutor:
                 agent_model=agent_model,
                 task_title=title,
                 task_description=description,
+                agent_skills=agent_skills,
             )
 
             # Write agent output as a work message

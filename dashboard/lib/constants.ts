@@ -48,6 +48,7 @@ export const ACTIVITY_EVENT_TYPE = {
   AGENT_ACTIVATED: "agent_activated",
   AGENT_DEACTIVATED: "agent_deactivated",
   BULK_CLEAR_DONE: "bulk_clear_done",
+  MANUAL_TASK_STATUS_CHANGED: "manual_task_status_changed",
 } as const;
 
 // Message type values
@@ -120,4 +121,19 @@ export const STATUS_COLORS: Record<
     bg: "bg-gray-100 dark:bg-gray-900",
     text: "text-gray-500 dark:text-gray-400",
   },
+};
+
+// Tag color palette (8 colors for predefined task tags)
+export const TAG_COLORS: Record<
+  string,
+  { bg: string; text: string; dot: string }
+> = {
+  blue:   { bg: "bg-blue-100",   text: "text-blue-700",   dot: "bg-blue-500" },
+  green:  { bg: "bg-green-100",  text: "text-green-700",  dot: "bg-green-500" },
+  red:    { bg: "bg-red-100",    text: "text-red-700",    dot: "bg-red-500" },
+  amber:  { bg: "bg-amber-100",  text: "text-amber-700",  dot: "bg-amber-500" },
+  violet: { bg: "bg-violet-100", text: "text-violet-700", dot: "bg-violet-500" },
+  pink:   { bg: "bg-pink-100",   text: "text-pink-700",   dot: "bg-pink-500" },
+  orange: { bg: "bg-orange-100", text: "text-orange-700", dot: "bg-orange-500" },
+  teal:   { bg: "bg-teal-100",   text: "text-teal-700",   dot: "bg-teal-500" },
 };

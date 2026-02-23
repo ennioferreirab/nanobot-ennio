@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as motion from "motion/react-client";
+import { useMutation } from "convex/react";
+import { api } from "../convex/_generated/api";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,10 +21,12 @@ interface KanbanColumnProps {
   onClear?: () => void;
   clearDisabled?: boolean;
   onViewAll?: () => void;
+  tagColorMap?: Record<string, string>;
 }
 
 export function KanbanColumn({
   title,
+  status,
   tasks,
   accentColor,
   onTaskClick,
@@ -30,10 +34,13 @@ export function KanbanColumn({
   onClear,
   clearDisabled,
   onViewAll,
+  tagColorMap,
 }: KanbanColumnProps) {
   const prevCountRef = useRef(hitlCount);
   const [isPulsing, setIsPulsing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const manualMove = useMutation(api.tasks.manualMove);
 
   useEffect(() => {
     if (hitlCount > prevCountRef.current) {
@@ -48,7 +55,31 @@ export function KanbanColumn({
   }, [hitlCount]);
 
   return (
-    <div className="flex flex-col min-h-0">
+    <div
+      className={`flex flex-col min-h-0 rounded-lg transition-colors ${isDragOver ? "ring-2 ring-blue-400 bg-blue-50/30 dark:bg-blue-950/30" : ""}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+      }}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        setIsDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        // Only remove highlight when leaving the column itself
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setIsDragOver(false);
+        }
+      }}
+      onDrop={async (e) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        const taskId = e.dataTransfer.getData("text/plain");
+        if (taskId) {
+          await manualMove({ taskId: taskId as Id<"tasks">, newStatus: status });
+        }
+      }}
+    >
       <div className="flex items-center gap-2 mb-3 px-1">
         <div className={`w-2 h-2 rounded-full ${accentColor}`} />
         <h2 className="text-lg font-semibold text-foreground">{title}</h2>
@@ -120,6 +151,7 @@ export function KanbanColumn({
                 key={task._id}
                 task={task}
                 onClick={onTaskClick ? () => onTaskClick(task._id) : undefined}
+                tagColorMap={tagColorMap}
               />
             ))}
           </div>

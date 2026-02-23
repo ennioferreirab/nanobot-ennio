@@ -33,6 +33,22 @@ Get USER_ID and CHANNEL from the current session (e.g., `8281248569` and `telegr
 
 **Do NOT just write reminders to MEMORY.md** — that won't trigger actual notifications.
 
+## Self-Reboot (Auto Restart)
+
+To restart yourself (go down and come back up), use the reboot script located in the project root:
+
+Use the `exec` tool to find and run the script dynamically:
+
+```
+exec: find ~ -name "reboot_nanobot.sh" -maxdepth 6 | head -1 | xargs bash
+```
+
+The script (`reboot_nanobot.sh`) is located in the project root and uses `$SCRIPT_DIR` internally — no hardcoded paths inside the script.
+
+> ⚠️ You will be interrupted when `mc down` runs. The `mc start` will bring you back up automatically.
+
+**When to reboot:** After installing new skills (via ClawHub or manually), a reboot is required for the skill to be loaded into context. Run the script above to restart.
+
 ## Heartbeat Tasks
 
 `HEARTBEAT.md` is checked every 30 minutes. You can manage periodic tasks by editing this file:

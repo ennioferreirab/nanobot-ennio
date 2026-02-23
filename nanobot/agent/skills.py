@@ -20,10 +20,16 @@ class SkillsLoader:
     specific tools or perform certain tasks.
     """
     
-    def __init__(self, workspace: Path, builtin_skills_dir: Path | None = None):
+    def __init__(
+        self,
+        workspace: Path,
+        builtin_skills_dir: Path | None = None,
+        global_skills_dir: Path | None = None,
+    ):
         self.workspace = workspace
         self.workspace_skills = workspace / "skills"
         self.builtin_skills = builtin_skills_dir or BUILTIN_SKILLS_DIR
+        self.global_skills_dir = global_skills_dir
     
     def list_skills(self, filter_unavailable: bool = True) -> list[dict[str, str]]:
         """
@@ -44,7 +50,15 @@ class SkillsLoader:
                     skill_file = skill_dir / "SKILL.md"
                     if skill_file.exists():
                         skills.append({"name": skill_dir.name, "path": str(skill_file), "source": "workspace"})
-        
+
+        # Global workspace skills (e.g. ~/.nanobot/workspace/skills)
+        if self.global_skills_dir and self.global_skills_dir.exists():
+            for skill_dir in self.global_skills_dir.iterdir():
+                if skill_dir.is_dir():
+                    skill_file = skill_dir / "SKILL.md"
+                    if skill_file.exists() and not any(s["name"] == skill_dir.name for s in skills):
+                        skills.append({"name": skill_dir.name, "path": str(skill_file), "source": "global"})
+
         # Built-in skills
         if self.builtin_skills and self.builtin_skills.exists():
             for skill_dir in self.builtin_skills.iterdir():
@@ -72,7 +86,13 @@ class SkillsLoader:
         workspace_skill = self.workspace_skills / name / "SKILL.md"
         if workspace_skill.exists():
             return workspace_skill.read_text(encoding="utf-8")
-        
+
+        # Check global workspace
+        if self.global_skills_dir:
+            global_skill = self.global_skills_dir / name / "SKILL.md"
+            if global_skill.exists():
+                return global_skill.read_text(encoding="utf-8")
+
         # Check built-in
         if self.builtin_skills:
             builtin_skill = self.builtin_skills / name / "SKILL.md"
@@ -100,17 +120,42 @@ class SkillsLoader:
         
         return "\n\n---\n\n".join(parts) if parts else ""
     
-    def build_skills_summary(self) -> str:
+    def build_skills_summary(self, allowed_names: list[str] | None = None) -> str:
         """
         Build a summary of all skills (name, description, path, availability).
-        
+
         This is used for progressive loading - the agent can read the full
         skill content using read_file when needed.
-        
+
+        Args:
+            allowed_names: If provided, only include skills whose name is in
+                this list or that have ``always: true``.  When None, all
+                skills are included (backwards-compatible default).
+
         Returns:
             XML-formatted skills summary.
         """
         all_skills = self.list_skills(filter_unavailable=False)
+        if not all_skills:
+            return ""
+
+        # Filter by allowed names (always-on skills bypass the filter)
+        if allowed_names is not None:
+            allowed_set = {n.lower() for n in allowed_names}
+            filtered = []
+            for s in all_skills:
+                name = s["name"]
+                meta = self.get_skill_metadata(name) or {}
+                nb_meta = self._parse_nanobot_metadata(meta.get("metadata", ""))
+                is_always = nb_meta.get("always") or (
+                    meta.get("always", "").lower() == "true"
+                    if meta.get("always")
+                    else False
+                )
+                if is_always or name.lower() in allowed_set:
+                    filtered.append(s)
+            all_skills = filtered
+
         if not all_skills:
             return ""
         

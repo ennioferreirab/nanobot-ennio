@@ -16,7 +16,8 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { SettingsPanel } from "@/components/SettingsPanel";
-import { Settings } from "lucide-react";
+import { TagsPanel } from "@/components/TagsPanel";
+import { Settings, Tag } from "lucide-react";
 
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(false);
@@ -38,6 +39,7 @@ export function DashboardLayout() {
   const [mounted, setMounted] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tagsOpen, setTagsOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -68,13 +70,22 @@ export function DashboardLayout() {
             <h1 className="text-2xl font-bold text-foreground">
               Mission Control
             </h1>
-            <button
-              aria-label="Open settings"
-              onClick={() => setSettingsOpen(true)}
-              className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-            >
-              <Settings className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                aria-label="Open tags"
+                onClick={() => setTagsOpen(true)}
+                className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+              >
+                <Tag className="h-5 w-5" />
+              </button>
+              <button
+                aria-label="Open settings"
+                onClick={() => setSettingsOpen(true)}
+                className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+              >
+                <Settings className="h-5 w-5" />
+              </button>
+            </div>
           </header>
 
           <div className="border-b border-border px-6 py-3">
@@ -98,6 +109,15 @@ export function DashboardLayout() {
             <SheetDescription>Configure global system defaults</SheetDescription>
           </SheetHeader>
           <SettingsPanel />
+        </SheetContent>
+      </Sheet>
+      <Sheet open={tagsOpen} onOpenChange={setTagsOpen}>
+        <SheetContent side="right" className="w-[400px] sm:w-[400px] p-0">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Tags</SheetTitle>
+            <SheetDescription>Manage predefined task tags</SheetDescription>
+          </SheetHeader>
+          <TagsPanel />
         </SheetContent>
       </Sheet>
     </SidebarProvider>

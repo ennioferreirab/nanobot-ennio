@@ -4,20 +4,15 @@ import { ActivityFeed } from "./ActivityFeed";
 import { FeedItem } from "./FeedItem";
 import type { Doc } from "../convex/_generated/dataModel";
 
-// Stub scrollTo and IntersectionObserver for jsdom
+// Stub scrollTo for jsdom
 beforeEach(() => {
   Element.prototype.scrollTo = vi.fn();
-  global.IntersectionObserver = vi.fn().mockImplementation(function () {
-    return { observe: vi.fn(), disconnect: vi.fn() };
-  }) as unknown as typeof IntersectionObserver;
 });
 
 // Mock convex/react
 const mockUseQuery = vi.fn();
-const mockUsePaginatedQuery = vi.fn();
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => mockUseQuery(...args),
-  usePaginatedQuery: (...args: unknown[]) => mockUsePaginatedQuery(...args),
 }));
 
 // Mock motion/react to render plain divs (avoids animation complexity in tests)
@@ -72,43 +67,51 @@ describe("ActivityFeed", () => {
   afterEach(() => {
     cleanup();
     mockUseQuery.mockReset();
-    mockUsePaginatedQuery.mockReset();
   });
 
   it("shows empty state when no activities exist", () => {
-    mockUsePaginatedQuery.mockReturnValue({ results: [], status: "Exhausted", loadMore: vi.fn() });
+    mockUseQuery.mockReturnValue([]);
     render(<ActivityFeed />);
     expect(screen.getByText("Waiting for activity...")).toBeInTheDocument();
   });
 
-  it("renders nothing while loading (LoadingFirstPage)", () => {
-    mockUsePaginatedQuery.mockReturnValue({ results: [], status: "LoadingFirstPage", loadMore: vi.fn() });
+  it("renders nothing while loading", () => {
+    mockUseQuery.mockReturnValue(undefined);
     const { container } = render(<ActivityFeed />);
     expect(container.innerHTML).toBe("");
   });
 
+  it("shows reconnecting message when data disappears after initial load", () => {
+    // First render with data to set hadDataRef
+    mockUseQuery.mockReturnValue([makeActivity()]);
+    const { rerender } = render(<ActivityFeed />);
+
+    // Simulate WebSocket disconnection
+    mockUseQuery.mockReturnValue(undefined);
+    rerender(<ActivityFeed />);
+
+    expect(screen.getByText("Reconnecting...")).toBeInTheDocument();
+  });
+
   it("renders activities in newest-first order", () => {
-    mockUsePaginatedQuery.mockReturnValue({
-      results: [
-        makeActivity({
-          _id: "act3" as Activity["_id"],
-          timestamp: "2026-02-23T14:34:15.000Z",
-          description: "Third event",
-        }),
-        makeActivity({
-          _id: "act2" as Activity["_id"],
-          timestamp: "2026-02-23T14:33:10.000Z",
-          description: "Second event",
-        }),
-        makeActivity({
-          _id: "act1" as Activity["_id"],
-          timestamp: "2026-02-23T14:32:05.000Z",
-          description: "First event",
-        }),
-      ],
-      status: "Exhausted",
-      loadMore: vi.fn(),
-    });
+    // listRecent returns newest-first (desc order)
+    mockUseQuery.mockReturnValue([
+      makeActivity({
+        _id: "act3" as Activity["_id"],
+        timestamp: "2026-02-23T14:34:15.000Z",
+        description: "Third event",
+      }),
+      makeActivity({
+        _id: "act2" as Activity["_id"],
+        timestamp: "2026-02-23T14:33:10.000Z",
+        description: "Second event",
+      }),
+      makeActivity({
+        _id: "act1" as Activity["_id"],
+        timestamp: "2026-02-23T14:32:05.000Z",
+        description: "First event",
+      }),
+    ]);
     render(<ActivityFeed />);
 
     const items = screen.getAllByText(/event/);
@@ -117,14 +120,16 @@ describe("ActivityFeed", () => {
     expect(items[2].textContent).toBe("First event");
   });
 
-  it("shows 'No more activity' when status is Exhausted and results exist", () => {
-    mockUsePaginatedQuery.mockReturnValue({
-      results: [makeActivity()],
-      status: "Exhausted",
-      loadMore: vi.fn(),
-    });
+  it("shows 'Showing last 100 activities' when feed is at capacity", () => {
+    const hundredActivities = Array.from({ length: 100 }, (_, i) =>
+      makeActivity({
+        _id: `act${i}` as Activity["_id"],
+        description: `Event ${i}`,
+      })
+    );
+    mockUseQuery.mockReturnValue(hundredActivities);
     render(<ActivityFeed />);
-    expect(screen.getByText("No more activity")).toBeInTheDocument();
+    expect(screen.getByText("Showing last 100 activities")).toBeInTheDocument();
   });
 });
 

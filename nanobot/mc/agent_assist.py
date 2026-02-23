@@ -139,6 +139,54 @@ async def generate_agent_yaml(
 
 
 # ---------------------------------------------------------------------------
+# SOUL.md generation
+# ---------------------------------------------------------------------------
+
+DEFAULT_SOUL_TEMPLATE = """\
+# Soul
+
+I am {display_name}, a nanobot agent.
+
+## Role
+{role}
+
+## Personality
+- Helpful and focused on my area of expertise
+- Concise and to the point
+- Proactive in identifying relevant details
+
+## Values
+- Accuracy over speed
+- Transparency in actions
+- Collaboration with the team
+
+## Communication Style
+- Be clear and direct
+- Explain reasoning when helpful
+- Ask clarifying questions when needed
+"""
+
+
+def generate_soul_md(name: str, role: str, soul_override: str | None = None) -> str:
+    """Generate SOUL.md content for an agent."""
+    if soul_override:
+        return soul_override
+    display_name = name.replace("-", " ").replace("_", " ").title()
+    return DEFAULT_SOUL_TEMPLATE.format(display_name=display_name, role=role)
+
+
+def ensure_soul_md(
+    agent_dir: Path, name: str, role: str, soul_override: str | None = None
+) -> None:
+    """Write SOUL.md if it doesn't exist yet (never overwrites user edits)."""
+    soul_path = agent_dir / "SOUL.md"
+    if not soul_path.exists():
+        soul_path.write_text(
+            generate_soul_md(name, role, soul_override), encoding="utf-8"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Workspace creation
 # ---------------------------------------------------------------------------
 
@@ -149,6 +197,7 @@ def create_agent_workspace(name: str, yaml_text: str) -> Path:
       - config.yaml
       - memory/
       - skills/
+      - SOUL.md
 
     Returns:
         Path to the written config.yaml file.
@@ -160,6 +209,17 @@ def create_agent_workspace(name: str, yaml_text: str) -> Path:
 
     config_path = agent_dir / "config.yaml"
     config_path.write_text(yaml_text, encoding="utf-8")
+
+    # Generate SOUL.md from parsed YAML (role + optional soul override)
+    try:
+        parsed = yaml.safe_load(yaml_text)
+        if isinstance(parsed, dict):
+            role = parsed.get("role", "Agent")
+            soul_override = parsed.get("soul")
+            ensure_soul_md(agent_dir, name, role, soul_override)
+    except yaml.YAMLError:
+        pass  # YAML already validated upstream; skip soul on parse error
+
     return config_path
 
 

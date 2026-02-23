@@ -278,7 +278,7 @@ class ConvexBridge:
         """Upsert an agent in Convex by name.
 
         Args:
-            agent_data: An AgentData instance with name, display_name, role, prompt, skills, model.
+            agent_data: An AgentData instance with name, display_name, role, prompt, soul, skills, model.
 
         Returns:
             Mutation result (if any).
@@ -292,6 +292,8 @@ class ConvexBridge:
         }
         if agent_data.prompt:
             args["prompt"] = agent_data.prompt
+        if agent_data.soul:
+            args["soul"] = agent_data.soul
         return self.mutation("agents:upsertByName", args)
 
     def list_agents(self) -> list[dict[str, Any]]:
@@ -407,9 +409,13 @@ class ConvexBridge:
         """
         import yaml
 
+        from nanobot.mc.agent_assist import ensure_soul_md
+
         name = agent_data["name"]
         agent_dir = agents_dir / name
         agent_dir.mkdir(parents=True, exist_ok=True)
+        (agent_dir / "memory").mkdir(exist_ok=True)
+        (agent_dir / "skills").mkdir(exist_ok=True)
         config_path = agent_dir / "config.yaml"
 
         config: dict[str, Any] = {
@@ -430,11 +436,19 @@ class ConvexBridge:
         if display_name:
             config["display_name"] = display_name
 
+        soul = agent_data.get("soul")
+        if soul:
+            config["soul"] = soul
+
         config_path.write_text(
             yaml.dump(config, default_flow_style=False, allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
         logger.info("Wrote agent config to %s", config_path)
+
+        # Generate SOUL.md if not already present (preserves user edits)
+        role = agent_data.get("role", "Agent")
+        ensure_soul_md(agent_dir, name, role, soul)
 
     def close(self) -> None:
         """Close the Convex client connection."""

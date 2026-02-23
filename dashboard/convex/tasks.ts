@@ -78,41 +78,51 @@ export const create = mutation({
     assignedAgent: v.optional(v.string()),
     trustLevel: v.optional(v.string()),
     reviewers: v.optional(v.array(v.string())),
+    isManual: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
-    const initialStatus = args.assignedAgent ? "assigned" : "inbox";
-    const trustLevel = (args.trustLevel ?? "autonomous") as
-      | "autonomous"
-      | "agent_reviewed"
-      | "human_approved";
+
+    // Manual tasks: force autonomous, no agent assignment
+    const isManual = args.isManual === true;
+    const assignedAgent = isManual ? undefined : args.assignedAgent;
+    const initialStatus = assignedAgent ? "assigned" : "inbox";
+    const trustLevel = isManual
+      ? "autonomous"
+      : ((args.trustLevel ?? "autonomous") as
+          | "autonomous"
+          | "agent_reviewed"
+          | "human_approved");
 
     // Create the task
     const taskId = await ctx.db.insert("tasks", {
       title: args.title,
       description: args.description,
       status: initialStatus,
-      assignedAgent: args.assignedAgent,
+      assignedAgent,
       trustLevel,
-      reviewers: args.reviewers,
+      reviewers: isManual ? undefined : args.reviewers,
       tags: args.tags,
+      ...(isManual ? { isManual: true } : {}),
       createdAt: now,
       updatedAt: now,
     });
 
     // Write activity event (architectural invariant)
-    let description = args.assignedAgent
-      ? `Task created and assigned to ${args.assignedAgent}: "${args.title}"`
-      : `Task created: "${args.title}"`;
+    let description = isManual
+      ? `Manual task created: "${args.title}"`
+      : assignedAgent
+        ? `Task created and assigned to ${assignedAgent}: "${args.title}"`
+        : `Task created: "${args.title}"`;
 
-    if (trustLevel !== "autonomous") {
+    if (!isManual && trustLevel !== "autonomous") {
       const levelLabel = trustLevel === "agent_reviewed" ? "agent reviewed" : "human approved";
       description += ` (trust: ${levelLabel})`;
     }
 
     await ctx.db.insert("activities", {
       taskId,
-      agentName: args.assignedAgent,
+      agentName: assignedAgent,
       eventType: "task_created",
       description,
       timestamp: now,
@@ -212,6 +222,28 @@ export const listByStatus = query({
 /**
  * Update the executionPlan field on a task document.
  */
+/**
+ * Mark all execution plan steps as completed on a task.
+ * Called when a task transitions to "done" to keep the plan UI in sync.
+ */
+async function markPlanStepsCompleted(
+  ctx: { db: any },
+  taskId: any,
+  task: { executionPlan?: any }
+) {
+  const plan = task.executionPlan;
+  if (!plan?.steps?.length) return;
+
+  const updatedSteps = plan.steps.map((step: any) => ({
+    ...step,
+    status: "completed",
+  }));
+
+  await ctx.db.patch(taskId, {
+    executionPlan: { ...plan, steps: updatedSteps },
+  });
+}
+
 export const updateExecutionPlan = mutation({
   args: {
     taskId: v.id("tasks"),
@@ -301,6 +333,9 @@ export const approve = mutation({
     // Transition to done
     await ctx.db.patch(args.taskId, { status: "done", updatedAt: now });
 
+    // Mark all execution plan steps as completed
+    await markPlanStepsCompleted(ctx, args.taskId, task);
+
     // Activity event
     await ctx.db.insert("activities", {
       taskId: args.taskId,
@@ -316,6 +351,41 @@ export const approve = mutation({
       authorType: "user",
       content: `Approved by ${userName}`,
       messageType: "approval",
+      timestamp: now,
+    });
+  },
+});
+
+/**
+ * Move a manual task to any status — bypasses the state machine.
+ * Only allowed for tasks with isManual === true.
+ */
+export const manualMove = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    newStatus: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new ConvexError("Task not found");
+    if (task.isManual !== true) {
+      throw new ConvexError("Only manual tasks can be moved via drag-and-drop");
+    }
+
+    const oldStatus = task.status;
+    if (oldStatus === args.newStatus) return;
+
+    const now = new Date().toISOString();
+
+    await ctx.db.patch(args.taskId, {
+      status: args.newStatus as any,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("activities", {
+      taskId: args.taskId,
+      eventType: "manual_task_status_changed",
+      description: `Manual task moved from ${oldStatus} to ${args.newStatus}`,
       timestamp: now,
     });
   },
@@ -355,6 +425,11 @@ export const updateStatus = mutation({
     }
     await ctx.db.patch(args.taskId, patch);
 
+    // When task reaches "done", mark all execution plan steps as completed
+    if (newStatus === "done") {
+      await markPlanStepsCompleted(ctx, args.taskId, task);
+    }
+
     // Write activity event (architectural invariant: every transition gets an event)
     const eventType = getEventType(currentStatus, newStatus);
     let description = `Task status changed from ${currentStatus} to ${newStatus}`;
@@ -386,7 +461,8 @@ export const updateStatus = mutation({
         | "system_error"
         | "task_deleted"
         | "task_restored"
-        | "bulk_clear_done",
+        | "bulk_clear_done"
+        | "manual_task_status_changed",
       description,
       timestamp: now,
     });

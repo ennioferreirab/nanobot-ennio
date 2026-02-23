@@ -1,6 +1,5 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { paginationOptsValidator } from "convex/server";
 
 export const create = mutation({
   args: {
@@ -29,6 +28,7 @@ export const create = mutation({
       v.literal("agent_activated"),
       v.literal("agent_deactivated"),
       v.literal("bulk_clear_done"),
+      v.literal("file_attached"),
     ),
     description: v.string(),
     timestamp: v.string(),
@@ -54,25 +54,13 @@ export const list = query({
   },
 });
 
-export const listPaginated = query({
-  args: { paginationOpts: paginationOptsValidator },
-  handler: async (ctx, args) => {
+export const listRecent = query({
+  args: {},
+  handler: async (ctx) => {
     return await ctx.db
       .query("activities")
       .withIndex("by_timestamp")
       .order("desc")
-      .paginate(args.paginationOpts);
-  },
-});
-
-export const listRecent = query({
-  args: {},
-  handler: async (ctx) => {
-    const results = await ctx.db
-      .query("activities")
-      .withIndex("by_timestamp")
-      .order("desc")
       .take(100);
-    return results.reverse();
   },
 });

@@ -71,11 +71,12 @@ development_status:
   epic-3-retrospective: optional
 
   # Epic 4: Intelligent Task Routing & Orchestration
-  epic-4: done
+  epic-4: in-progress
   4-1-implement-lead-agent-capability-matching: done
   4-2-implement-execution-planning: done
   4-3-build-execution-plan-visualization: done
   4-4-add-agent-assignment-to-task-input: done
+  4-5-llm-based-lead-agent-planning: done
   epic-4-retrospective: optional
 
   # Epic 5: Inter-Agent Review & Collaboration
@@ -110,3 +111,5 @@ development_status:
   8-4-fix-orchestrator-bridge-reliability: done
   8-5-fix-provider-integration-validation: done
   8-4-implement-agent-activation-status: review
+  8-6-human-manual-tasks-kanban: review
+  8-7-implement-task-tags-management: done

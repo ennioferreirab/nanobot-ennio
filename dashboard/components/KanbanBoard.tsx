@@ -29,6 +29,10 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
   const deletedTasks = useQuery(api.tasks.listDeleted);
   const deletedCount = deletedTasks?.length ?? 0;
   const clearAllDone = useMutation(api.tasks.clearAllDone);
+  const tagsList = useQuery(api.taskTags.list);
+  const tagColorMap: Record<string, string> = Object.fromEntries(
+    tagsList?.map((t) => [t.name, t.color]) ?? []
+  );
   const [trashOpen, setTrashOpen] = useState(false);
   const [doneSheetOpen, setDoneSheetOpen] = useState(false);
 
@@ -73,6 +77,7 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
               accentColor={col.accentColor}
               onTaskClick={onTaskClick}
               hitlCount={col.status === "review" ? hitlCount : undefined}
+              tagColorMap={tagColorMap}
               {...(col.status === "done"
                 ? {
                     onClear: () => clearAllDone(),
@@ -89,11 +94,6 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
           aria-label="Open trash"
         >
           <Trash2 className="h-4 w-4" />
-          {deletedCount > 0 && (
-            <Badge variant="secondary" className="text-xs px-1.5">
-              {deletedCount}
-            </Badge>
-          )}
         </button>
       </div>
       <TrashBinSheet open={trashOpen} onClose={() => setTrashOpen(false)} />
