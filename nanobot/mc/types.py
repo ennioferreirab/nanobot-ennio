@@ -22,6 +22,9 @@ else:
         pass
 
 
+LEAD_AGENT_NAME = "lead-agent"
+
+
 class TaskStatus(StrEnum):
     """Task lifecycle states. Matches Convex tasks.status union type."""
     INBOX = "inbox"
@@ -71,6 +74,7 @@ class ActivityEventType(StrEnum):
     TASK_DELETED = "task_deleted"
     TASK_RESTORED = "task_restored"
     BULK_CLEAR_DONE = "bulk_clear_done"
+    MANUAL_TASK_STATUS_CHANGED = "manual_task_status_changed"
 
 
 class MessageType(StrEnum):
@@ -168,6 +172,7 @@ class AgentData:
     display_name: str
     role: str
     prompt: str | None = None  # System prompt (synced to Convex)
+    soul: str | None = None  # SOUL.md content (synced to Convex)
     skills: list[str] = field(default_factory=list)
     status: str = "idle"  # AgentStatus value
     enabled: bool = True  # User-controlled activation flag

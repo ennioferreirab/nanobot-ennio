@@ -6,6 +6,7 @@ import asyncio
 import os
 import re
 import signal
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +39,66 @@ def _find_dashboard_dir() -> Path:
     return Path.cwd() / "dashboard"  # Fallback
 
 
+def _kill_stale_processes() -> None:
+    """Kill stale processes from a previous MC session to avoid conflicts."""
+    dashboard_dir = str(_find_dashboard_dir())
+    # Always-kill patterns (nanobot-specific, safe to match globally)
+    patterns = [
+        "nanobot.mc.gateway",
+        "-m nanobot gateway",
+    ]
+    # Dashboard-scoped patterns (only kill if the command references our dashboard)
+    dashboard_patterns = [
+        "next dev",
+        "convex dev",
+        "npm-run-all",
+    ]
+    try:
+        result = subprocess.run(
+            ["ps", "ax", "-o", "pid,command"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return
+
+    my_pid = os.getpid()
+    killed = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(None, 1)
+        if len(parts) < 2:
+            continue
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            continue
+        if pid == my_pid:
+            continue
+        cmd = parts[1]
+        should_kill = False
+        for pat in patterns:
+            if pat in cmd:
+                should_kill = True
+                break
+        if not should_kill:
+            for pat in dashboard_patterns:
+                if pat in cmd and dashboard_dir in cmd:
+                    should_kill = True
+                    break
+        if should_kill:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                killed.append(pid)
+            except OSError:
+                pass
+
+    if killed:
+        console.print(f"[dim]Cleaned up {len(killed)} stale process(es)[/dim]")
+        time.sleep(2)  # Let processes shut down
+
+
 @mc_app.command()
 def start(
     dashboard_dir: str = typer.Option(
@@ -47,7 +108,7 @@ def start(
         help="Path to dashboard directory (auto-detected if not specified)",
     ),
 ):
-    """Start Mission Control (dashboard + agent gateway)."""
+    """Start Mission Control (dashboard + agent gateway + nanobot channels)."""
     from nanobot.mc.process_manager import ProcessManager
 
     resolved_dir = Path(dashboard_dir) if dashboard_dir else _find_dashboard_dir()
@@ -57,11 +118,49 @@ def start(
         console.print("Run from the project root or specify --dashboard-dir")
         raise typer.Exit(1)
 
+    # Check for already-running instance
+    if PID_FILE.exists():
+        try:
+            old_pid = int(PID_FILE.read_text().strip())
+            os.kill(old_pid, 0)
+            console.print(
+                f"[yellow]Mission Control is already running (PID {old_pid}).[/yellow]"
+            )
+            console.print("Run [bold]nanobot mc down[/bold] first.")
+            raise typer.Exit(1)
+        except (ValueError, OSError):
+            _cleanup_pid_file()
+
     console.print("[bold]Starting Mission Control...[/bold]")
+
+    # Kill stale processes from previous sessions
+    _kill_stale_processes()
 
     # Write PID file
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     PID_FILE.write_text(str(os.getpid()))
+
+    # Show nanobot channel info
+    try:
+        from nanobot.config.loader import load_config
+        config = load_config()
+        enabled = []
+        if config.channels.telegram.enabled:
+            enabled.append("telegram")
+        if config.channels.whatsapp.enabled:
+            enabled.append("whatsapp")
+        if config.channels.discord.enabled:
+            enabled.append("discord")
+        if config.channels.slack.enabled:
+            enabled.append("slack")
+        if config.channels.email.enabled:
+            enabled.append("email")
+        if enabled:
+            console.print(f"[green]✓[/green] Nanobot channels: {', '.join(enabled)}")
+        else:
+            console.print("[yellow]⚠[/yellow] No nanobot channels enabled")
+    except Exception:
+        pass
 
     async def _run():
         pm = ProcessManager(dashboard_dir=resolved_dir)
@@ -69,6 +168,7 @@ def start(
             await pm.start()
             console.print("[green]Mission Control is running[/green]")
             console.print("  Dashboard: [cyan]http://localhost:3000[/cyan]")
+            console.print("  Nanobot:   [cyan]channels + agent gateway[/cyan]")
             await pm.wait()
         finally:
             await pm.stop()
@@ -81,9 +181,8 @@ def start(
         _cleanup_pid_file()
 
 
-@mc_app.command()
-def stop():
-    """Stop Mission Control gracefully."""
+def _stop_mc() -> None:
+    """Send SIGTERM to the running Mission Control process."""
     if not PID_FILE.exists():
         console.print("Mission Control is not running.")
         raise typer.Exit(0)
@@ -95,7 +194,6 @@ def stop():
         _cleanup_pid_file()
         raise typer.Exit(0)
 
-    # Check if process is actually running
     try:
         os.kill(pid, 0)  # Signal 0 = check existence
     except OSError:
@@ -106,6 +204,19 @@ def stop():
     console.print("[yellow]Stopping Mission Control...[/yellow]")
     os.kill(pid, signal.SIGTERM)
     console.print("[green]Shutdown signal sent.[/green]")
+
+
+@mc_app.command()
+def stop():
+    """Stop Mission Control gracefully."""
+    _stop_mc()
+
+
+@mc_app.command()
+def down():
+    """Bring down Mission Control and all services."""
+    _stop_mc()
+    _kill_stale_processes()
 
 
 def _cleanup_pid_file() -> None:
@@ -890,6 +1001,10 @@ def create_agent():
     memory_file = agent_dir / "memory" / "MEMORY.md"
     if not memory_file.exists():
         memory_file.write_text("")
+
+    # Write SOUL.md
+    from nanobot.mc.agent_assist import ensure_soul_md
+    ensure_soul_md(agent_dir, name, role)
 
     # Write config.yaml
     config_path = agent_dir / "config.yaml"

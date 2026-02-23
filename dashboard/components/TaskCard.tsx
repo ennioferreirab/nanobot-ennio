@@ -8,26 +8,29 @@ import { api } from "../convex/_generated/api";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Clock, ListChecks, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, Clock, ListChecks, RefreshCw, Trash2, User } from "lucide-react";
 import { Doc } from "../convex/_generated/dataModel";
-import { STATUS_COLORS, type TaskStatus } from "@/lib/constants";
+import { STATUS_COLORS, TAG_COLORS, type TaskStatus } from "@/lib/constants";
 import { InlineRejection } from "./InlineRejection";
 
 interface TaskCardProps {
   task: Doc<"tasks">;
   onClick?: () => void;
+  tagColorMap?: Record<string, string>;
 }
 
-export function TaskCard({ task, onClick }: TaskCardProps) {
+export function TaskCard({ task, onClick, tagColorMap }: TaskCardProps) {
   const shouldReduceMotion = useReducedMotion();
   const approveMutation = useMutation(api.tasks.approve);
   const softDeleteMutation = useMutation(api.tasks.softDelete);
   const [showRejection, setShowRejection] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const colors = STATUS_COLORS[task.status as TaskStatus] ?? STATUS_COLORS.inbox;
   const showHitlButtons =
     task.status === "review" && task.trustLevel === "human_approved";
+  const isManual = task.isManual === true;
 
   return (
     <motion.div
@@ -37,12 +40,24 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
     >
       <Card
         className={`p-3.5 rounded-[10px] border-l-[3px] cursor-pointer
-          hover:shadow-md transition-shadow ${colors.border}`}
+          hover:shadow-md transition-shadow ${colors.border}${isDragging ? " opacity-50 shadow-lg" : ""}${isManual ? " cursor-grab" : ""}`}
         onClick={onClick}
         role="article"
         aria-label={`${task.title} - ${task.status}`}
+        draggable={isManual}
+        onDragStart={isManual ? (e) => {
+          e.dataTransfer.setData("text/plain", task._id);
+          e.dataTransfer.effectAllowed = "move";
+          setIsDragging(true);
+        } : undefined}
+        onDragEnd={isManual ? () => setIsDragging(false) : undefined}
       >
-        <h3 className="text-sm font-semibold text-foreground">{task.title}</h3>
+        <div className="flex items-start justify-between">
+          <h3 className="text-sm font-semibold text-foreground">{task.title}</h3>
+          {isManual && (
+            <User className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+          )}
+        </div>
         {task.description && (
           <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
             {task.description}
@@ -50,14 +65,27 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
         )}
         {task.tags && task.tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
-            {task.tags.map((tag) => (
-              <span
-                key={tag}
-                className="text-xs px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground"
-              >
-                {tag}
-              </span>
-            ))}
+            {task.tags.map((tag) => {
+              const colorKey = tagColorMap?.[tag];
+              const color = colorKey ? TAG_COLORS[colorKey] : null;
+              return (
+                <span
+                  key={tag}
+                  className={`text-xs px-1.5 py-0.5 rounded-full flex items-center gap-1 ${
+                    color
+                      ? `${color.bg} ${color.text}`
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {color && (
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${color.dot} flex-shrink-0`}
+                    />
+                  )}
+                  {tag}
+                </span>
+              );
+            })}
           </div>
         )}
         {(task as any).executionPlan?.steps && (

@@ -53,6 +53,7 @@ class AgentConfig(BaseModel):
     skills: list[str] = []
     model: Optional[str] = None
     display_name: Optional[str] = None
+    soul: Optional[str] = None
 
     @field_validator("name")
     @classmethod
@@ -170,6 +171,15 @@ def validate_agent_file(path: Path) -> AgentData | list[str]:
     except ValidationError as exc:
         return format_validation_errors(exc)
 
+    # If soul not set in YAML, read SOUL.md from agent directory
+    if not config.soul:
+        soul_path = path.parent / "SOUL.md"
+        if soul_path.is_file():
+            try:
+                config.soul = soul_path.read_text(encoding="utf-8")
+            except OSError:
+                pass
+
     return _config_to_agent_data(config)
 
 
@@ -213,6 +223,7 @@ def _config_to_agent_data(config: AgentConfig) -> AgentData:
         display_name=config.display_name or config.name,
         role=config.role,
         prompt=config.prompt,
+        soul=config.soul,
         skills=config.skills,
         model=config.model,
     )

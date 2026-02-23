@@ -241,8 +241,9 @@ def sync_skills(
     default_dir = skills_mod.BUILTIN_SKILLS_DIR
 
     resolved_dir = builtin_skills_dir or default_dir
-    # Use workspace from CWD (workspace skills) + builtin skills
-    workspace = Path.cwd()
+    # Use configured workspace path (e.g. ~/.nanobot/workspace) for skill discovery
+    from nanobot.config.loader import load_config
+    workspace = load_config().workspace_path
     loader = SkillsLoader(workspace, builtin_skills_dir=resolved_dir)
 
     all_skills = loader.list_skills(filter_unavailable=False)

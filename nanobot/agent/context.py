@@ -20,10 +20,10 @@ class ContextBuilder:
     
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "IDENTITY.md"]
     
-    def __init__(self, workspace: Path):
+    def __init__(self, workspace: Path, global_skills_dir: Path | None = None):
         self.workspace = workspace
         self.memory = MemoryStore(workspace)
-        self.skills = SkillsLoader(workspace)
+        self.skills = SkillsLoader(workspace, global_skills_dir=global_skills_dir)
     
     def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
         """
@@ -59,7 +59,7 @@ class ContextBuilder:
                 parts.append(f"# Active Skills\n\n{always_content}")
         
         # 2. Available skills: only show summary (agent uses read_file to load)
-        skills_summary = self.skills.build_skills_summary()
+        skills_summary = self.skills.build_skills_summary(allowed_names=skill_names)
         if skills_summary:
             parts.append(f"""# Skills
 

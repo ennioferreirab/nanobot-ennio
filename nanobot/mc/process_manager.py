@@ -1,10 +1,11 @@
 """
 ProcessManager — Spawns and manages Mission Control subprocesses.
 
-Manages 3 child processes:
+Manages 4 child processes:
 1. Convex dev server (npx convex dev)
 2. Next.js dev server (npm run dev)
 3. Agent Gateway (python -m nanobot.mc.gateway)
+4. Nanobot Gateway — channels/Telegram (python -m nanobot gateway)
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ class ProcessConfig:
     args: list[str]
     cwd: str
     env: dict[str, str] | None = None
+    critical: bool = True  # If False, crash won't bring down other processes
 
 
 @dataclass
@@ -159,18 +161,24 @@ class ProcessManager:
 
     async def wait(self) -> None:
         """
-        Wait for all processes to exit (used after start to keep main
-        process alive). Returns when any process exits unexpectedly
-        or stop() is called.
+        Wait for critical processes to exit. Returns when any critical
+        process exits unexpectedly or stop() is called.
+        Non-critical processes crashing won't bring down MC.
         """
         if not self._processes:
             return
 
-        # Wait for any process to finish
+        # Only wait on critical processes
+        critical = [
+            m for m in self._processes
+            if m.config.critical and m.process.returncode is None
+        ]
+        if not critical:
+            return
+
         wait_tasks = [
             asyncio.create_task(managed.process.wait())
-            for managed in self._processes
-            if managed.process.returncode is None
+            for managed in critical
         ]
         if wait_tasks:
             await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -208,17 +216,23 @@ class ProcessManager:
                     f"{managed.process.returncode}"
                 )
 
+    def _get_venv_python(self) -> str:
+        """Return venv Python if available, otherwise sys.executable."""
+        venv_python = Path(self._project_root) / ".venv" / "bin" / "python3"
+        if venv_python.exists():
+            return str(venv_python)
+        return sys.executable
+
     def _get_process_configs(self) -> list[ProcessConfig]:
-        """Return the 3 process configurations in startup order."""
+        """Return the process configurations in startup order.
+
+        Note: ``npm run dev`` already starts both Next.js and Convex dev,
+        so we do NOT spawn a separate ``npx convex dev`` process.
+        """
+        venv_python = self._get_venv_python()
         return [
             ProcessConfig(
-                label="convex",
-                command="npx",
-                args=["convex", "dev"],
-                cwd=self._dashboard_dir,
-            ),
-            ProcessConfig(
-                label="next.js",
+                label="dashboard",
                 command="npm",
                 args=["run", "dev"],
                 cwd=self._dashboard_dir,
@@ -228,6 +242,13 @@ class ProcessManager:
                 command=sys.executable,
                 args=["-m", "nanobot.mc.gateway"],
                 cwd=self._project_root,
+            ),
+            ProcessConfig(
+                label="nanobot",
+                command=venv_python,
+                args=["-m", "nanobot", "gateway"],
+                cwd=self._project_root,
+                critical=False,
             ),
         ]
 
@@ -269,7 +290,7 @@ class ProcessManager:
         self, label: str, process: asyncio.subprocess.Process
     ) -> None:
         """
-        Read and forward child process output to main stdout.
+        Read and forward child process output to stderr (visible to user).
 
         Args:
             label: Process label for prefixing
@@ -282,7 +303,7 @@ class ProcessManager:
                 break
             decoded = line.decode("utf-8", errors="replace").rstrip()
             if decoded:
-                logger.info(f"[{label}] {decoded}")
+                print(f"[{label}] {decoded}", file=sys.stderr, flush=True)
 
     async def _stop_process(
         self,

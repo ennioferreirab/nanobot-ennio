@@ -14,6 +14,7 @@ export const upsertByName = mutation({
     displayName: v.string(),
     role: v.string(),
     prompt: v.optional(v.string()),
+    soul: v.optional(v.string()),
     skills: v.array(v.string()),
     model: v.optional(v.string()),
   },
@@ -30,6 +31,7 @@ export const upsertByName = mutation({
         displayName: args.displayName,
         role: args.role,
         prompt: args.prompt,
+        soul: args.soul,
         skills: args.skills,
         model: args.model,
         lastActiveAt: timestamp,
@@ -41,6 +43,7 @@ export const upsertByName = mutation({
         displayName: args.displayName,
         role: args.role,
         prompt: args.prompt,
+        soul: args.soul,
         skills: args.skills,
         status: "idle",
         enabled: true,
@@ -100,6 +103,7 @@ export const updateConfig = mutation({
     displayName: v.optional(v.string()),
     role: v.optional(v.string()),
     prompt: v.optional(v.string()),
+    soul: v.optional(v.string()),
     skills: v.optional(v.array(v.string())),
     model: v.optional(v.string()),
   },
@@ -119,6 +123,7 @@ export const updateConfig = mutation({
     if (args.displayName !== undefined) updates.displayName = args.displayName;
     if (args.role !== undefined) updates.role = args.role;
     if (args.prompt !== undefined) updates.prompt = args.prompt;
+    if (args.soul !== undefined) updates.soul = args.soul;
     if (args.skills !== undefined) updates.skills = args.skills;
     if (args.model !== undefined) updates.model = args.model;
 

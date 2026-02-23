@@ -8,9 +8,11 @@ import { ActivityFeed } from "@/components/ActivityFeed";
 export function ActivityFeedPanel() {
   const [collapsed, setCollapsed] = useState(false);
 
+  // h-dvh bounds the panel to the dynamic viewport height (handles mobile browser chrome).
+  // sticky top-0 keeps it anchored to the viewport top even if the page scrolls.
   if (collapsed) {
     return (
-      <div className="flex h-full flex-col border-l border-border bg-muted">
+      <div className="sticky top-0 flex h-dvh flex-col border-l border-border bg-muted">
         <div className="flex items-center justify-center p-2">
           <Button
             variant="ghost"
@@ -26,7 +28,7 @@ export function ActivityFeedPanel() {
   }
 
   return (
-    <div className="flex h-full w-[280px] flex-col border-l border-border bg-muted">
+    <div className="sticky top-0 flex h-dvh w-[280px] flex-col overflow-hidden border-l border-border bg-muted">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-lg font-semibold text-foreground">Activity Feed</h2>
         <Button
