@@ -1,5 +1,7 @@
 """Skills loader for agent capabilities."""
 
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -224,5 +226,60 @@ class SkillsLoader:
                         key, value = line.split(":", 1)
                         metadata[key.strip()] = value.strip().strip('"\'')
                 return metadata
-        
+
         return None
+
+    # ------------------------------------------------------------------
+    # Public API (used by nanobot.mc.gateway sync_skills)
+    # ------------------------------------------------------------------
+
+    def get_skill_body(self, name: str) -> str | None:
+        """Load a skill and return its body content with frontmatter stripped.
+
+        Args:
+            name: Skill name (directory name).
+
+        Returns:
+            Skill body content without frontmatter, or None if not found.
+        """
+        raw = self.load_skill(name)
+        if raw is None:
+            return None
+        return self._strip_frontmatter(raw)
+
+    def is_skill_available(self, name: str) -> bool:
+        """Check whether a skill's requirements are met.
+
+        Args:
+            name: Skill name.
+
+        Returns:
+            True if all requirements (bins, env) are satisfied.
+        """
+        meta = self._get_skill_meta(name)
+        return self._check_requirements(meta)
+
+    def get_missing_requirements(self, name: str) -> str | None:
+        """Return a human-readable description of missing requirements.
+
+        Args:
+            name: Skill name.
+
+        Returns:
+            Comma-separated list of missing items, or None if all met.
+        """
+        meta = self._get_skill_meta(name)
+        if self._check_requirements(meta):
+            return None
+        return self._get_missing_requirements(meta) or None
+
+    def get_nanobot_metadata(self, name: str) -> dict:
+        """Return parsed nanobot-specific metadata for a skill.
+
+        Args:
+            name: Skill name.
+
+        Returns:
+            Dict of nanobot metadata (empty dict if none).
+        """
+        return self._get_skill_meta(name)

@@ -5,7 +5,30 @@ export const create = mutation({
   args: {
     taskId: v.optional(v.id("tasks")),
     agentName: v.optional(v.string()),
-    eventType: v.string(),
+    eventType: v.union(
+      v.literal("task_created"),
+      v.literal("task_assigned"),
+      v.literal("task_started"),
+      v.literal("task_completed"),
+      v.literal("task_crashed"),
+      v.literal("task_retrying"),
+      v.literal("review_requested"),
+      v.literal("review_feedback"),
+      v.literal("review_approved"),
+      v.literal("hitl_requested"),
+      v.literal("hitl_approved"),
+      v.literal("hitl_denied"),
+      v.literal("agent_connected"),
+      v.literal("agent_disconnected"),
+      v.literal("agent_crashed"),
+      v.literal("system_error"),
+      v.literal("task_deleted"),
+      v.literal("task_restored"),
+      v.literal("agent_config_updated"),
+      v.literal("agent_activated"),
+      v.literal("agent_deactivated"),
+      v.literal("bulk_clear_done"),
+    ),
     description: v.string(),
     timestamp: v.string(),
   },
@@ -13,26 +36,7 @@ export const create = mutation({
     return await ctx.db.insert("activities", {
       taskId: args.taskId,
       agentName: args.agentName,
-      eventType: args.eventType as
-        | "task_created"
-        | "task_assigned"
-        | "task_started"
-        | "task_completed"
-        | "task_crashed"
-        | "task_retrying"
-        | "review_requested"
-        | "review_feedback"
-        | "review_approved"
-        | "hitl_requested"
-        | "hitl_approved"
-        | "hitl_denied"
-        | "agent_connected"
-        | "agent_disconnected"
-        | "agent_crashed"
-        | "system_error"
-        | "task_deleted"
-        | "task_restored"
-        | "bulk_clear_done",
+      eventType: args.eventType,
       description: args.description,
       timestamp: args.timestamp,
     });

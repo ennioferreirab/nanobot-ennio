@@ -63,6 +63,7 @@ export default defineSchema({
       v.literal("idle"),
       v.literal("crashed"),
     ),
+    enabled: v.optional(v.boolean()),
     model: v.optional(v.string()),
     lastActiveAt: v.optional(v.string()),
   })
@@ -92,6 +93,8 @@ export default defineSchema({
       v.literal("task_deleted"),
       v.literal("task_restored"),
       v.literal("agent_config_updated"),
+      v.literal("agent_activated"),
+      v.literal("agent_deactivated"),
       v.literal("bulk_clear_done"),
     ),
     description: v.string(),

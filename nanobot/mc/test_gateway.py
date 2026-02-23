@@ -1,0 +1,505 @@
+"""Unit tests for the Agent Registry Sync and Auto-Retry (gateway module)."""
+
+from __future__ import annotations
+
+import asyncio
+import textwrap
+from pathlib import Path
+from unittest.mock import MagicMock, call
+
+import pytest
+
+from nanobot.mc.gateway import DEFAULT_MODEL, AgentGateway, MAX_AUTO_RETRIES, sync_agent_registry
+from nanobot.mc.types import AgentData
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _write_yaml(tmp_path: Path, filename: str, content: str) -> Path:
+    """Write a YAML string to a file and return its path."""
+    p = tmp_path / filename
+    p.write_text(textwrap.dedent(content), encoding="utf-8")
+    return p
+
+
+def _make_bridge() -> MagicMock:
+    """Create a mock ConvexBridge with the agent-related methods."""
+    bridge = MagicMock()
+    bridge.sync_agent.return_value = None
+    bridge.deactivate_agents_except.return_value = None
+    bridge.list_agents.return_value = []
+    return bridge
+
+
+# ---------------------------------------------------------------------------
+# Test: Sync valid agents
+# ---------------------------------------------------------------------------
+
+class TestSyncValidAgents:
+    """Tests for syncing valid agent YAML files."""
+
+    def test_all_valid_agents_synced(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path, "agent1.yaml", """\
+            name: dev-agent
+            role: Senior Developer
+            prompt: "You are a senior developer."
+            skills:
+              - coding
+              - debugging
+            model: claude-sonnet-4-6
+        """)
+        _write_yaml(tmp_path, "agent2.yaml", """\
+            name: test-agent
+            role: Tester
+            prompt: "You test code."
+            skills:
+              - testing
+        """)
+
+        bridge = _make_bridge()
+        agents, errors = sync_agent_registry(bridge, tmp_path)
+
+        assert len(agents) == 2
+        assert errors == {}
+        assert bridge.sync_agent.call_count == 2
+        bridge.deactivate_agents_except.assert_called_once()
+
+        # Check agent names passed to deactivate
+        deactivate_call_args = bridge.deactivate_agents_except.call_args[0][0]
+        assert set(deactivate_call_args) == {"dev-agent", "test-agent"}
+
+    def test_single_agent_synced(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path, "agent.yaml", """\
+            name: solo-agent
+            role: Helper
+            prompt: "You help."
+        """)
+
+        bridge = _make_bridge()
+        agents, errors = sync_agent_registry(bridge, tmp_path)
+
+        assert len(agents) == 1
+        assert agents[0].name == "solo-agent"
+        assert errors == {}
+        bridge.sync_agent.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Test: Mixed valid and invalid agents
+# ---------------------------------------------------------------------------
+
+class TestMixedValidInvalid:
+    """Tests that valid agents sync even when some are invalid."""
+
+    def test_valid_synced_invalid_logged(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path, "good.yaml", """\
+            name: good-agent
+            role: Worker
+            prompt: "You work."
+        """)
+        _write_yaml(tmp_path, "bad.yaml", """\
+            name: "Invalid Name!"
+            role: Breaker
+            prompt: "Oops."
+        """)
+
+        bridge = _make_bridge()
+        agents, errors = sync_agent_registry(bridge, tmp_path)
+
+        assert len(agents) == 1
+        assert agents[0].name == "good-agent"
+        assert "bad.yaml" in errors
+        bridge.sync_agent.assert_called_once()
+
+    def test_all_invalid_no_sync(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path, "bad1.yaml", """\
+            role: Breaker
+            prompt: "Missing name."
+        """)
+        _write_yaml(tmp_path, "bad2.yaml", """\
+            name: "INVALID"
+            role: Breaker
+            prompt: "Bad name."
+        """)
+
+        bridge = _make_bridge()
+        agents, errors = sync_agent_registry(bridge, tmp_path)
+
+        assert len(agents) == 0
+        assert len(errors) == 2
+        bridge.sync_agent.assert_not_called()
+        # deactivate_agents_except still called with empty list
+        bridge.deactivate_agents_except.assert_called_once_with([])
+
+
+# ---------------------------------------------------------------------------
+# Test: Model resolution
+# ---------------------------------------------------------------------------
+
+class TestModelResolution:
+    """Tests for default model resolution chain."""
+
+    def test_agent_with_model_keeps_it(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path, "agent.yaml", """\
+            name: custom-model
+            role: Developer
+            prompt: "You code."
+            model: gpt-4o
+        """)
+
+        bridge = _make_bridge()
+        agents, _ = sync_agent_registry(bridge, tmp_path, default_model="claude-opus-4-6")
+
+        assert agents[0].model == "gpt-4o"
+
+    def test_agent_without_model_gets_provided_default(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path, "agent.yaml", """\
+            name: no-model
+            role: Developer
+            prompt: "You code."
+        """)
+
+        bridge = _make_bridge()
+        agents, _ = sync_agent_registry(bridge, tmp_path, default_model="claude-opus-4-6")
+
+        assert agents[0].model == "claude-opus-4-6"
+
+    def test_agent_without_model_gets_hardcoded_default(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path, "agent.yaml", """\
+            name: no-model
+            role: Developer
+            prompt: "You code."
+        """)
+
+        bridge = _make_bridge()
+        agents, _ = sync_agent_registry(bridge, tmp_path)
+
+        assert agents[0].model == DEFAULT_MODEL
+
+    def test_default_model_not_override_explicit_model(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path, "a.yaml", """\
+            name: agent-a
+            role: Developer
+            prompt: "Has model."
+            model: my-model
+        """)
+        _write_yaml(tmp_path, "b.yaml", """\
+            name: agent-b
+            role: Tester
+            prompt: "No model."
+        """)
+
+        bridge = _make_bridge()
+        agents, _ = sync_agent_registry(bridge, tmp_path, default_model="default-llm")
+
+        agent_a = next(a for a in agents if a.name == "agent-a")
+        agent_b = next(a for a in agents if a.name == "agent-b")
+
+        assert agent_a.model == "my-model"
+        assert agent_b.model == "default-llm"
+
+
+# ---------------------------------------------------------------------------
+# Test: Deactivation of removed agents
+# ---------------------------------------------------------------------------
+
+class TestDeactivation:
+    """Tests for soft deactivation of removed agents."""
+
+    def test_deactivate_called_with_active_names(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path, "a.yaml", """\
+            name: agent-a
+            role: Worker
+            prompt: "Work."
+        """)
+        _write_yaml(tmp_path, "b.yaml", """\
+            name: agent-b
+            role: Builder
+            prompt: "Build."
+        """)
+
+        bridge = _make_bridge()
+        sync_agent_registry(bridge, tmp_path)
+
+        bridge.deactivate_agents_except.assert_called_once()
+        active_names = bridge.deactivate_agents_except.call_args[0][0]
+        assert set(active_names) == {"agent-a", "agent-b"}
+
+    def test_empty_dir_deactivates_all(self, tmp_path: Path) -> None:
+        bridge = _make_bridge()
+        agents, errors = sync_agent_registry(bridge, tmp_path)
+
+        assert len(agents) == 0
+        assert errors == {}
+        bridge.deactivate_agents_except.assert_called_once_with([])
+
+
+# ---------------------------------------------------------------------------
+# Test: Edge cases
+# ---------------------------------------------------------------------------
+
+class TestEdgeCases:
+    """Edge case tests."""
+
+    def test_nonexistent_directory(self, tmp_path: Path) -> None:
+        missing = tmp_path / "nonexistent"
+        bridge = _make_bridge()
+        agents, errors = sync_agent_registry(bridge, missing)
+
+        assert len(agents) == 0
+        assert errors == {}
+
+    def test_sync_agent_failure_does_not_block_others(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path, "a.yaml", """\
+            name: agent-a
+            role: Worker
+            prompt: "Work."
+        """)
+        _write_yaml(tmp_path, "b.yaml", """\
+            name: agent-b
+            role: Builder
+            prompt: "Build."
+        """)
+
+        bridge = _make_bridge()
+        # First call fails, second succeeds
+        bridge.sync_agent.side_effect = [Exception("network error"), None]
+
+        agents, errors = sync_agent_registry(bridge, tmp_path)
+
+        # Both agents were validated successfully
+        assert len(agents) == 2
+        # sync_agent was called for both
+        assert bridge.sync_agent.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Auto-Retry Tests (Story 7.1)
+# ---------------------------------------------------------------------------
+
+
+def _make_crash_bridge() -> MagicMock:
+    """Create a mock ConvexBridge with task and message methods for crash tests."""
+    bridge = MagicMock()
+    bridge.update_task_status.return_value = None
+    bridge.send_message.return_value = None
+    bridge.create_activity.return_value = None
+    return bridge
+
+
+class TestAgentGatewayFirstCrash:
+    """Tests for auto-retry on first agent crash (FR37)."""
+
+    def test_first_crash_transitions_to_retrying(self) -> None:
+        """First crash should transition task in_progress -> retrying -> in_progress."""
+        bridge = _make_crash_bridge()
+        gw = AgentGateway(bridge)
+
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("segfault"))
+        )
+
+        # Should have called update_task_status twice:
+        # 1. to "retrying" (crash detected)
+        # 2. to "in_progress" (re-dispatch)
+        assert bridge.update_task_status.call_count == 2
+        first_call = bridge.update_task_status.call_args_list[0]
+        assert first_call[0][0] == "task_123"
+        assert first_call[0][1] == "retrying"
+        assert first_call[0][2] == "dev-agent"
+
+        second_call = bridge.update_task_status.call_args_list[1]
+        assert second_call[0][0] == "task_123"
+        assert second_call[0][1] == "in_progress"
+
+    def test_first_crash_writes_error_to_thread(self) -> None:
+        """First crash should write error details to the task thread."""
+        bridge = _make_crash_bridge()
+        gw = AgentGateway(bridge)
+
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", ValueError("bad input"))
+        )
+
+        bridge.send_message.assert_called_once()
+        msg_args = bridge.send_message.call_args[0]
+        assert msg_args[0] == "task_123"
+        assert msg_args[1] == "System"
+        assert msg_args[2] == "system"
+        assert "ValueError: bad input" in msg_args[3]
+        assert "Auto-retrying" in msg_args[3]
+        assert msg_args[4] == "system_event"
+
+    def test_first_crash_increments_retry_count(self) -> None:
+        """After first crash, retry count should be 1."""
+        bridge = _make_crash_bridge()
+        gw = AgentGateway(bridge)
+
+        assert gw.get_retry_count("task_123") == 0
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("oops"))
+        )
+        assert gw.get_retry_count("task_123") == 1
+
+    def test_retrying_description_includes_attempt(self) -> None:
+        """Activity description should include attempt count."""
+        bridge = _make_crash_bridge()
+        gw = AgentGateway(bridge)
+
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("oops"))
+        )
+
+        first_call = bridge.update_task_status.call_args_list[0]
+        description = first_call[0][3]
+        assert "attempt 1/1" in description
+        assert "dev-agent" in description
+
+
+class TestAgentGatewaySecondCrash:
+    """Tests for crash exhaustion on second crash (FR38)."""
+
+    def test_second_crash_transitions_to_crashed(self) -> None:
+        """Second crash should transition task to 'crashed'."""
+        bridge = _make_crash_bridge()
+        gw = AgentGateway(bridge)
+
+        # First crash: auto-retry
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("first"))
+        )
+        bridge.reset_mock()
+
+        # Second crash: exhausted
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("second"))
+        )
+
+        # Should only call update_task_status once (to "crashed")
+        assert bridge.update_task_status.call_count == 1
+        crash_call = bridge.update_task_status.call_args[0]
+        assert crash_call[0] == "task_123"
+        assert crash_call[1] == "crashed"
+        assert crash_call[2] == "dev-agent"
+
+    def test_second_crash_writes_full_error_to_thread(self) -> None:
+        """Second crash should write full error details with retry-failed message."""
+        bridge = _make_crash_bridge()
+        gw = AgentGateway(bridge)
+
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("first"))
+        )
+        bridge.reset_mock()
+
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("second"))
+        )
+
+        bridge.send_message.assert_called_once()
+        msg_args = bridge.send_message.call_args[0]
+        assert "Retry failed" in msg_args[3]
+        assert "RuntimeError: second" in msg_args[3]
+        assert "Retry from Beginning" in msg_args[3]
+
+    def test_second_crash_clears_retry_count(self) -> None:
+        """After crash exhaustion, retry count should be cleared."""
+        bridge = _make_crash_bridge()
+        gw = AgentGateway(bridge)
+
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("first"))
+        )
+        assert gw.get_retry_count("task_123") == 1
+
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("second"))
+        )
+        assert gw.get_retry_count("task_123") == 0
+
+    def test_crashed_description_mentions_retry_failed(self) -> None:
+        """Crashed activity description should mention retry failure."""
+        bridge = _make_crash_bridge()
+        gw = AgentGateway(bridge)
+
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("first"))
+        )
+        bridge.reset_mock()
+
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("second"))
+        )
+
+        crash_call = bridge.update_task_status.call_args[0]
+        description = crash_call[3]
+        assert "Retry failed" in description
+        assert "crashed" in description
+
+
+class TestAgentGatewayRetryTracking:
+    """Tests for per-task retry count tracking."""
+
+    def test_retry_count_is_per_task(self) -> None:
+        """Retry counts should be independent per task."""
+        bridge = _make_crash_bridge()
+        gw = AgentGateway(bridge)
+
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_A", RuntimeError("crash"))
+        )
+        assert gw.get_retry_count("task_A") == 1
+        assert gw.get_retry_count("task_B") == 0
+
+    def test_clear_retry_count(self) -> None:
+        """clear_retry_count should reset count for a specific task."""
+        bridge = _make_crash_bridge()
+        gw = AgentGateway(bridge)
+
+        asyncio.get_event_loop().run_until_complete(
+            gw.handle_agent_crash("dev-agent", "task_123", RuntimeError("crash"))
+        )
+        assert gw.get_retry_count("task_123") == 1
+
+        gw.clear_retry_count("task_123")
+        assert gw.get_retry_count("task_123") == 0
+
+    def test_clear_nonexistent_task_is_noop(self) -> None:
+        """Clearing retry count for unknown task should not raise."""
+        bridge = _make_crash_bridge()
+        gw = AgentGateway(bridge)
+        gw.clear_retry_count("nonexistent")  # should not raise
+
+    def test_max_auto_retries_constant(self) -> None:
+        """MAX_AUTO_RETRIES should be 1 (single retry per FR37)."""
+        assert MAX_AUTO_RETRIES == 1
+
+
+class TestStateMachineRetryTransitions:
+    """Test that the state machine supports the new retry transitions."""
+
+    def test_retrying_to_in_progress_is_valid(self) -> None:
+        from nanobot.mc.state_machine import is_valid_transition
+        assert is_valid_transition("retrying", "in_progress") is True
+
+    def test_retrying_to_crashed_is_valid(self) -> None:
+        from nanobot.mc.state_machine import is_valid_transition
+        assert is_valid_transition("retrying", "crashed") is True
+
+    def test_retrying_to_inbox_is_invalid(self) -> None:
+        from nanobot.mc.state_machine import is_valid_transition
+        assert is_valid_transition("retrying", "inbox") is False
+
+    def test_retrying_to_done_is_invalid(self) -> None:
+        from nanobot.mc.state_machine import is_valid_transition
+        assert is_valid_transition("retrying", "done") is False
+
+    def test_retrying_to_in_progress_event_type(self) -> None:
+        from nanobot.mc.state_machine import get_event_type
+        assert get_event_type("retrying", "in_progress") == "task_retrying"
+
+    def test_retrying_to_crashed_event_type(self) -> None:
+        from nanobot.mc.state_machine import get_event_type
+        assert get_event_type("retrying", "crashed") == "task_crashed"
