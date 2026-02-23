@@ -733,6 +733,27 @@ export const addTaskFiles = mutation({
 });
 
 /**
+ * Remove a single file entry from a task's files array.
+ * Used to delete attachment metadata after the file has been removed from disk.
+ */
+export const removeTaskFile = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    subfolder: v.string(),
+    filename: v.string(),
+  },
+  handler: async (ctx, { taskId, subfolder, filename }) => {
+    if (subfolder !== "attachments") return;
+    const task = await ctx.db.get(taskId);
+    if (!task) return;
+    const updated = (task.files ?? []).filter(
+      (f) => !(f.name === filename && f.subfolder === subfolder),
+    );
+    await ctx.db.patch(taskId, { files: updated });
+  },
+});
+
+/**
  * Restore a deleted task.
  * mode "previous": restore to n-1 state, preserve assignedAgent
  * mode "beginning": restore to inbox, clear assignedAgent
