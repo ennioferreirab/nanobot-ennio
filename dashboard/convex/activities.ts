@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 
 export const create = mutation({
   args: {
@@ -50,6 +51,17 @@ export const list = query({
       .query("activities")
       .withIndex("by_timestamp")
       .collect();
+  },
+});
+
+export const listPaginated = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("activities")
+      .withIndex("by_timestamp")
+      .order("desc")
+      .paginate(args.paginationOpts);
   },
 });
 

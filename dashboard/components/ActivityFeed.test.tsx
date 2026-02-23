@@ -4,15 +4,20 @@ import { ActivityFeed } from "./ActivityFeed";
 import { FeedItem } from "./FeedItem";
 import type { Doc } from "../convex/_generated/dataModel";
 
-// Stub scrollTo for jsdom
+// Stub scrollTo and IntersectionObserver for jsdom
 beforeEach(() => {
   Element.prototype.scrollTo = vi.fn();
+  global.IntersectionObserver = vi.fn().mockImplementation(function () {
+    return { observe: vi.fn(), disconnect: vi.fn() };
+  }) as unknown as typeof IntersectionObserver;
 });
 
 // Mock convex/react
 const mockUseQuery = vi.fn();
+const mockUsePaginatedQuery = vi.fn();
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => mockUseQuery(...args),
+  usePaginatedQuery: (...args: unknown[]) => mockUsePaginatedQuery(...args),
 }));
 
 // Mock motion/react to render plain divs (avoids animation complexity in tests)
@@ -67,44 +72,59 @@ describe("ActivityFeed", () => {
   afterEach(() => {
     cleanup();
     mockUseQuery.mockReset();
+    mockUsePaginatedQuery.mockReset();
   });
 
   it("shows empty state when no activities exist", () => {
-    mockUseQuery.mockReturnValue([]);
+    mockUsePaginatedQuery.mockReturnValue({ results: [], status: "Exhausted", loadMore: vi.fn() });
     render(<ActivityFeed />);
     expect(screen.getByText("Waiting for activity...")).toBeInTheDocument();
   });
 
-  it("renders nothing while loading (undefined)", () => {
-    mockUseQuery.mockReturnValue(undefined);
+  it("renders nothing while loading (LoadingFirstPage)", () => {
+    mockUsePaginatedQuery.mockReturnValue({ results: [], status: "LoadingFirstPage", loadMore: vi.fn() });
     const { container } = render(<ActivityFeed />);
     expect(container.innerHTML).toBe("");
   });
 
-  it("renders activities in chronological order", () => {
-    mockUseQuery.mockReturnValue([
-      makeActivity({
-        _id: "act1" as Activity["_id"],
-        timestamp: "2026-02-23T14:32:05.000Z",
-        description: "First event",
-      }),
-      makeActivity({
-        _id: "act2" as Activity["_id"],
-        timestamp: "2026-02-23T14:33:10.000Z",
-        description: "Second event",
-      }),
-      makeActivity({
-        _id: "act3" as Activity["_id"],
-        timestamp: "2026-02-23T14:34:15.000Z",
-        description: "Third event",
-      }),
-    ]);
+  it("renders activities in newest-first order", () => {
+    mockUsePaginatedQuery.mockReturnValue({
+      results: [
+        makeActivity({
+          _id: "act3" as Activity["_id"],
+          timestamp: "2026-02-23T14:34:15.000Z",
+          description: "Third event",
+        }),
+        makeActivity({
+          _id: "act2" as Activity["_id"],
+          timestamp: "2026-02-23T14:33:10.000Z",
+          description: "Second event",
+        }),
+        makeActivity({
+          _id: "act1" as Activity["_id"],
+          timestamp: "2026-02-23T14:32:05.000Z",
+          description: "First event",
+        }),
+      ],
+      status: "Exhausted",
+      loadMore: vi.fn(),
+    });
     render(<ActivityFeed />);
 
     const items = screen.getAllByText(/event/);
-    expect(items[0].textContent).toBe("First event");
+    expect(items[0].textContent).toBe("Third event");
     expect(items[1].textContent).toBe("Second event");
-    expect(items[2].textContent).toBe("Third event");
+    expect(items[2].textContent).toBe("First event");
+  });
+
+  it("shows 'No more activity' when status is Exhausted and results exist", () => {
+    mockUsePaginatedQuery.mockReturnValue({
+      results: [makeActivity()],
+      status: "Exhausted",
+      loadMore: vi.fn(),
+    });
+    render(<ActivityFeed />);
+    expect(screen.getByText("No more activity")).toBeInTheDocument();
   });
 });
 
