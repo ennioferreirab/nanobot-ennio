@@ -1,22 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useQuery } from "convex/react";
+import { usePaginatedQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FeedItem } from "./FeedItem";
 import { motion } from "motion/react";
 
 export function ActivityFeed() {
-  const activities = useQuery(api.activities.listRecent);
+  const { results: activities, status, loadMore } = usePaginatedQuery(
+    api.activities.listPaginated,
+    {},
+    { initialNumItems: 20 }
+  );
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const [isAtTop, setIsAtTop] = useState(true);
   const [hasNewActivity, setHasNewActivity] = useState(false);
   const prevCountRef = useRef(0);
   const hadDataRef = useRef(false);
 
   // Track whether we previously had data (for reconnection detection)
-  if (activities !== undefined && activities.length > 0) {
+  if (activities.length > 0) {
     hadDataRef.current = true;
   }
 
@@ -37,9 +42,9 @@ export function ActivityFeed() {
   const handleScroll = useCallback(() => {
     const el = viewportRef.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
-    setIsAtBottom(atBottom);
-    if (atBottom) {
+    const atTop = el.scrollTop < 30;
+    setIsAtTop(atTop);
+    if (atTop) {
       setHasNewActivity(false);
     }
   }, []);
@@ -52,15 +57,13 @@ export function ActivityFeed() {
     return () => el.removeEventListener("scroll", handleScroll);
   }, [handleScroll, activities]);
 
-  // Auto-scroll when new items arrive and user is at bottom
+  // Auto-scroll to top when new items arrive and user is at top
   useEffect(() => {
-    if (!activities) return;
-
     if (activities.length > prevCountRef.current) {
-      if (isAtBottom) {
+      if (isAtTop) {
         requestAnimationFrame(() => {
           viewportRef.current?.scrollTo({
-            top: viewportRef.current.scrollHeight,
+            top: 0,
             behavior: "smooth",
           });
         });
@@ -69,19 +72,32 @@ export function ActivityFeed() {
       }
     }
     prevCountRef.current = activities.length;
-  }, [activities, isAtBottom]);
+  }, [activities, isAtTop]);
 
-  const scrollToBottom = () => {
-    viewportRef.current?.scrollTo({
-      top: viewportRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+  // IntersectionObserver: load more when sentinel enters viewport
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && status === "CanLoadMore") {
+          loadMore(20);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [status, loadMore]);
+
+  const scrollToTop = () => {
+    viewportRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     setHasNewActivity(false);
-    setIsAtBottom(true);
+    setIsAtTop(true);
   };
 
-  // Reconnecting state: had data before but now undefined
-  if (activities === undefined && hadDataRef.current) {
+  // Reconnecting state: had data before but now loading first page
+  if (status === "LoadingFirstPage" && hadDataRef.current) {
     return (
       <div className="p-4">
         <p className="text-xs text-muted-foreground italic">Reconnecting...</p>
@@ -90,7 +106,7 @@ export function ActivityFeed() {
   }
 
   // Loading state
-  if (activities === undefined) return null;
+  if (status === "LoadingFirstPage") return null;
 
   // Empty state
   if (activities.length === 0) {
@@ -115,12 +131,18 @@ export function ActivityFeed() {
               <FeedItem activity={activity} />
             </motion.div>
           ))}
+          {status === "Exhausted" && (
+            <p className="text-xs text-center text-muted-foreground py-2">
+              No more activity
+            </p>
+          )}
+          <div ref={sentinelRef} className="h-1" />
         </div>
       </ScrollArea>
 
       {hasNewActivity && (
         <button
-          onClick={scrollToBottom}
+          onClick={scrollToTop}
           className="absolute bottom-2 left-1/2 -translate-x-1/2
             bg-blue-500 text-white text-xs px-3 py-1 rounded-full
             shadow-md hover:bg-blue-600 transition-colors"
