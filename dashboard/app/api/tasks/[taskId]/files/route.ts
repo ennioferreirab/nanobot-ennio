@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mkdir, rename, rm, writeFile } from "fs/promises";
-import { join } from "path";
+import { mkdir, rename, rm, unlink, writeFile } from "fs/promises";
+import { basename, join } from "path";
 import { homedir } from "os";
 
 const TASK_ID_RE = /^[a-zA-Z0-9_-]+$/;
@@ -76,4 +76,68 @@ export async function POST(
   }
 
   return NextResponse.json({ files: uploadedFiles });
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ taskId: string }> },
+) {
+  const { taskId } = await params;
+
+  if (!TASK_ID_RE.test(taskId)) {
+    return NextResponse.json({ error: "Invalid taskId" }, { status: 400 });
+  }
+
+  let body: { subfolder: string; filename: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const { subfolder, filename } = body;
+
+  if (typeof subfolder !== "string" || typeof filename !== "string") {
+    return NextResponse.json(
+      { error: "Missing or invalid subfolder/filename" },
+      { status: 400 },
+    );
+  }
+
+  if (subfolder !== "attachments") {
+    return NextResponse.json(
+      { error: "Only attachments can be deleted" },
+      { status: 403 },
+    );
+  }
+
+  const safeName = basename(filename);
+  if (!safeName || safeName !== filename) {
+    return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
+  }
+
+  const filePath = join(
+    homedir(),
+    ".nanobot",
+    "tasks",
+    taskId,
+    "attachments",
+    safeName,
+  );
+
+  try {
+    await unlink(filePath);
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      // Already gone — treat as success
+      return NextResponse.json({ ok: true });
+    }
+    return NextResponse.json(
+      { error: "Failed to delete file" },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({ ok: true });
 }
