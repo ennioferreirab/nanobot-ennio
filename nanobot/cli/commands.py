@@ -280,46 +280,44 @@ This file stores important information that should persist across sessions.
 
 
 def _make_provider(config: Config):
-    """Create the appropriate LLM provider from config."""
-    from nanobot.providers.litellm_provider import LiteLLMProvider
-    from nanobot.providers.openai_codex_provider import OpenAICodexProvider
-    from nanobot.providers.anthropic_oauth_provider import AnthropicOAuthProvider
-    from nanobot.providers.custom_provider import CustomProvider
+    """Create the appropriate LLM provider from config.
+
+    Delegates to the shared provider_factory.create_provider() and adds
+    CLI-specific API-key validation for LiteLLM providers.
+    """
+    from nanobot.mc.provider_factory import ProviderError, create_provider
 
     model = config.agents.defaults.model
-    provider_name = config.get_provider_name(model)
-    p = config.get_provider(model)
 
-    # OpenAI Codex (OAuth)
-    if provider_name == "openai_codex" or model.startswith("openai-codex/"):
-        return OpenAICodexProvider(default_model=model)
-
-    # Anthropic OAuth
-    if provider_name == "anthropic_oauth" or model.startswith("anthropic-oauth/"):
-        return AnthropicOAuthProvider(default_model=model)
-
-    # Custom: direct OpenAI-compatible endpoint, bypasses LiteLLM
-    if provider_name == "custom":
-        return CustomProvider(
-            api_key=p.api_key if p else "no-key",
-            api_base=config.get_api_base(model) or "http://localhost:8000/v1",
-            default_model=model,
-        )
-
-    from nanobot.providers.registry import find_by_name
-    spec = find_by_name(provider_name)
-    if not model.startswith("bedrock/") and not (p and p.api_key) and not (spec and spec.is_oauth):
-        console.print("[red]Error: No API key configured.[/red]")
-        console.print("Set one in ~/.nanobot/config.json under providers section")
+    try:
+        provider, resolved_model = create_provider(model)
+    except ProviderError as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+        if exc.action:
+            console.print(f"Action: {exc.action}")
         raise typer.Exit(1)
 
-    return LiteLLMProvider(
-        api_key=p.api_key if p else None,
-        api_base=config.get_api_base(model),
-        default_model=model,
-        extra_headers=p.extra_headers if p else None,
-        provider_name=provider_name,
-    )
+    # CLI-specific: check API key for LiteLLM providers
+    from nanobot.providers.litellm_provider import LiteLLMProvider
+
+    if isinstance(provider, LiteLLMProvider):
+        provider_name = config.get_provider_name(model)
+        p = config.get_provider(model)
+        from nanobot.providers.registry import find_by_name
+
+        spec = find_by_name(provider_name)
+        if (
+            not model.startswith("bedrock/")
+            and not (p and p.api_key)
+            and not (spec and spec.is_oauth)
+        ):
+            console.print("[red]Error: No API key configured.[/red]")
+            console.print(
+                "Set one in ~/.nanobot/config.json under providers section"
+            )
+            raise typer.Exit(1)
+
+    return provider
 
 
 # ============================================================================
@@ -1045,7 +1043,6 @@ def status():
 provider_app = typer.Typer(help="Manage providers")
 app.add_typer(provider_app, name="provider")
 
-
 _LOGIN_HANDLERS: dict[str, callable] = {}
 
 
@@ -1147,6 +1144,14 @@ def _login_github_copilot() -> None:
     except Exception as e:
         console.print(f"[red]Authentication error: {e}[/red]")
         raise typer.Exit(1)
+
+
+# ============================================================================
+# Mission Control Commands
+# ============================================================================
+
+from nanobot.cli.mc import mc_app
+app.add_typer(mc_app, name="mc")
 
 
 if __name__ == "__main__":

@@ -107,4 +107,6 @@ development_status:
   8-1-fix-gateway-placeholders-and-agent-execution-pipeline: in-progress
   8-2-build-agent-config-editor-dashboard: done
   8-3-add-clear-done-and-done-list: in-progress
-  8-4-implement-agent-activation-status: ready-for-dev
+  8-4-fix-orchestrator-bridge-reliability: done
+  8-5-fix-provider-integration-validation: done
+  8-4-implement-agent-activation-status: review

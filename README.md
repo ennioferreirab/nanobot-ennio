@@ -974,6 +974,40 @@ PRs welcome! The codebase is intentionally small and readable. 🤗
 </a>
 
 
+## Data Privacy
+
+Mission Control uses [Convex](https://convex.dev) as its real-time backend.
+All task data, agent messages, activity logs, and settings are stored on Convex's
+cloud infrastructure.
+
+### What data transits through Convex
+
+- Task titles, descriptions, and status history
+- Inter-agent messages and review feedback
+- Agent configuration metadata (names, roles, skills)
+- Activity events and system logs
+- Dashboard settings (timeouts, default model)
+
+### Security considerations
+
+- **Dashboard access**: Set `MC_ACCESS_TOKEN` in your `.env.local` to require
+  authentication for the dashboard. Without this, the dashboard is open to anyone
+  on the network.
+- **Convex transport**: Data is encrypted in transit (HTTPS/WSS) between your
+  machine and Convex servers. See [Convex Security](https://docs.convex.dev/production/security)
+  for details.
+- **Sensitive data**: If your agents process sensitive information (financial records,
+  personal emails, calendar data), be aware that this data will be stored on Convex's
+  infrastructure. Review Convex's [Privacy Policy](https://www.convex.dev/privacy)
+  before handling regulated data.
+
+### For sensitive deployments
+
+For deployments handling highly sensitive data, consider:
+- Using Convex's self-hosted option (when available)
+- Implementing data sanitization in agent prompts to avoid storing raw sensitive content
+- Reviewing your organization's data residency requirements against Convex's infrastructure
+
 ## ⭐ Star History
 
 <div align="center">

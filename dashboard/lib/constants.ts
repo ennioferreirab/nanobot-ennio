@@ -45,6 +45,8 @@ export const ACTIVITY_EVENT_TYPE = {
   TASK_DELETED: "task_deleted",
   TASK_RESTORED: "task_restored",
   AGENT_CONFIG_UPDATED: "agent_config_updated",
+  AGENT_ACTIVATED: "agent_activated",
+  AGENT_DEACTIVATED: "agent_deactivated",
   BULK_CLEAR_DONE: "bulk_clear_done",
 } as const;
 
