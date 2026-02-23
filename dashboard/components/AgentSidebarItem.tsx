@@ -89,8 +89,8 @@ export function AgentSidebarItem({ agent, onClick, onDelete }: AgentSidebarItemP
   }
 
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton size="lg" onClick={onClick} className="!h-auto cursor-pointer">
+    <SidebarMenuItem className="flex items-center">
+      <SidebarMenuButton size="lg" onClick={onClick} className="!h-auto cursor-pointer flex-1">
         <div
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white ${avatarColor}`}
         >
@@ -102,20 +102,21 @@ export function AgentSidebarItem({ agent, onClick, onDelete }: AgentSidebarItemP
           </span>
           <span className={`truncate text-xs ${isDisabled ? "" : "text-sidebar-foreground/70"}`}>{agent.role}</span>
         </div>
-        {onDelete ? (
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-            aria-label={`Delete ${agent.displayName}`}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        ) : (
+        {!onDelete && (
           <span
             className={`h-2 w-2 shrink-0 rounded-full transition-colors duration-200 ${statusStyle}`}
           />
         )}
       </SidebarMenuButton>
+      {onDelete && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="shrink-0 px-2 text-muted-foreground hover:text-destructive transition-colors"
+          aria-label={`Delete ${agent.displayName}`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
     </SidebarMenuItem>
   );
 }
