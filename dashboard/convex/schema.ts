@@ -96,6 +96,9 @@ export default defineSchema({
     variables: v.optional(v.array(v.object({ name: v.string(), value: v.string() }))),
     lastActiveAt: v.optional(v.string()),
     deletedAt: v.optional(v.string()),
+    memoryContent: v.optional(v.string()),
+    historyContent: v.optional(v.string()),
+    sessionData: v.optional(v.string()),
   })
     .index("by_name", ["name"])
     .index("by_status", ["status"]),
@@ -126,6 +129,7 @@ export default defineSchema({
       v.literal("agent_activated"),
       v.literal("agent_deactivated"),
       v.literal("agent_deleted"),
+      v.literal("agent_restored"),
       v.literal("bulk_clear_done"),
       v.literal("manual_task_status_changed"),
       v.literal("file_attached"),

@@ -348,6 +348,58 @@ class ConvexBridge:
             return []
         return result
 
+    def list_deleted_agents(self) -> list[dict[str, Any]]:
+        """List all soft-deleted agents from Convex.
+
+        Returns:
+            List of agent dicts with snake_case keys (all have deletedAt set).
+        """
+        result = self.query("agents:listDeleted")
+        if result is None:
+            return []
+        return result
+
+    def archive_agent_data(
+        self,
+        name: str,
+        memory_content: str | None,
+        history_content: str | None,
+        session_data: str | None,
+    ) -> None:
+        """Archive local agent files to Convex before deleting the local folder.
+
+        Args:
+            name: Agent name.
+            memory_content: Contents of MEMORY.md, or None if not present.
+            history_content: Contents of HISTORY.md, or None if not present.
+            session_data: Contents of session JSONL file(s), or None if not present.
+        """
+        args: dict[str, Any] = {"agent_name": name}
+        if memory_content is not None:
+            args["memory_content"] = memory_content
+        if history_content is not None:
+            args["history_content"] = history_content
+        if session_data is not None:
+            args["session_data"] = session_data
+        self.mutation("agents:archiveAgentData", args)
+
+    def get_agent_archive(self, name: str) -> dict[str, Any] | None:
+        """Fetch archived memory/history/session data for an agent.
+
+        Returns:
+            Dict with keys memory_content, history_content, session_data (each str | None),
+            or None if agent has no archived data.
+        """
+        return self.query("agents:getArchive", {"agent_name": name})
+
+    def clear_agent_archive(self, name: str) -> None:
+        """Clear archived memory/history/session fields from the agent's Convex document.
+
+        Called after _restore_archived_files succeeds to free storage space and
+        prevent stale data from being re-archived if the agent is deleted again.
+        """
+        self.mutation("agents:clearAgentArchive", {"agent_name": name})
+
     def deactivate_agents_except(self, active_names: list[str]) -> Any:
         """Set status to 'idle' for all agents NOT in the provided list.
 

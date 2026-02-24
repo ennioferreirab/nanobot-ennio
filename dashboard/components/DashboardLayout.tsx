@@ -141,7 +141,11 @@ export function DashboardLayout() {
           open={boardSettingsOpen}
           onClose={() => setBoardSettingsOpen(false)}
         />
-        <CronJobsModal open={cronOpen} onClose={() => setCronOpen(false)} />
+        <CronJobsModal
+          open={cronOpen}
+          onClose={() => setCronOpen(false)}
+          onTaskClick={(taskId) => { setCronOpen(false); setSelectedTaskId(taskId as Id<"tasks">); }}
+        />
       </SidebarProvider>
     </BoardProvider>
   );

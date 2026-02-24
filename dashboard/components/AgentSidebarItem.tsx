@@ -6,7 +6,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from "@/components/ui/sidebar";
-import { Trash2 } from "lucide-react";
+import { RotateCcw, Trash2 } from "lucide-react";
 import type { AgentStatus } from "@/lib/constants";
 
 const STATUS_DOT_STYLES: Record<AgentStatus, string> = {
@@ -48,9 +48,10 @@ interface AgentSidebarItemProps {
   agent: Doc<"agents">;
   onClick?: () => void;
   onDelete?: () => void;
+  onRestore?: () => void;
 }
 
-export function AgentSidebarItem({ agent, onClick, onDelete }: AgentSidebarItemProps) {
+export function AgentSidebarItem({ agent, onClick, onDelete, onRestore }: AgentSidebarItemProps) {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
   const initials = getInitials(agent.displayName);
@@ -88,9 +89,11 @@ export function AgentSidebarItem({ agent, onClick, onDelete }: AgentSidebarItemP
     );
   }
 
+  const isDeletedItem = !!onRestore;
+
   return (
     <SidebarMenuItem className="flex items-center">
-      <SidebarMenuButton size="lg" onClick={onClick} className="!h-auto cursor-pointer flex-1">
+      <SidebarMenuButton size="lg" onClick={onClick} className={`!h-auto flex-1 ${isDeletedItem ? "opacity-50 cursor-default" : "cursor-pointer"}`}>
         <div
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white ${avatarColor}`}
         >
@@ -102,7 +105,7 @@ export function AgentSidebarItem({ agent, onClick, onDelete }: AgentSidebarItemP
           </span>
           <span className={`truncate text-xs ${isDisabled ? "" : "text-sidebar-foreground/70"}`}>{agent.role}</span>
         </div>
-        {!onDelete && (
+        {!onDelete && !onRestore && (
           <span
             className={`h-2 w-2 shrink-0 rounded-full transition-colors duration-200 ${statusStyle}`}
           />
@@ -115,6 +118,15 @@ export function AgentSidebarItem({ agent, onClick, onDelete }: AgentSidebarItemP
           aria-label={`Delete ${agent.displayName}`}
         >
           <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {onRestore && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRestore(); }}
+          className="shrink-0 px-2 text-muted-foreground hover:text-foreground transition-colors"
+          aria-label={`Restore ${agent.displayName}`}
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
         </button>
       )}
     </SidebarMenuItem>

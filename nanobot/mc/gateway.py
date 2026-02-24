@@ -14,6 +14,7 @@ import asyncio
 import dataclasses
 import logging
 import os
+import shutil
 import signal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -116,6 +117,116 @@ def _parse_utc_timestamp(value: str) -> "datetime | None":
         return None
 
 
+def _read_file_or_none(path: Path) -> str | None:
+    """Return file content as a string, or None if the file does not exist."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError:
+        logger.warning("Could not read file %s", path)
+        return None
+
+
+def _read_session_data(sessions_dir: Path) -> str | None:
+    """Read all .jsonl files in sessions_dir and concatenate their content.
+
+    Multiple session files are concatenated into a single JSONL blob (one JSON
+    object per line). On restore, this blob is written to a single predictable
+    file ``mc_task_{name}.jsonl``.  This is a best-effort approach: the agent
+    runtime reads JSONL line-by-line, so all session entries are preserved;
+    however distinct filenames are not.
+
+    Returns None if the directory does not exist or contains no JSONL files.
+    """
+    if not sessions_dir.is_dir():
+        return None
+    parts: list[str] = []
+    try:
+        for entry in sorted(sessions_dir.iterdir()):
+            if entry.is_file() and entry.suffix == ".jsonl":
+                content = _read_file_or_none(entry)
+                if content:
+                    parts.append(content)
+    except OSError:
+        logger.warning("Could not read sessions directory %s", sessions_dir)
+        return None
+    return "\n".join(parts) if parts else None
+
+
+def _restore_archived_files(agent_dir: Path, archive: dict) -> None:
+    """Write archived memory/history/session files back to disk.
+
+    Args:
+        agent_dir: Path to the agent's local directory (e.g. ~/.nanobot/agents/{name}/).
+        archive: Dict with optional keys memory_content, history_content, session_data.
+    """
+    memory_dir = agent_dir / "memory"
+    sessions_dir = agent_dir / "sessions"
+
+    memory_content = archive.get("memory_content")
+    if memory_content:
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        (memory_dir / "MEMORY.md").write_text(memory_content, encoding="utf-8")
+
+    history_content = archive.get("history_content")
+    if history_content:
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        (memory_dir / "HISTORY.md").write_text(history_content, encoding="utf-8")
+
+    session_data = archive.get("session_data")
+    if session_data:
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        name = agent_dir.name
+        (sessions_dir / f"mc_task_{name}.jsonl").write_text(session_data, encoding="utf-8")
+
+
+def _cleanup_deleted_agents(bridge: "ConvexBridge", agents_dir: Path) -> None:
+    """Archive local data for soft-deleted agents, then remove their folders.
+
+    For each deleted agent that still has a local folder:
+    1. Read MEMORY.md, HISTORY.md, and session JSONL files.
+    2. Archive them to Convex (must succeed before deletion).
+    3. Delete the local folder.
+
+    Idempotent: if the local folder is already gone, no action is taken.
+    Fail-safe: if archiving fails for an agent, its local folder is NOT deleted.
+    """
+    try:
+        deleted_agents = bridge.list_deleted_agents()
+    except Exception:
+        logger.exception("Failed to list deleted agents for cleanup")
+        return
+
+    for agent_data in deleted_agents:
+        name = agent_data.get("name")
+        if not name:
+            continue
+        agent_dir = agents_dir / name
+        if not agent_dir.is_dir():
+            continue  # Already cleaned up — idempotent
+
+        memory = _read_file_or_none(agent_dir / "memory" / "MEMORY.md")
+        history = _read_file_or_none(agent_dir / "memory" / "HISTORY.md")
+        session = _read_session_data(agent_dir / "sessions")
+
+        if memory is None and history is None and session is None:
+            logger.info("No archive data for agent '%s' — skipping archive call, proceeding to cleanup", name)
+        else:
+            try:
+                bridge.archive_agent_data(name, memory, history, session)
+                logger.info("Archived agent data for '%s'", name)
+            except Exception:
+                logger.exception("Failed to archive agent '%s' — skipping cleanup", name)
+                continue  # Don't delete if archive failed
+
+        try:
+            shutil.rmtree(agent_dir)
+            logger.info("Removed local folder for deleted agent '%s'", name)
+        except OSError:
+            logger.exception("Failed to remove local folder for agent '%s' — will retry on next sync", name)
+
+
 def _write_back_convex_agents(bridge: ConvexBridge, agents_dir: Path) -> None:
     """Write-back Convex -> local for agents where Convex is newer.
 
@@ -164,6 +275,22 @@ def _write_back_convex_agents(bridge: ConvexBridge, agents_dir: Path) -> None:
                 logger.info("Write-back: created local config for agent '%s'", name)
             except Exception:
                 logger.exception("Write-back failed for new agent '%s'", name)
+                continue
+
+            # Restore archived memory/history/session data if present (restore flow).
+            # Clear the archive fields from Convex after a successful restore to free
+            # storage and prevent stale data from being re-archived on a second delete.
+            try:
+                archive = bridge.get_agent_archive(name)
+                if archive:
+                    _restore_archived_files(agents_dir / name, archive)
+                    logger.info("Restored archived data for agent '%s'", name)
+                    try:
+                        bridge.clear_agent_archive(name)
+                    except Exception:
+                        logger.exception("Failed to clear archive for agent '%s' — archive data remains in Convex", name)
+            except Exception:
+                logger.exception("Failed to restore archive for agent '%s'", name)
 
 
 def sync_agent_registry(
@@ -180,10 +307,13 @@ def sync_agent_registry(
     """
     resolved_default = default_model or _config_default_model()
 
-    # Step 0: Write-back — Convex → local for dashboard-edited agents
+    # Step 0a: Cleanup — archive and remove local folders for soft-deleted agents
+    _cleanup_deleted_agents(bridge, agents_dir)
+
+    # Step 0b: Write-back — Convex → local for dashboard-edited agents
     _write_back_convex_agents(bridge, agents_dir)
 
-    # Step 1: Validate agent config.yaml in each subdirectory
+    # Step 1: Validate agent YAML in each subdirectory
     valid_agents: list[AgentData] = []
     errors: dict[str, list[str]] = {}
 
@@ -430,12 +560,14 @@ class AgentGateway:
 
 
 async def run_gateway(bridge: ConvexBridge) -> None:
-    """Gateway main loop — starts orchestrator, executor, and timeout checker.
+    """Gateway main loop — starts orchestrator, executor, timeout checker, and cron service.
 
     Args:
         bridge: ConvexBridge instance used by all components.
     """
     from nanobot.mc.executor import TaskExecutor
+    from nanobot.cron.service import CronService
+    from nanobot.cron.types import CronJob
 
     logger.info("[gateway] Agent Gateway started")
 
@@ -444,11 +576,90 @@ async def run_gateway(bridge: ConvexBridge) -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop_event.set)
 
+    # Cron service — when a job fires, create a task in Convex (enters normal MC flow)
+    cron_store_path = Path.home() / ".nanobot" / "cron" / "jobs.json"
+    cron = CronService(cron_store_path)
+
+    async def _requeue_cron_task(b: "ConvexBridge", task_id: str, message: str) -> None:
+        """Re-queue an existing task for cron execution.
+
+        Injects the cron trigger message into the task's thread so the agent
+        sees it as a new user turn, then resets status to 'assigned' so the
+        executor picks it up again. Skips if the task is already active.
+        """
+        from nanobot.mc.types import AuthorType, MessageType
+
+        try:
+            task = await asyncio.to_thread(b.query, "tasks:getById", {"task_id": task_id})
+        except Exception:
+            logger.warning("[gateway] Could not fetch cron origin task %s — creating new task instead", task_id)
+            await asyncio.to_thread(b.mutation, "tasks:create", {"title": message})
+            return
+
+        if not task:
+            logger.warning("[gateway] Cron origin task %s not found — creating new task", task_id)
+            await asyncio.to_thread(b.mutation, "tasks:create", {"title": message})
+            return
+
+        current_status = task.get("status", "")
+        if current_status in ("in_progress", "assigned", "deleted"):
+            logger.info(
+                "[gateway] Cron origin task %s is '%s' — skipping re-queue",
+                task_id, current_status,
+            )
+            return
+
+        agent_name = task.get("assigned_agent") or "lead-agent"
+
+        # Inject cron trigger as a new user message so it appears in the thread
+        await asyncio.to_thread(
+            b.send_message,
+            task_id,
+            "Cron",
+            AuthorType.USER,
+            f"🔔 Cron triggered: {message}",
+            MessageType.USER_MESSAGE,
+        )
+
+        # Reset task to 'assigned' — the executor will pick it up and run the agent
+        await asyncio.to_thread(
+            b.update_task_status,
+            task_id,
+            "assigned",
+            agent_name,
+            f"Cron re-queued task to {agent_name}",
+        )
+        logger.info("[gateway] Cron re-queued task %s → assigned to %s", task_id, agent_name)
+
+    async def on_cron_job(job: CronJob) -> str | None:
+        """Re-queue the originating task (if linked) or create a new task when a cron job fires."""
+        logger.info("[gateway] Cron job '%s' fired", job.name)
+        try:
+            if job.payload.task_id:
+                # Re-queue the original task so history accumulates in one place
+                await _requeue_cron_task(bridge, job.payload.task_id, job.payload.message)
+            else:
+                # No linked task — create a new task (classic cron behavior)
+                await asyncio.to_thread(
+                    bridge.mutation,
+                    "tasks:create",
+                    {"title": job.payload.message},
+                )
+        except Exception:
+            logger.exception("[gateway] Failed to handle cron job '%s'", job.name)
+        return None
+
+    cron.on_job = on_cron_job
+    await cron.start()
+    cron_status = cron.status()
+    if cron_status["jobs"] > 0:
+        logger.info("[gateway] Cron service started with %d job(s)", cron_status["jobs"])
+
     orchestrator = TaskOrchestrator(bridge)
     routing_task = asyncio.create_task(orchestrator.start_routing_loop())
     review_task = asyncio.create_task(orchestrator.start_review_routing_loop())
 
-    executor = TaskExecutor(bridge)
+    executor = TaskExecutor(bridge, cron_service=cron)
     execution_task = asyncio.create_task(executor.start_execution_loop())
 
     timeout_checker = TimeoutChecker(bridge)
@@ -457,6 +668,8 @@ async def run_gateway(bridge: ConvexBridge) -> None:
     # Wait for shutdown signal
     await stop_event.wait()
     logger.info("[gateway] Agent Gateway stopping...")
+
+    cron.stop()
 
     # Cancel all loops gracefully
     routing_task.cancel()
