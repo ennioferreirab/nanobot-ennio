@@ -8,7 +8,7 @@ import { api } from "../convex/_generated/api";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Clock, ListChecks, Paperclip, RefreshCw, Trash2, User } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Clock, ListChecks, Paperclip, RefreshCw, Trash2, User } from "lucide-react";
 import { Doc } from "../convex/_generated/dataModel";
 import { STATUS_COLORS, TAG_COLORS, type TaskStatus } from "@/lib/constants";
 import { InlineRejection } from "./InlineRejection";
@@ -26,6 +26,7 @@ export function TaskCard({ task, onClick, tagColorMap }: TaskCardProps) {
   const [showRejection, setShowRejection] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [titleExpanded, setTitleExpanded] = useState(false);
 
   const colors = STATUS_COLORS[task.status as TaskStatus] ?? STATUS_COLORS.inbox;
   const showHitlButtons =
@@ -39,7 +40,7 @@ export function TaskCard({ task, onClick, tagColorMap }: TaskCardProps) {
       transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.3 }}
     >
       <Card
-        className={`p-3.5 rounded-[10px] border-l-[3px] cursor-pointer
+        className={`p-4 rounded-[10px] border-l-[3px] cursor-pointer
           hover:shadow-md transition-shadow ${colors.border}${isDragging ? " opacity-50 shadow-lg" : ""}${isManual ? " cursor-grab" : ""}`}
         onClick={onClick}
         role="article"
@@ -52,11 +53,22 @@ export function TaskCard({ task, onClick, tagColorMap }: TaskCardProps) {
         } : undefined}
         onDragEnd={isManual ? () => setIsDragging(false) : undefined}
       >
-        <div className="flex items-start justify-between">
-          <h3 className="text-sm font-semibold text-foreground">{task.title}</h3>
-          {isManual && (
-            <User className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
-          )}
+        <div className="flex items-start justify-between gap-2">
+          <h3 className={`text-sm font-semibold text-foreground min-w-0 ${titleExpanded ? "" : "line-clamp-2"}`}>
+            {task.title}
+          </h3>
+          <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
+            {isManual && <User className="h-3.5 w-3.5 text-muted-foreground" />}
+            <button
+              onClick={(e) => { e.stopPropagation(); setTitleExpanded((v) => !v); }}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              aria-label={titleExpanded ? "Collapse title" : "Expand title"}
+            >
+              {titleExpanded
+                ? <ChevronUp className="h-3.5 w-3.5" />
+                : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+          </div>
         </div>
         {task.description && (
           <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
@@ -123,9 +135,9 @@ export function TaskCard({ task, onClick, tagColorMap }: TaskCardProps) {
         )}
         <div className="flex items-center justify-between mt-2">
           {task.assignedAgent && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-              {task.assignedAgent}
+            <span className="flex items-center gap-1 text-xs text-muted-foreground min-w-0 overflow-hidden">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
+              <span className="truncate">{task.assignedAgent}</span>
             </span>
           )}
           {task.files && task.files.length > 0 && (

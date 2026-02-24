@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import * as motion from "motion/react-client";
 import { useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TaskCard } from "@/components/TaskCard";
@@ -141,11 +140,11 @@ export function KanbanColumn({
           </div>
         </motion.div>
       )}
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {tasks.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">No tasks</p>
         ) : (
-          <div className="flex flex-col gap-2 pr-2">
+          <div className="flex flex-col gap-2">
             {tasks.map((task) => (
               <TaskCard
                 key={task._id}
@@ -156,7 +155,7 @@ export function KanbanColumn({
             ))}
           </div>
         )}
-      </ScrollArea>
+      </div>
     </div>
   );
 }

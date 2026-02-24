@@ -9,7 +9,6 @@ import { KanbanColumn } from "./KanbanColumn";
 import { TrashBinSheet } from "./TrashBinSheet";
 import { DoneTasksSheet } from "./DoneTasksSheet";
 import { Trash2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { useBoard } from "@/components/BoardContext";
 
 const COLUMNS = [
@@ -62,16 +61,18 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
 
   const tasksByStatus = COLUMNS.map((col) => ({
     ...col,
-    tasks: tasks.filter((t) => {
-      if (col.status === "in_progress") {
-        return (
-          t.status === "in_progress" ||
-          t.status === "retrying" ||
-          t.status === "crashed"
-        );
-      }
-      return t.status === col.status;
-    }),
+    tasks: tasks
+      .filter((t) => {
+        if (col.status === "in_progress") {
+          return (
+            t.status === "in_progress" ||
+            t.status === "retrying" ||
+            t.status === "crashed"
+          );
+        }
+        return t.status === col.status;
+      })
+      .sort((a, b) => b._creationTime - a._creationTime),
   }));
 
   const doneCount = tasksByStatus.find((c) => c.status === "done")?.tasks.length ?? 0;
