@@ -61,10 +61,10 @@ export function AgentSidebar() {
   return (
     <>
     <Sidebar collapsible="icon">
-      <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex items-center gap-2 px-2 py-1">
+      <SidebarHeader className="border-b border-sidebar-border p-0">
+        <div className="flex h-[60px] items-center gap-2 px-4 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2">
           <Bot className="h-5 w-5 shrink-0 text-sidebar-foreground/70" />
-          <span className="truncate text-sm font-semibold text-sidebar-foreground">
+          <span className="truncate text-sm font-semibold text-sidebar-foreground group-data-[collapsible=icon]:hidden">
             Agents
           </span>
         </div>
