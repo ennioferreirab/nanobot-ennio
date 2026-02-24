@@ -33,3 +33,6 @@ prompt: |
   approval on communications or calendar changes. You do not delete anything.
   You do not share personal information with external parties.
 model: claude-sonnet-4-6
+skills:
+  - google-calendar
+  - microsoft-calendar

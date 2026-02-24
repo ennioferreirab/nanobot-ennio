@@ -404,7 +404,7 @@ describe("AgentConfigSheet", () => {
     );
   });
 
-  it("shows memory content and View button when fetch succeeds", async () => {
+  it("shows memory content and Edit button when fetch succeeds", async () => {
     vi.stubGlobal("fetch", vi.fn((url: string) =>
       Promise.resolve(
         url.includes("MEMORY.md")
@@ -419,8 +419,8 @@ describe("AgentConfigSheet", () => {
       expect(screen.getByText("Agent Memory Content")).toBeInTheDocument();
     });
 
-    // View button should appear for Memory
-    const viewButtons = screen.getAllByText("View");
-    expect(viewButtons.length).toBeGreaterThanOrEqual(1);
+    // Edit button should appear for Memory and History
+    const editButtons = screen.getAllByText("Edit");
+    expect(editButtons.length).toBeGreaterThanOrEqual(1);
   });
 });

@@ -77,6 +77,7 @@ def _parse_raw_job(j: dict) -> CronJob:
             deliver=raw_payload.get("deliver", False),
             channel=raw_payload.get("channel"),
             to=raw_payload.get("to"),
+            task_id=raw_payload.get("taskId"),
         )
     else:
         # Flat formats use "task" or "message" as the message text
@@ -195,6 +196,7 @@ class CronService:
                         "deliver": j.payload.deliver,
                         "channel": j.payload.channel,
                         "to": j.payload.to,
+                        "taskId": j.payload.task_id,
                     },
                     "state": {
                         "nextRunAtMs": j.state.next_run_at_ms,
@@ -210,14 +212,15 @@ class CronService:
             ]
         }
         
-        self.store_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp_path = self.store_path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp_path.replace(self.store_path)
     
     async def start(self) -> None:
         """Start the cron service."""
         self._running = True
         self._load_store()
         self._recompute_next_runs()
-        self._save_store()
         self._arm_timer()
         logger.info("Cron service started with {} jobs", len(self._store.jobs if self._store else []))
     
@@ -331,12 +334,13 @@ class CronService:
         channel: str | None = None,
         to: str | None = None,
         delete_after_run: bool = False,
+        task_id: str | None = None,
     ) -> CronJob:
         """Add a new job."""
         store = self._load_store()
         _validate_schedule_for_add(schedule)
         now = _now_ms()
-        
+
         job = CronJob(
             id=str(uuid.uuid4())[:8],
             name=name,
@@ -348,6 +352,7 @@ class CronService:
                 deliver=deliver,
                 channel=channel,
                 to=to,
+                task_id=task_id,
             ),
             state=CronJobState(next_run_at_ms=_compute_next_run(schedule, now)),
             created_at_ms=now,

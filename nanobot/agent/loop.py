@@ -103,6 +103,7 @@ class AgentLoop:
         self._consolidating: set[str] = set()  # Session keys with consolidation in progress
         self._consolidation_tasks: set[asyncio.Task] = set()  # Strong refs to in-flight tasks
         self._consolidation_locks: dict[str, asyncio.Lock] = {}
+        self._current_task_id: str | None = None
         self._register_default_tools()
 
     def _register_default_tools(self) -> None:
@@ -156,7 +157,7 @@ class AgentLoop:
 
         if cron_tool := self.tools.get("cron"):
             if isinstance(cron_tool, CronTool):
-                cron_tool.set_context(channel, chat_id)
+                cron_tool.set_context(channel, chat_id, task_id=self._current_task_id)
 
     @staticmethod
     def _strip_think(text: str | None) -> str | None:
@@ -478,8 +479,10 @@ class AgentLoop:
         channel: str = "cli",
         chat_id: str = "direct",
         on_progress: Callable[[str], Awaitable[None]] | None = None,
+        task_id: str | None = None,
     ) -> str:
         """Process a message directly (for CLI or cron usage)."""
+        self._current_task_id = task_id
         await self._connect_mcp()
         msg = InboundMessage(channel=channel, sender_id="user", chat_id=chat_id, content=content)
         response = await self._process_message(msg, session_key=session_key, on_progress=on_progress)

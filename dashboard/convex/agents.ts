@@ -29,6 +29,13 @@ export const upsertByName = mutation({
     const timestamp = new Date().toISOString();
 
     if (existing) {
+      // Defense-in-depth: skip upsert for soft-deleted agents.
+      // The YAML should have been cleaned up by sync; this guards against manual recreation.
+      if (existing.deletedAt) {
+        // Agent is soft-deleted; skip re-registration. Log for operator visibility.
+        console.warn(`[agents:upsertByName] Skipped upsert for deleted agent '${args.name}' — YAML should be cleaned up by sync.`);
+        return;
+      }
       const patch: Record<string, unknown> = {
         displayName: args.displayName,
         role: args.role,
@@ -37,7 +44,6 @@ export const upsertByName = mutation({
         skills: args.skills,
         model: args.model,
         lastActiveAt: timestamp,
-        deletedAt: undefined, // Clear soft-delete on re-registration
         // Preserve existing enabled value on update (don't reset on re-sync)
       };
       if (args.isSystem !== undefined) {
@@ -211,6 +217,125 @@ export const softDeleteAgent = mutation({
       eventType: "agent_deleted",
       description: `Agent '${agent.displayName}' deleted`,
       timestamp,
+    });
+  },
+});
+
+export const listDeleted = query({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db.query("agents").collect();
+    return all.filter((a) => !!a.deletedAt);
+  },
+});
+
+export const archiveAgentData = mutation({
+  args: {
+    agentName: v.string(),
+    memoryContent: v.optional(v.string()),
+    historyContent: v.optional(v.string()),
+    sessionData: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_name", (q) => q.eq("name", args.agentName))
+      .first();
+
+    if (!agent) {
+      throw new Error(`Agent '${args.agentName}' not found`);
+    }
+
+    if (!agent.deletedAt) {
+      throw new Error(`Agent '${args.agentName}' is not deleted — archive only applies to soft-deleted agents`);
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (args.memoryContent !== undefined) patch.memoryContent = args.memoryContent;
+    if (args.historyContent !== undefined) patch.historyContent = args.historyContent;
+    if (args.sessionData !== undefined) patch.sessionData = args.sessionData;
+
+    await ctx.db.patch(agent._id, patch);
+  },
+});
+
+export const restoreAgent = mutation({
+  args: {
+    agentName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_name", (q) => q.eq("name", args.agentName))
+      .first();
+
+    if (!agent) {
+      throw new Error(`Agent '${args.agentName}' not found`);
+    }
+
+    if (!agent.deletedAt) {
+      throw new Error(`Agent '${args.agentName}' is not deleted`);
+    }
+
+    const timestamp = new Date().toISOString();
+    // Only clear deletedAt — archive fields (memoryContent/historyContent/sessionData) are cleared
+    // by the Python write-back AFTER successfully restoring the files to disk.
+    await ctx.db.patch(agent._id, { deletedAt: undefined });
+
+    await ctx.db.insert("activities", {
+      agentName: args.agentName,
+      eventType: "agent_restored",
+      description: `Agent '${agent.displayName}' restored`,
+      timestamp,
+    });
+  },
+});
+
+export const getArchive = query({
+  args: {
+    agentName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_name", (q) => q.eq("name", args.agentName))
+      .first();
+
+    if (!agent) {
+      return null;
+    }
+
+    const hasArchive = agent.memoryContent != null || agent.historyContent != null || agent.sessionData != null;
+    if (!hasArchive) {
+      return null;
+    }
+
+    return {
+      memoryContent: agent.memoryContent ?? null,
+      historyContent: agent.historyContent ?? null,
+      sessionData: agent.sessionData ?? null,
+    };
+  },
+});
+
+export const clearAgentArchive = mutation({
+  args: {
+    agentName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_name", (q) => q.eq("name", args.agentName))
+      .first();
+
+    if (!agent) {
+      return; // Agent may have been deleted again; silently skip
+    }
+
+    await ctx.db.patch(agent._id, {
+      memoryContent: undefined,
+      historyContent: undefined,
+      sessionData: undefined,
     });
   },
 });

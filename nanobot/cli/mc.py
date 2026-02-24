@@ -96,7 +96,15 @@ def _kill_stale_processes() -> None:
 
     if killed:
         console.print(f"[dim]Cleaned up {len(killed)} stale process(es)[/dim]")
-        time.sleep(2)  # Let processes shut down
+        time.sleep(2)  # Give processes time to shut down gracefully
+        # Force-kill any processes that didn't respond to SIGTERM
+        for pid in killed:
+            try:
+                os.kill(pid, 0)  # Check if still alive
+                os.kill(pid, signal.SIGKILL)
+                console.print(f"[dim]Force-killed unresponsive process {pid}[/dim]")
+            except OSError:
+                pass  # Process already exited
 
 
 @mc_app.command()

@@ -287,8 +287,11 @@ class TaskExecutor:
             title, agent_name,
         )
 
-        # Execute the task
-        await self._execute_task(task_id, title, description, agent_name, trust_level, task_data)
+        # Execute the task — always clean up known IDs so re-queued tasks can be picked up again
+        try:
+            await self._execute_task(task_id, title, description, agent_name, trust_level, task_data)
+        finally:
+            self._known_assigned_ids.discard(task_id)
 
     def _resolve_board_workspace(self, board_name: str, agent_name: str) -> Path:
         """Resolve the board-scoped memory workspace for an agent.
@@ -425,6 +428,36 @@ class TaskExecutor:
         except Exception:
             logger.exception("[executor] Failed to crash task after provider error")
 
+    def _build_agent_roster(self) -> str:
+        """Build a markdown roster of all available agents from AGENTS_DIR.
+
+        Reads ~/.nanobot/agents/ and for each agent reads config.yaml to
+        extract name, display_name, role, and skills. Returns a formatted
+        string suitable for injection into the lead-agent context.
+        """
+        from nanobot.mc.gateway import AGENTS_DIR
+        from nanobot.mc.yaml_validator import validate_agent_file
+
+        lines: list[str] = ["## Available Agents\n"]
+        if not AGENTS_DIR.is_dir():
+            return ""
+        for agent_dir in sorted(AGENTS_DIR.iterdir()):
+            if not agent_dir.is_dir():
+                continue
+            name = agent_dir.name
+            config_path = agent_dir / "config.yaml"
+            if not config_path.exists():
+                continue
+            result = validate_agent_file(config_path)
+            if isinstance(result, list):
+                # Invalid config — skip
+                continue
+            skill_str = ", ".join(result.skills) if result.skills else "—"
+            line = f"- `{result.name}` ({result.display_name}) — {result.role}"
+            line += f"\n  Skills: {skill_str}"
+            lines.append(line)
+        return "\n".join(lines)
+
     def _maybe_inject_orientation(
         self, agent_name: str, agent_prompt: str | None
     ) -> str | None:
@@ -490,6 +523,12 @@ class TaskExecutor:
             for f in raw_files
         ]
 
+        output_dir = str(Path.home() / ".nanobot" / "tasks" / safe_id / "output")
+        task_instruction = (
+            f"Task workspace: {files_dir}\n"
+            f"Save ALL output files (reports, summaries, generated content) to: {output_dir}\n"
+            f"Do NOT save output files outside this directory."
+        )
         if file_manifest:
             def _human_size(b: int) -> str:
                 if b < 1024 * 1024:
@@ -500,11 +539,11 @@ class TaskExecutor:
                 f"{f['name']} ({f['subfolder']}, {_human_size(f['size'])})"
                 for f in file_manifest
             )
-            file_instruction = (
-                f"Task has {len(file_manifest)} attached file(s) at {files_dir}. "
-                f"Review the file manifest before starting work: {manifest_summary}"
+            task_instruction += (
+                f"\nTask has {len(file_manifest)} attached file(s) at {files_dir}/attachments. "
+                f"File manifest: {manifest_summary}"
             )
-            description = (description or "") + f"\n\n{file_instruction}"
+        description = (description or "") + f"\n\n{task_instruction}"
 
         # Inject thread context for multi-turn agent interaction
         try:
@@ -530,6 +569,15 @@ class TaskExecutor:
         agent_prompt, agent_model, agent_skills = self._load_agent_config(agent_name)
         # Inject global orientation for non-lead agents
         agent_prompt = self._maybe_inject_orientation(agent_name, agent_prompt)
+
+        # Inject agent roster into lead-agent context so it can discover all
+        # available agents without relying on list_dir (which only shows agents
+        # that have already run and have a board-scoped workspace).
+        if agent_name == "lead-agent":
+            roster = self._build_agent_roster()
+            if roster:
+                description = (description or "") + f"\n\n{roster}"
+                logger.info("[executor] Injected agent roster into lead-agent context")
 
         if agent_skills is not None:
             logger.info(

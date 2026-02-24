@@ -37,13 +37,18 @@ import { SYSTEM_AGENT_NAMES } from "@/lib/constants";
 
 export function AgentSidebar() {
   const agents = useQuery(api.agents.list);
+  const deletedAgents = useQuery(api.agents.listDeleted);
   const softDeleteAgent = useMutation(api.agents.softDeleteAgent);
+  const restoreAgent = useMutation(api.agents.restoreAgent);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [showCreateSheet, setShowCreateSheet] = useState(false);
   const [systemOpen, setSystemOpen] = useState(true);
+  const [deletedOpen, setDeletedOpen] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<{ name: string; displayName: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [agentToRestore, setAgentToRestore] = useState<{ name: string; displayName: string } | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const { regularAgents, systemAgents } = useMemo(() => {
     if (!agents) return { regularAgents: [], systemAgents: [] };
@@ -135,6 +140,32 @@ export function AgentSidebar() {
             </Collapsible>
           </SidebarGroup>
         )}
+
+        {/* Deleted agents */}
+        {deletedAgents && deletedAgents.length > 0 && (
+          <SidebarGroup>
+            <Collapsible open={deletedOpen} onOpenChange={setDeletedOpen}>
+              <CollapsibleTrigger asChild>
+                <SidebarGroupLabel className="cursor-pointer hover:text-sidebar-foreground/80">
+                  <Trash2 className="mr-1 h-3 w-3" />
+                  Deleted
+                  <ChevronDown className={`ml-auto h-3 w-3 transition-transform ${deletedOpen ? "" : "-rotate-90"}`} />
+                </SidebarGroupLabel>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarMenu>
+                  {deletedAgents.map((agent) => (
+                    <AgentSidebarItem
+                      key={agent._id}
+                      agent={agent}
+                      onRestore={() => setAgentToRestore({ name: agent.name, displayName: agent.displayName })}
+                    />
+                  ))}
+                </SidebarMenu>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border">
         <SidebarTrigger />
@@ -177,6 +208,37 @@ export function AgentSidebar() {
             }}
           >
             {isDeleting ? "Deleting…" : "Delete"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    <AlertDialog open={!!agentToRestore} onOpenChange={(open) => { if (!open) setAgentToRestore(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Restore agent?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Restore <strong>{agentToRestore?.displayName}</strong>? The agent will return to the registered list and its local files will be recreated on the next sync.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={isRestoring}
+            onClick={async () => {
+              if (agentToRestore && !isRestoring) {
+                setIsRestoring(true);
+                try {
+                  await restoreAgent({ agentName: agentToRestore.name });
+                  setAgentToRestore(null);
+                } catch {
+                  // Keep dialog open so user can retry
+                } finally {
+                  setIsRestoring(false);
+                }
+              }
+            }}
+          >
+            {isRestoring ? "Restoring…" : "Restore"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
