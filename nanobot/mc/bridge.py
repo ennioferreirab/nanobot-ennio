@@ -315,6 +315,55 @@ class ConvexBridge:
             {"task_id": task_id, "execution_plan": plan},
         )
 
+    def create_step(self, step_data: dict[str, Any]) -> str:
+        """Create a single step record in Convex.
+
+        Args:
+            step_data: Step payload using snake_case keys.
+
+        Returns:
+            Convex step _id.
+        """
+        result = self._mutation_with_retry("steps:create", step_data)
+        if not isinstance(result, str):
+            raise RuntimeError("steps:create did not return a step id")
+        return result
+
+    def batch_create_steps(
+        self,
+        task_id: str,
+        steps: list[dict[str, Any]],
+    ) -> list[str]:
+        """Create multiple step records atomically via Convex.
+
+        Args:
+            task_id: Parent task _id.
+            steps: Step payload list using snake_case keys.
+
+        Returns:
+            List of created step _id values in insertion order.
+        """
+        result = self._mutation_with_retry(
+            "steps:batchCreate",
+            {"task_id": task_id, "steps": steps},
+        )
+        if result is None:
+            return []
+        if not isinstance(result, list):
+            raise RuntimeError("steps:batchCreate did not return a list of step ids")
+        return [str(step_id) for step_id in result]
+
+    def kick_off_task(self, task_id: str, step_count: int) -> Any:
+        """Transition a task to the running state after materialization."""
+        result = self._mutation_with_retry(
+            "tasks:kickOff",
+            {"task_id": task_id, "step_count": step_count},
+        )
+        self._log_state_transition(
+            "task", f"Task {task_id} kicked off with {step_count} steps"
+        )
+        return result
+
     def sync_agent(self, agent_data: Any) -> Any:
         """Upsert an agent in Convex by name.
 
@@ -335,6 +384,8 @@ class ConvexBridge:
             args["prompt"] = agent_data.prompt
         if agent_data.soul:
             args["soul"] = agent_data.soul
+        if agent_data.is_system:
+            args["is_system"] = True
         return self.mutation("agents:upsertByName", args)
 
     def list_agents(self) -> list[dict[str, Any]]:

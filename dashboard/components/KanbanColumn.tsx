@@ -9,11 +9,19 @@ import { Button } from "@/components/ui/button";
 import { TaskCard } from "@/components/TaskCard";
 import { Doc, Id } from "../convex/_generated/dataModel";
 import { Eraser, List } from "lucide-react";
+import { StepCard } from "@/components/StepCard";
+import { TaskGroupHeader } from "@/components/TaskGroupHeader";
 
 interface KanbanColumnProps {
   title: string;
   status: string;
   tasks: Doc<"tasks">[];
+  stepGroups: {
+    taskId: Id<"tasks">;
+    taskTitle: string;
+    steps: Doc<"steps">[];
+  }[];
+  totalCount: number;
   accentColor: string;
   onTaskClick?: (taskId: Id<"tasks">) => void;
   hitlCount?: number;
@@ -27,6 +35,8 @@ export function KanbanColumn({
   title,
   status,
   tasks,
+  stepGroups,
+  totalCount,
   accentColor,
   onTaskClick,
   hitlCount = 0,
@@ -45,6 +55,8 @@ export function KanbanColumn({
     if (hitlCount > prevCountRef.current) {
       const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
       if (!motionQuery.matches) {
+        // This transient UI pulse is intentionally driven by an effect on count changes.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsPulsing(true);
         const timer = setTimeout(() => setIsPulsing(false), 600);
         return () => clearTimeout(timer);
@@ -83,7 +95,7 @@ export function KanbanColumn({
         <div className={`h-4 w-1 rounded-full ${accentColor}`} />
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
         <Badge variant="secondary" className="h-5 px-2 text-[10px]">
-          {tasks.length}
+          {totalCount}
         </Badge>
         {hitlCount > 0 && (
           <span
@@ -141,10 +153,31 @@ export function KanbanColumn({
         </motion.div>
       )}
       <div className="flex-1 overflow-y-auto overflow-x-hidden pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-        {tasks.length === 0 ? (
+        {tasks.length === 0 && stepGroups.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">No tasks</p>
         ) : (
           <div className="flex flex-col gap-2">
+            {stepGroups.map((group) => (
+              <div key={group.taskId} className="flex flex-col gap-1.5">
+                <TaskGroupHeader
+                  taskTitle={group.taskTitle}
+                  stepCount={group.steps.length}
+                  onClick={
+                    onTaskClick ? () => onTaskClick(group.taskId) : undefined
+                  }
+                />
+                {group.steps.map((step) => (
+                  <StepCard
+                    key={step._id}
+                    step={step}
+                    parentTaskTitle={group.taskTitle}
+                    onClick={
+                      onTaskClick ? () => onTaskClick(step.taskId) : undefined
+                    }
+                  />
+                ))}
+              </div>
+            ))}
             {tasks.map((task) => (
               <TaskCard
                 key={task._id}

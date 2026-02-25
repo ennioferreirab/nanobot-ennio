@@ -19,12 +19,13 @@ from nanobot.mc.types import (
     AgentData,
     ExecutionPlan,
     ExecutionPlanStep,
-    LEAD_AGENT_NAME,
+    GENERAL_AGENT_NAME,
+    is_lead_agent,
 )
 
 logger = logging.getLogger(__name__)
 
-LLM_TIMEOUT_SECONDS = 30
+LLM_TIMEOUT_SECONDS = 10
 
 STOPWORDS = {
     "a", "an", "the", "is", "are", "was", "were", "be", "been",
@@ -37,6 +38,7 @@ You are a task planning assistant for a multi-agent system. Your job is to:
 1. Decompose a task into one or more execution steps
 2. Assign each step to the most appropriate agent based on their skills
 3. Identify dependencies between steps (which steps must complete before others can start)
+4. Group independent steps into parallel groups
 
 You MUST respond with valid JSON only, no markdown, no explanation.
 
@@ -44,26 +46,36 @@ Response format:
 {
   "steps": [
     {
-      "step_id": "step_1",
-      "description": "Clear description of what this step does",
-      "assigned_agent": "agent-name",
-      "depends_on": []
+      "tempId": "step_1",
+      "title": "Short title for this step",
+      "description": "Detailed description of what this step does",
+      "assignedAgent": "agent-name",
+      "blockedBy": [],
+      "parallelGroup": 1,
+      "order": 1
     }
   ]
 }
 
 Rules:
-- step_id must be "step_1", "step_2", etc.
-- assigned_agent must be one of the agent names listed below, or "lead-agent" if no specialist fits
-- depends_on is a list of step_ids that must complete before this step can start
-- For simple tasks, a single step is fine
-- Only create multiple steps if the task genuinely has distinct phases"""
+- tempId must be "step_1", "step_2", etc.
+- assignedAgent must be one of the agent names listed below
+- If no specialist agent matches, assign "general-agent" as fallback
+- NEVER assign "lead-agent" to any step — lead-agent only plans, it never executes
+- blockedBy is a list of tempIds that must complete before this step can start
+- Steps with no blockers that can run simultaneously share the same parallelGroup number
+- Steps that depend on others get a higher parallelGroup number
+- order is display/execution order (1, 2, 3, ...)
+- For simple tasks, a single step is perfectly fine
+- Only create multiple steps if the task genuinely has distinct phases
+- title should be brief and action-oriented
+- description should explain what the agent needs to do in detail"""
 
 USER_PROMPT_TEMPLATE = """\
 Task: {title}
 Description: {description}
 
-Available agents:
+Available agents (name, role, skills for capability matching):
 {agent_roster}
 
 Create an execution plan for this task."""
@@ -128,8 +140,90 @@ def _build_agent_roster(agents: list[AgentData]) -> str:
         skills_str = ", ".join(agent.skills) if agent.skills else "general"
         lines.append(f"- {agent.name} (role: {agent.role}, skills: {skills_str})")
     if not lines:
-        lines.append("- lead-agent (role: coordinator, skills: general)")
+        lines.append("- general-agent (role: generalist executor, skills: general)")
     return "\n".join(lines)
+
+
+def _as_positive_int(value: object, default: int) -> int:
+    """Return a positive integer from a loose input value."""
+    try:
+        parsed = int(value)
+        return parsed if parsed > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_string_list(value: object) -> list[str]:
+    """Normalize scalar/list input into a list of non-empty strings."""
+    if isinstance(value, str):
+        return [value] if value else []
+    if not isinstance(value, list):
+        return []
+    normalized: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            normalized.append(text)
+    return normalized
+
+
+def _normalize_plan_dependencies_and_groups(steps: list[ExecutionPlanStep]) -> None:
+    """Validate blockedBy references and normalize parallel groups."""
+    step_by_id = {step.temp_id: step for step in steps}
+    valid_ids = set(step_by_id.keys())
+
+    # Keep only valid, non-self dependencies.
+    for step in steps:
+        invalid = [
+            dep for dep in step.blocked_by
+            if dep not in valid_ids or dep == step.temp_id
+        ]
+        if invalid:
+            logger.warning(
+                "[planner] Step '%s' had invalid blockedBy refs %s; dropping them",
+                step.temp_id,
+                invalid,
+            )
+        step.blocked_by = [
+            dep for dep in step.blocked_by
+            if dep in valid_ids and dep != step.temp_id
+        ]
+
+    # All independent steps share the same group number.
+    independent_steps = [step for step in steps if not step.blocked_by]
+    independent_group = 1
+    if independent_steps:
+        independent_group = min(
+            _as_positive_int(step.parallel_group, 1) for step in independent_steps
+        )
+
+    for step in independent_steps:
+        step.parallel_group = independent_group
+
+    # Ensure dependent steps are always in a later group than dependencies.
+    for _ in range(len(steps)):
+        changed = False
+        for step in steps:
+            current = _as_positive_int(step.parallel_group, independent_group)
+            if not step.blocked_by:
+                if current != independent_group:
+                    step.parallel_group = independent_group
+                    changed = True
+                continue
+
+            dep_groups = [
+                _as_positive_int(step_by_id[dep].parallel_group, independent_group)
+                for dep in step.blocked_by
+                if dep in step_by_id
+            ]
+            required_group = (max(dep_groups) + 1) if dep_groups else independent_group + 1
+            if current < required_group:
+                step.parallel_group = required_group
+                changed = True
+            else:
+                step.parallel_group = current
+        if not changed:
+            break
 
 
 def _parse_plan_response(raw: str) -> ExecutionPlan:
@@ -145,14 +239,43 @@ def _parse_plan_response(raw: str) -> ExecutionPlan:
     if "steps" not in data or not data["steps"]:
         raise ValueError("LLM response missing 'steps' key or empty steps")
 
-    steps = []
-    for s in data["steps"]:
+    steps: list[ExecutionPlanStep] = []
+    for index, s in enumerate(data["steps"], start=1):
+        temp_id = (
+            s.get("temp_id")
+            or s.get("tempId")
+            or s.get("step_id")
+            or s.get("stepId")
+            or f"step_{index}"
+        )
+        title = s.get("title") or s.get("description") or f"Step {index}"
+        description = s.get("description") or title
+        assigned_agent = (
+            s.get("assigned_agent")
+            or s.get("assignedAgent")
+            or GENERAL_AGENT_NAME
+        )
+        blocked_by = _as_string_list(
+            s.get("blocked_by")
+            or s.get("blockedBy")
+            or s.get("depends_on")
+            or s.get("dependsOn")
+        )
+
         steps.append(ExecutionPlanStep(
-            step_id=s.get("step_id", f"step_{len(steps) + 1}"),
-            description=s.get("description", ""),
-            assigned_agent=s.get("assigned_agent"),
-            depends_on=s.get("depends_on", []),
+            temp_id=str(temp_id),
+            title=str(title),
+            description=str(description),
+            assigned_agent=str(assigned_agent),
+            blocked_by=blocked_by,
+            parallel_group=_as_positive_int(
+                s.get("parallel_group", s.get("parallelGroup")),
+                1,
+            ),
+            order=_as_positive_int(s.get("order"), index),
         ))
+
+    _normalize_plan_dependencies_and_groups(steps)
 
     return ExecutionPlan(steps=steps)
 
@@ -175,17 +298,21 @@ class TaskPlanner:
         """
         try:
             plan = await self._llm_plan(title, description, agents, files=files)
-            self._validate_agent_names(plan, agents)
             if explicit_agent:
                 self._override_agents(plan, explicit_agent)
+            self._validate_agent_names(plan, agents)
+            self._prevent_lead_agent_steps(plan, agents)
             return plan
         except Exception as exc:
             logger.warning(
                 "[planner] LLM planning failed, using heuristic fallback: %s", exc
             )
-            return self._fallback_heuristic_plan(
+            plan = self._fallback_heuristic_plan(
                 title, description, agents, explicit_agent
             )
+            self._validate_agent_names(plan, agents)
+            self._prevent_lead_agent_steps(plan, agents)
+            return plan
 
     async def _llm_plan(
         self,
@@ -227,21 +354,57 @@ class TaskPlanner:
     def _validate_agent_names(
         self, plan: ExecutionPlan, agents: list[AgentData]
     ) -> None:
-        """Replace invalid agent names with lead-agent."""
-        valid_names = {a.name for a in agents} | {LEAD_AGENT_NAME}
+        """Replace invalid/disallowed agent names with general-agent."""
+        fallback_agent = self._fallback_agent_name(agents)
+        valid_names = {a.name for a in agents} | {GENERAL_AGENT_NAME}
         for step in plan.steps:
-            if not step.assigned_agent or step.assigned_agent not in valid_names:
+            if (
+                not step.assigned_agent
+                or step.assigned_agent not in valid_names
+                or is_lead_agent(step.assigned_agent)
+            ):
                 if step.assigned_agent:
                     logger.warning(
-                        "[planner] Invalid agent '%s', replacing with lead-agent",
+                        "[planner] Invalid/disallowed agent '%s' on step '%s', "
+                        "replacing with '%s'",
                         step.assigned_agent,
+                        step.temp_id,
+                        fallback_agent,
                     )
-                step.assigned_agent = LEAD_AGENT_NAME
+                step.assigned_agent = fallback_agent
 
     def _override_agents(self, plan: ExecutionPlan, agent_name: str) -> None:
         """Override all step assignments with an explicit agent."""
+        assigned_name = (
+            GENERAL_AGENT_NAME if is_lead_agent(agent_name) else agent_name
+        )
+        if assigned_name != agent_name:
+            logger.warning(
+                "[planner] Explicit lead-agent override replaced with '%s' "
+                "(pure orchestrator invariant)",
+                assigned_name,
+            )
         for step in plan.steps:
-            step.assigned_agent = agent_name
+            step.assigned_agent = assigned_name
+
+    def _fallback_agent_name(self, agents: list[AgentData]) -> str:
+        """Choose a non-lead fallback agent name."""
+        return GENERAL_AGENT_NAME
+
+    def _prevent_lead_agent_steps(
+        self, plan: ExecutionPlan, agents: list[AgentData]
+    ) -> None:
+        """Final enforcement pass: lead-agent can never be a step executor."""
+        fallback_agent = self._fallback_agent_name(agents)
+        for step in plan.steps:
+            if is_lead_agent(step.assigned_agent):
+                logger.warning(
+                    "[planner] Step '%s' assigned to lead-agent; replacing with "
+                    "'%s' (pure orchestrator invariant)",
+                    step.temp_id,
+                    fallback_agent,
+                )
+                step.assigned_agent = fallback_agent
 
     def _fallback_heuristic_plan(
         self,
@@ -251,29 +414,38 @@ class TaskPlanner:
         explicit_agent: str | None,
     ) -> ExecutionPlan:
         """Heuristic fallback using keyword-based score_agent logic."""
-        if explicit_agent:
-            return ExecutionPlan(steps=[
-                ExecutionPlanStep(
-                    step_id="step_1",
-                    description=title,
-                    assigned_agent=explicit_agent,
-                )
-            ])
+        clean_title = title.strip() or "Untitled task"
+        clean_description = (description or "").strip() or clean_title
 
-        keywords = extract_keywords(title, description)
-        scored = [(agent, score_agent(agent, keywords)) for agent in agents]
-        scored.sort(key=lambda x: x[1], reverse=True)
+        if explicit_agent and not is_lead_agent(explicit_agent):
+            assigned_agent = explicit_agent
+        elif explicit_agent and is_lead_agent(explicit_agent):
+            assigned_agent = GENERAL_AGENT_NAME
+        else:
+            keywords = extract_keywords(clean_title, clean_description)
+            scored = [
+                (agent, score_agent(agent, keywords))
+                for agent in agents
+                if not is_lead_agent(agent.name)
+            ]
+            scored.sort(key=lambda x: x[1], reverse=True)
 
-        assigned = (
-            scored[0][0].name
-            if scored and scored[0][1] > 0
-            else LEAD_AGENT_NAME
-        )
+            assigned_agent = (
+                scored[0][0].name
+                if scored and scored[0][1] > 0
+                else GENERAL_AGENT_NAME
+            )
+
+        if is_lead_agent(assigned_agent):
+            assigned_agent = GENERAL_AGENT_NAME
 
         return ExecutionPlan(steps=[
             ExecutionPlanStep(
-                step_id="step_1",
-                description=title,
-                assigned_agent=assigned,
+                temp_id="step_1",
+                title=clean_title,
+                description=clean_description,
+                assigned_agent=assigned_agent,
+                parallel_group=1,
+                order=1,
             )
         ])

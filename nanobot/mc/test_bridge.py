@@ -646,6 +646,79 @@ class TestConvenienceMethods:
         assert "timestamp" in call_args[1]
 
     @patch("nanobot.mc.bridge.ConvexClient")
+    def test_create_step(self, MockClient):
+        mock_client = MockClient.return_value
+        mock_client.mutation.return_value = "step-123"
+
+        bridge = ConvexBridge("https://test.convex.cloud")
+        step_id = bridge.create_step({
+            "task_id": "task-123",
+            "title": "Run checks",
+            "description": "Run validation checks",
+            "assigned_agent": "general-agent",
+            "blocked_by": [],
+            "parallel_group": 1,
+            "order": 1,
+        })
+
+        assert step_id == "step-123"
+        call_args = mock_client.mutation.call_args[0]
+        assert call_args[0] == "steps:create"
+        assert call_args[1]["taskId"] == "task-123"
+        assert call_args[1]["assignedAgent"] == "general-agent"
+        assert call_args[1]["parallelGroup"] == 1
+
+    @patch("nanobot.mc.bridge.ConvexClient")
+    def test_batch_create_steps(self, MockClient):
+        mock_client = MockClient.return_value
+        mock_client.mutation.return_value = ["step-1", "step-2"]
+
+        bridge = ConvexBridge("https://test.convex.cloud")
+        step_ids = bridge.batch_create_steps(
+            "task-123",
+            [
+                {
+                    "temp_id": "step_1",
+                    "title": "First step",
+                    "description": "Do first step",
+                    "assigned_agent": "general-agent",
+                    "blocked_by_temp_ids": [],
+                    "parallel_group": 1,
+                    "order": 1,
+                },
+                {
+                    "temp_id": "step_2",
+                    "title": "Second step",
+                    "description": "Do second step",
+                    "assigned_agent": "general-agent",
+                    "blocked_by_temp_ids": ["step_1"],
+                    "parallel_group": 2,
+                    "order": 2,
+                },
+            ],
+        )
+
+        assert step_ids == ["step-1", "step-2"]
+        call_args = mock_client.mutation.call_args[0]
+        assert call_args[0] == "steps:batchCreate"
+        assert call_args[1]["taskId"] == "task-123"
+        assert call_args[1]["steps"][0]["tempId"] == "step_1"
+        assert call_args[1]["steps"][1]["blockedByTempIds"] == ["step_1"]
+
+    @patch("nanobot.mc.bridge.ConvexClient")
+    def test_kick_off_task(self, MockClient):
+        mock_client = MockClient.return_value
+        mock_client.mutation.return_value = None
+
+        bridge = ConvexBridge("https://test.convex.cloud")
+        bridge.kick_off_task("task-123", 3)
+
+        call_args = mock_client.mutation.call_args[0]
+        assert call_args[0] == "tasks:kickOff"
+        assert call_args[1]["taskId"] == "task-123"
+        assert call_args[1]["stepCount"] == 3
+
+    @patch("nanobot.mc.bridge.ConvexClient")
     def test_create_activity_optional_fields(self, MockClient):
         """Activity without task_id and agent_name omits those fields."""
         mock_client = MockClient.return_value

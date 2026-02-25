@@ -1,5 +1,7 @@
 // Task status values
 export const TASK_STATUS = {
+  PLANNING: "planning",
+  FAILED: "failed",
   INBOX: "inbox",
   ASSIGNED: "assigned",
   IN_PROGRESS: "in_progress",
@@ -8,6 +10,16 @@ export const TASK_STATUS = {
   RETRYING: "retrying",
   CRASHED: "crashed",
   DELETED: "deleted",
+} as const;
+
+// Step status values
+export const STEP_STATUS = {
+  PLANNED: "planned",
+  ASSIGNED: "assigned",
+  RUNNING: "running",
+  COMPLETED: "completed",
+  CRASHED: "crashed",
+  BLOCKED: "blocked",
 } as const;
 
 // Trust level values
@@ -27,6 +39,8 @@ export const AGENT_STATUS = {
 // Activity event type values
 export const ACTIVITY_EVENT_TYPE = {
   TASK_CREATED: "task_created",
+  TASK_PLANNING: "task_planning",
+  TASK_FAILED: "task_failed",
   TASK_ASSIGNED: "task_assigned",
   TASK_STARTED: "task_started",
   TASK_COMPLETED: "task_completed",
@@ -72,10 +86,11 @@ export const AUTHOR_TYPE = {
 } as const;
 
 // System agent names (agents that cannot be disabled, excluded from task routing)
-export const SYSTEM_AGENT_NAMES = new Set(["lead-agent", "mc-agent"]);
+export const SYSTEM_AGENT_NAMES = new Set(["lead-agent", "mc-agent", "general-agent"]);
 
 // Derived TypeScript types for use in function signatures and component props
 export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
+export type StepStatus = (typeof STEP_STATUS)[keyof typeof STEP_STATUS];
 export type TrustLevel = (typeof TRUST_LEVEL)[keyof typeof TRUST_LEVEL];
 export type AgentStatus = (typeof AGENT_STATUS)[keyof typeof AGENT_STATUS];
 export type ActivityEventType =
@@ -88,6 +103,16 @@ export const STATUS_COLORS: Record<
   TaskStatus,
   { border: string; bg: string; text: string }
 > = {
+  planning: {
+    border: "border-l-indigo-500",
+    bg: "bg-indigo-100 dark:bg-indigo-950",
+    text: "text-indigo-700 dark:text-indigo-300",
+  },
+  failed: {
+    border: "border-l-rose-500",
+    bg: "bg-rose-100 dark:bg-rose-950",
+    text: "text-rose-700 dark:text-rose-300",
+  },
   inbox: {
     border: "border-l-violet-500",
     bg: "bg-violet-100 dark:bg-violet-950",
@@ -127,6 +152,43 @@ export const STATUS_COLORS: Record<
     border: "border-l-gray-400",
     bg: "bg-gray-100 dark:bg-gray-900",
     text: "text-gray-500 dark:text-gray-400",
+  },
+};
+
+// Step status color mapping for Kanban board
+export const STEP_STATUS_COLORS: Record<
+  StepStatus,
+  { border: string; bg: string; text: string }
+> = {
+  planned: {
+    border: "border-l-slate-400",
+    bg: "bg-slate-100 dark:bg-slate-900",
+    text: "text-slate-600 dark:text-slate-400",
+  },
+  assigned: {
+    border: "border-l-cyan-500",
+    bg: "bg-cyan-100 dark:bg-cyan-950",
+    text: "text-cyan-700 dark:text-cyan-300",
+  },
+  running: {
+    border: "border-l-blue-500",
+    bg: "bg-blue-100 dark:bg-blue-950",
+    text: "text-blue-700 dark:text-blue-300",
+  },
+  completed: {
+    border: "border-l-green-500",
+    bg: "bg-green-100 dark:bg-green-950",
+    text: "text-green-700 dark:text-green-300",
+  },
+  crashed: {
+    border: "border-l-red-500",
+    bg: "bg-red-100 dark:bg-red-950",
+    text: "text-red-700 dark:text-red-300",
+  },
+  blocked: {
+    border: "border-l-amber-500",
+    bg: "bg-amber-100 dark:bg-amber-950",
+    text: "text-amber-700 dark:text-amber-300",
   },
 };
 

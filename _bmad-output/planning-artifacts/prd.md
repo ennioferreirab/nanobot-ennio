@@ -14,513 +14,380 @@ stepsCompleted:
   - step-10-nonfunctional
   - step-11-polish
 classification:
-  projectType: Orchestration Platform (Web App + Developer Tool + Workflow Engine)
+  projectType: Orchestration Platform (Web App + Workflow Engine)
   domain: AI Agent DevOps
   complexity: medium-high
   projectContext: brownfield
 inputDocuments:
-  - README.md
-  - workspace/AGENTS.md
-  - workspace/SOUL.md
-  - workspace/TOOLS.md
-  - workspace/USER.md
-  - workspace/HEARTBEAT.md
-  - nanobot/agent/loop.py
-  - nanobot/agent/subagent.py
-  - nanobot/agent/context.py
+  - _bmad-output/planning-artifacts/prd-backup-2026-02-24.md
+  - _bmad-output/planning-artifacts/architecture.md
+  - _bmad-output/planning-artifacts/epics.md
+  - _bmad-output/implementation-artifacts/4-1-implement-lead-agent-capability-matching.md
+  - _bmad-output/implementation-artifacts/4-2-implement-execution-planning.md
+  - _bmad-output/implementation-artifacts/4-3-build-execution-plan-visualization.md
+  - _bmad-output/implementation-artifacts/4-4-add-agent-assignment-to-task-input.md
+  - _bmad-output/implementation-artifacts/4-5-llm-based-lead-agent-planning.md
+  - _bmad-output/implementation-artifacts/5-2-implement-inter-agent-messaging.md
+  - _bmad-output/implementation-artifacts/9-13-lead-agent-file-aware-routing.md
+  - _bmad-output/implementation-artifacts/8-9-agent-memory-history-viewer.md
   - nanobot/agent/memory.py
-  - nanobot/agent/skills.py
-  - nanobot/agent/tools/spawn.py
-  - nanobot/bus/queue.py
-  - nanobot/bus/events.py
-  - nanobot/config/schema.py
-  - nanobot/heartbeat/service.py
+  - nanobot/mc/executor.py
+  - nanobot/skills/memory/SKILL.md
 workflowType: 'prd'
 documentCounts:
   briefs: 0
   research: 0
   brainstorming: 0
-  projectDocs: 16
+  projectDocs: 14
 ---
 
 # Product Requirements Document - nanobot-ennio
 
 **Author:** Ennio
-**Date:** 2026-02-22
+**Date:** 2026-02-24
 
 ## Executive Summary
 
-nanobot Mission Control is a multi-agent orchestration platform that brings coordinated AI agent workflows to the nanobot ecosystem. Built on nanobot's ultra-lightweight foundation (~3,862 lines of core agent code), it enables users to deploy, coordinate, and supervise teams of specialized AI agents through a real-time web dashboard — delivering the same multi-agent power that community projects built for OpenClaw (430k+ lines), but with full code readability and minimal complexity.
+nanobot-ennio's Lead Agent evolves from a hybrid planner/executor into a **pure orchestrator** — a project manager that plans, delegates, and coordinates multi-agent work but never executes tasks itself. The system introduces a **Task/Step hierarchy** where a Task represents the user's goal and Steps (etapas) are the units of work assigned to specialist agents, displayed as cards on the Kanban board. All agents working on a Task share a **unified thread** — the single communication channel where agents post structured completion messages containing file paths, diffs for modified files, and descriptions for created files, giving dependent agents the context they need to continue.
 
-The platform bridges nanobot's existing AsyncIO-based agent infrastructure with a Convex real-time backend and a Next.js + ShadCN UI dashboard, providing a visual Kanban board for task management, WebSocket-streamed agent activity, configurable inter-agent collaboration and review workflows, and human-in-the-loop approval gates for critical decisions.
-
-Target users are nanobot operators who need to orchestrate multiple specialized agents — researchers, writers, analysts, developers — working on complex tasks that benefit from parallel execution, peer review, and human oversight.
+The user controls how much oversight they want. In **autonomous mode**, the Lead Agent creates an execution plan and dispatches immediately. In **supervised (hybrid) mode**, the Lead Agent presents the plan in a pre-kickoff modal where the user can reassign agents, reorder steps, change blocking dependencies, attach documents to specific steps, and negotiate the plan with the Lead Agent via thread chat — before anything executes. The **General Agent** is a system-level fallback that handles any work not matching a specialist, ensuring the Lead Agent never needs to self-execute.
 
 ### What Makes This Special
 
-**Readable orchestration.** Every line of coordination code is understandable. Where OpenClaw Mission Control projects sit on top of a 430k-line codebase, nanobot Mission Control extends a system you can read end-to-end in an afternoon. No black boxes, no hidden complexity.
-
-**Configurable trust.** Each task can be configured with its own trust level — from fully autonomous execution to mandatory human approval, with inter-agent review in between. Users decide per-task whether agents run free, review each other's work, or pause for human sign-off.
-
-**First-mover in nanobot's ecosystem.** While OpenClaw has 5+ community-built dashboards, nanobot has zero multi-agent orchestration options. This fills a critical gap as nanobot adoption grows.
-
-**Minimal tax.** The orchestration layer follows nanobot's philosophy: deliver maximum capability with minimum code. No bloated abstractions — just the primitives needed to coordinate agents effectively.
+The pre-kickoff planning workspace is the differentiator. No other agent orchestration tool lets you see the full execution plan — agents, steps, dependencies, timeline — and then sit down with the AI planner to shape it collaboratively before kick-off, while also offering the option to let it run fully autonomous. It's collaborative project management with AI: the user is the PM, the Lead Agent is the planning partner, and the specialist agents are the team.
 
 ## Project Classification
 
-- **Project Type:** Orchestration Platform (Web App + Developer Tool + Workflow Engine)
-- **Domain:** AI Agent DevOps (multi-agent coordination & operations)
-- **Complexity:** Medium-High — real-time state sync, inter-agent messaging, workflow state machines, HITL approval flows, dual-system bridging (AsyncIO ↔ Convex)
-- **Project Context:** Brownfield — extending the existing nanobot framework
-- **Tech Stack:** Next.js + Convex + ShadCN UI (dashboard), Python/AsyncIO (nanobot backend)
+- **Project Type:** Orchestration Platform (Web App + Workflow Engine)
+- **Domain:** AI Agent DevOps
+- **Complexity:** Medium-High — multi-agent coordination with dependency management, unified thread context, dual supervision modes, and real-time plan visualization
+- **Project Context:** Brownfield — extends the existing nanobot-ennio platform. The Lead Agent (planner.py, orchestrator.py), execution plan visualization (ExecutionPlanTab), inter-agent messaging, and file-aware routing already exist and will be refactored to support the new pure-orchestrator model.
 
 ## Success Criteria
 
 ### User Success
 
-- User creates a task, assigns agents, and watches them work on the Kanban board in real-time — no page refresh, no manual intervention needed
-- Agents move from "Assigned" to "In Progress" within seconds of task creation
-- When a task is configured with "needs review," the assigned agent pauses and the reviewing agent provides feedback — visible on the dashboard as a threaded discussion
-- Human-in-the-loop approval gates work reliably: agent pauses, dashboard shows approval request, user clicks approve/deny, agent resumes or stops
-- All four "wow" elements work simultaneously: real-time Kanban, HITL gates, inter-agent review, WebSocket streaming
-- The "aha!" moment: user sees 3 agents collaborating on tasks autonomously while one reviews another's work — without touching anything after initial setup
+- User submits a goal and receives a structured execution plan showing steps, assigned agents, dependencies, and parallel groups — within seconds
+- In hybrid mode, the user opens the pre-kickoff modal and can reassign agents, reorder steps, toggle blocking dependencies, attach documents to specific steps, and chat with the Lead Agent to negotiate changes — all before anything executes
+- In autonomous mode, the plan dispatches immediately without user intervention
+- The user watches agents collaborate in the unified thread — each agent posts structured completion messages with file paths, diffs for modified files, and descriptions for created files
+- Dependent agents pick up seamlessly — the thread gives them full context of what previous agents did
+- The final output arrives without the user needing to micromanage intermediate steps
 
 ### Business Success
 
-- **3-month target:** Ennio uses Mission Control daily for real work, not just demos
-- **6-month target:** Shipped as a separate open-source project with documentation good enough for the nanobot community to self-onboard
-- **12-month target:** Community adoption — other nanobot users running their own Mission Control instances, contributing improvements
-- Positioning as the reference Mission Control implementation for the nanobot ecosystem
+- Single-user productivity tool — success is measured by the user's confidence in delegating complex, multi-step work to agents without babysitting
+- The Lead Agent reduces the user's cognitive load: describe the goal once, review the plan (or don't), get the result
+- Agents become a reliable team, not a collection of isolated tools
 
 ### Technical Success
 
-- Dashboard updates are real-time via Convex reactive queries — zero polling, zero page refresh
-- Agent task pickup latency < 5 seconds from assignment to "In Progress"
-- System runs reliably unattended — no crashes, no stuck agents, no orphaned tasks
-- Inter-agent messaging is reliable — messages are delivered, never lost
-- Orchestration layer maintains nanobot's code readability philosophy — clean, minimal, understandable
+- Lead Agent never executes tasks — pure orchestrator invariant, no exceptions
+- General Agent is always present as a system agent — planning never fails due to missing fallback
+- Parallel steps run in truly parallel Python subprocesses — no serialization, no agent contention
+- Thread messages follow structured format: file paths + diffs (modified) + file descriptions (created)
+- Step completion triggers automatic unblocking of dependent steps
+- Planning failures surface as backend errors on the task — no silent failures
+- Agent completion messages are posted to the unified task thread, not per-step threads
 
 ### Measurable Outcomes
 
-- 3 agents running simultaneously without degradation
-- 4+ tasks on the Kanban board managed concurrently
-- Agent configuration via YAML files dropped into a folder — zero code required to add a new agent persona
-- Single command startup: `nanobot mc start`
+- Lead Agent produces a valid execution plan for 100% of submitted tasks (single-step or multi-step)
+- Plan generation completes in < 10 seconds
+- Step-to-step context handoff via thread is sufficient for the dependent agent to continue without asking for clarification
+- Pre-kickoff modal renders the full plan with editable fields within 2 seconds of opening
+- Agent structured completion messages contain all file paths and diffs — no missing context
 
 ## User Journeys
 
-### Journey 1: Ennio's Morning — The Daily Command Center
+### Journey 1: The Autonomous Delegator
 
-**Opening Scene:** It's 7:30 AM. Ennio opens his laptop and navigates to the Mission Control dashboard. Three agents are already listed on the sidebar: Financeiro (financial), Secretário (secretary), and Pesquisador (researcher). The Kanban board shows yesterday's completed tasks and two new items that agents picked up overnight via heartbeat.
+**Ennio, founder and solo operator, has a complex goal but no time to micromanage.**
 
-**Rising Action:** Ennio sees a notification badge: Secretário has already connected to Gmail and Google Calendar, scanned the inbox, and prepared a daily briefing. The task "Daily Plan - Feb 23" is in the **Review** column — waiting for Ennio's approval. He clicks it and sees:
+It's Monday morning. Ennio needs a financial report compiled from February invoices, cross-referenced with his bank statements, formatted as a PDF, and sent to his accountant. He opens the dashboard, types: "Compile February financial report from invoices and bank statements, generate PDF summary, email to accountant."
 
-> "Bom dia, Ennio. Hoje você tem 3 reuniões: 10h standup, 14h client call, 16h code review. Há 4 emails que precisam de resposta — 2 urgentes. Sugiro começar pelos emails urgentes antes da standup. Bloco de foco disponível das 11h às 13h30."
+He hits Create. The Lead Agent picks it up instantly — within seconds, the Kanban board shows a plan: Step 1 (financial agent: extract invoice data), Step 2 (financial agent: reconcile with bank statements), Step 3 (general agent: generate PDF report), Step 4 (secretary agent: email to accountant). Steps 1 and 2 run in parallel. Step 3 blocks on both. Step 4 blocks on Step 3.
 
-Ennio approves the plan with one click. The task moves to **Done**.
+Ennio glances at the plan, sees it makes sense, and moves on to other work. Over the next few minutes, cards move across the board. The unified thread fills with structured completion messages — the financial agent posts: "Created `/output/invoice-summary.csv` (47 line items extracted)" and "Modified `/output/reconciliation.xlsx` — diff: +12 matched transactions, 3 flagged discrepancies." The general agent picks up, sees the thread context, generates the PDF. The secretary agent sends the email.
 
-Meanwhile, Financeiro has a task in **In Progress**: "Verificar boletos vencendo esta semana." Ennio watches the activity feed as the agent scans his financial data and surfaces 2 boletos due in 3 days, total R$1,847.00.
+Ennio comes back 15 minutes later. The task is done. He opens the thread, skims the conversation, downloads the PDF. No micromanagement needed.
 
-**Climax:** Ennio types a new task in the dashboard: "Research the latest trends in AI agent orchestration for a blog post." He doesn't assign a specific agent. The **Lead Agent** receives it, analyzes the task description, searches the available agents, and routes it to Pesquisador — who starts scanning YouTube channels, blog feeds, and LinkedIn posts. Ennio watches the task move from **Inbox → Assigned → In Progress** in seconds.
+**Requirements revealed:** Autonomous plan dispatch, parallel step execution, structured completion messages in thread, end-to-end goal completion without user intervention, file output tracking.
 
-**Resolution:** By 9 AM, Ennio has his day planned, knows his financial obligations, and has a research task running in background. He didn't write a single prompt — just approved one plan and created one task. The dashboard shows 3 agents active, 5 tasks across the board. He closes the laptop and starts his day with clarity.
+### Journey 2: The Collaborative Planner
 
-### Journey 2: The Lead Agent Delegates — Intelligent Routing
+**Ennio has a nuanced goal that needs his input before execution.**
 
-**Opening Scene:** A new task arrives: "Agendar pagamento do boleto da internet para amanhã." No agent is specified. The Lead Agent picks it up from **Inbox**.
+Ennio wants to restructure his agent workspace — reorganize config files, update prompts, and test each agent afterward. This is sensitive work. He types the goal and selects "Supervised" mode.
 
-**Rising Action:** The Lead Agent analyzes the task: keywords "boleto", "pagamento" → financial domain. It queries the registered agents and finds Financeiro with matching capabilities (financial management, boleto tracking). It delegates the task to Financeiro with context.
+The Lead Agent generates a plan and the pre-kickoff modal opens. Ennio sees 6 steps laid out: 3 agents involved, 2 parallel groups, 1 blocking dependency chain. He notices the Lead Agent assigned the config reorganization to the general agent — but Ennio knows his dev agent is better for file operations. He clicks the agent dropdown on Step 2 and reassigns it.
 
-**Climax:** Financeiro picks up the task, processes it, and moves it to **Review** with a note: "Boleto NET R$189,90 agendado para 24/02. Confirma?" The dashboard shows the HITL approval gate — Ennio sees the notification, clicks **Approve**, and the task moves to **Done**.
+He also notices Steps 4 and 5 are marked as parallel, but he wants them sequential — Step 5 should only run after Step 4 confirms all tests pass. He drags the dependency line. He attaches his `workspace-structure.md` document to Step 1 so the agent has context.
 
-**Edge Case:** A task arrives: "Translate this document to Japanese." The Lead Agent searches agents — none have translation capabilities. The Lead Agent executes the task itself using its general-purpose abilities, noting in the activity feed: "No specialist found. Executing directly."
+Then he opens the thread chat in the modal and types: "Add a final step — the general agent should write a summary of all changes made." The Lead Agent acknowledges, adds Step 7 to the plan, assigns it to the general agent, blocks it on all previous steps.
 
-**Resolution:** The Lead Agent acts as an intelligent router that makes the system feel effortless. Users don't need to know which agent does what — they just describe what they need.
+Ennio reviews the updated plan, clicks "Kick-off." Steps start executing.
 
-### Journey 3: Inter-Agent Collaboration — Targeted Review Flow
+**Requirements revealed:** Pre-kickoff modal with editable plan, agent reassignment, dependency editing, document attachment per step, thread chat with Lead Agent during planning, dynamic plan modification before dispatch.
 
-**Opening Scene:** Ennio creates a task: "Prepare a weekly financial summary and include it in tomorrow's daily plan." He configures it at creation time with:
+### Journey 3: The Observer
 
-```yaml
-assigned_to: financeiro
-review:
-  enabled: true
-  reviewers: [secretario]
-  require_human_approval: true
-```
+**Ennio checks in on a running multi-agent task.**
 
-Only the agents specified in `reviewers` participate in the review — no broadcast.
+Ennio submitted a goal 10 minutes ago. He opens the task from the Kanban board and clicks into the unified thread. He sees the conversation:
 
-**Rising Action:** Financeiro picks up the task and generates the weekly summary: income, expenses, pending boletos, cash flow projection. The task moves to **Review**. It goes specifically to Secretário — the configured reviewer — not to all agents.
+> **financial-agent** (Step 1 - completed): Extracted 47 invoices from `/attachments/invoices-feb.zip`. Created `/output/invoice-data.json`. Files created: `invoice-data.json` (structured JSON, 47 entries with date, vendor, amount, category).
 
-**Climax:** Secretário reviews the financial summary and provides feedback via an inter-agent message (visible on the dashboard as a threaded discussion):
+> **general-agent** (Step 2 - completed): Reconciled invoice data with bank statement. Modified `/output/invoice-data.json` — diff: +`matched` field on 44/47 entries, 3 entries flagged as `unmatched`. Created `/output/reconciliation-report.md` (summary table of matched/unmatched transactions).
 
-> Secretário → Financeiro: "O resumo está bom, mas falta incluir o pagamento recorrente do Spotify que vence dia 25. Também sugiro adicionar um alerta sobre o saldo projetado ficando abaixo de R$2.000."
+> **financial-agent** (Step 3 - in progress): Generating PDF summary report...
 
-Financeiro updates the summary and moves it back to **Review**. Secretário approves. Since `require_human_approval: true`, the task now moves to Ennio for final human sign-off.
+Ennio sees exactly what each agent did, which files were created or modified, and what the diffs look like. He can click on file paths to open them in the viewer. The thread is the single source of truth — no need to dig through individual agent logs.
 
-**Resolution:** Ennio sees a polished financial summary that was already peer-reviewed by the specific agent he chose. He approves it in one click. Secretário automatically incorporates it into tomorrow's daily briefing. The review chain was explicit, predictable, and configured at task creation.
+He notices 3 unmatched transactions in the reconciliation. He posts a message in the thread: "The 3 unmatched items are from a vendor name change — Acme Corp is now Acme Inc. Please re-reconcile." The financial agent on Step 3 will see this in the thread context.
 
-### Journey 4: Community User — First-Time Setup
+**Requirements revealed:** Unified thread with structured agent messages, file path links in thread, real-time thread updates, user can post to thread mid-execution, agents read full thread context including user messages.
 
-**Opening Scene:** A nanobot user named Lucas discovers nanobot Mission Control on GitHub. He's been using nanobot with Telegram for a month and wants multi-agent capabilities.
+### Journey 4: The Firefighter
 
-**Rising Action:** Lucas clones the repo, reads the README. He runs `nanobot mission-control start` — the dashboard opens at `localhost:3000`. The Kanban board is empty. A welcome screen says: "Create your first agent."
+**A step fails and Ennio needs to recover.**
 
-Lucas drops a YAML file into `~/.nanobot/agents/`:
+Ennio's 4-step task is running. Steps 1 and 2 completed. Step 3 crashes — the agent hit a provider error (OAuth token expired). The Kanban card for Step 3 turns red with a "crashed" badge. An activity event appears in the feed: "Agent dev-agent crashed on Step 3: AnthropicOAuthExpired. Action: Run `nanobot provider login`."
 
-```yaml
-name: dev-agent
-role: Senior Python Developer
-skills: [code-review, debugging, testing]
-prompt: "You are a senior Python developer. Focus on clean, tested code."
-```
+Step 4, which depends on Step 3, stays blocked — its card shows a lock icon.
 
-The dashboard auto-detects the new agent and shows it in the sidebar. Lucas creates his first task from the dashboard: "Write unit tests for my auth module." The agent picks it up. Lucas watches it work in real-time.
+Ennio sees the error in the thread:
 
-**Climax:** It works. The agent writes tests, the activity feed shows each tool call, and the task moves across the board. Lucas adds two more agents — a researcher and a code reviewer — and sets up his first inter-agent review workflow. All via YAML files, no code changes.
+> **System** (Step 3 - crashed): Provider error: AnthropicOAuthExpired. Action: Run `nanobot provider login --provider anthropic`
 
-**Resolution:** Lucas is running his own Mission Control in 15 minutes. No OpenClaw. No 430k lines. Just nanobot + a few YAML files + one command.
+He fixes the OAuth token from his terminal. He clicks the "Retry" button on Step 3's card. The step re-enters "assigned" status, the agent picks it up again, and this time it completes. Step 4 automatically unblocks and starts executing.
+
+**Requirements revealed:** Step-level error reporting with actionable messages, crashed step visualization, blocked step indicators, manual retry per step, automatic unblocking on retry success, error details in unified thread.
 
 ### Journey Requirements Summary
 
-| Journey | Capabilities Revealed |
-|---------|----------------------|
-| **Morning Command Center** | Dashboard with Kanban, agent sidebar, activity feed, HITL approval (one-click), task creation from UI, overnight heartbeat tasks |
-| **Lead Agent Delegates** | Intelligent agent matching/routing, agent capability registry, fallback to self-execution, real-time task state transitions |
-| **Inter-Agent Review** | Per-task reviewer assignment at creation time, targeted review routing (not broadcast), inter-agent messaging with threaded discussions, configurable review chain (agent reviewers + optional human gate) |
-| **Community Setup** | YAML-based agent creation, auto-detection of new agents, single command startup, welcome/onboarding screen, zero-code configuration |
+| Capability Area | J1 | J2 | J3 | J4 |
+|---|---|---|---|---|
+| Autonomous plan dispatch | X | | | |
+| Pre-kickoff modal | | X | | |
+| Plan editing (agents, deps, docs) | | X | | |
+| Thread chat with Lead Agent | | X | | |
+| Unified thread per task | X | X | X | X |
+| Structured completion messages | X | | X | |
+| File path links in thread | | | X | |
+| User messages in thread | | | X | |
+| Step-level error handling | | | | X |
+| Manual step retry | | | | X |
+| Automatic dependency unblocking | X | | | X |
+| Parallel step execution | X | X | | |
+| Real-time Kanban updates | X | X | X | X |
 
 ## Domain-Specific Requirements
 
-### Reliability & State Management
+### Context Window Management
 
-- **Crash recovery:** Retrying (1x auto) → Crashed (red flag + error log + manual "Retry from Beginning" button). No silent failures.
-- **Task completion integrity:** Done status only set on explicit agent confirmation. Lost contact → task stays in current state until timeout.
-- **Configurable timeouts:** `taskTimeout` (In Progress stall detection) and `interAgentTimeout` (review response escalation). Global defaults in dashboard settings, overridable per-task.
+The unified thread is the single source of truth for all agent collaboration. As tasks grow in complexity (many steps, many agents), threads accumulate significant content — structured completion messages with file paths, diffs, and descriptions compound quickly.
 
-### Task Distribution & Race Condition Prevention
+- **Existing pattern:** `_build_thread_context()` in `executor.py` truncates to the last 20 messages, prepends `"(N earlier messages omitted)"`, and separates the latest user message into a `[Latest Follow-up]` section
+- Thread context injected into each agent's prompt must fit within the LLM context window alongside the agent's system prompt, task description, and file attachments
+- Structured completion messages (diffs, file paths) are denser than conversational messages — 20 messages of diffs may consume more tokens than 20 messages of chat
+- Dependent agents need the *relevant* prior context, not necessarily *all* prior context — selective injection matters more than raw message count
 
-**Lead Agent as Single Distributor:**
-- The Lead Agent is the sole task router — no agent self-claims tasks
-- On receiving a batch of tasks (or a complex multi-step task), the Lead Agent creates an **execution plan** upfront
-- The plan identifies:
-  - **Blocking tasks** — must complete before dependents start
-  - **Parallelizable tasks** — can run simultaneously on different agents
-  - **Review chains** — which agent reviews which output
+### LLM Provider Reliability
 
-**Lead Agent Planning Table (in Soul/System Prompt):**
+- Agents depend on external LLM providers that can fail mid-execution (OAuth expiry, rate limits, outages)
+- Step-level error handling must surface actionable recovery messages
+- Provider errors must not cascade — a crashed step blocks dependents but doesn't crash the entire task
 
-The Lead Agent's system prompt includes a structured planning template:
+### Agent Isolation & Parallelism
 
-```
-## Task Execution Plan
+- Parallel steps run as separate Python subprocesses — no shared state, no agent contention
+- Each agent gets its own workspace under `~/.nanobot/agents/{agentName}/`
+- Memory consolidation (`end_task_session()`) happens only after the agent completes its step — mid-execution memory is not shared
+- Thread is the ONLY inter-agent communication channel during execution
 
-| # | Task | Assigned To | Depends On | Parallel | Reviewer | Status |
-|---|------|-------------|------------|----------|----------|--------|
-| 1 | Research market data | pesquisador | - | Yes (with #2) | - | pending |
-| 2 | Scan boletos this week | financeiro | - | Yes (with #1) | - | pending |
-| 3 | Build daily briefing | secretario | #1, #2 | No (blocked) | - | blocked |
-| 4 | Final daily plan | secretario | #3 | No (blocked) | financeiro | blocked |
-```
+### Cost Awareness
 
-- Lead Agent updates this table as tasks complete, auto-unblocking dependents
-- Parallelizable tasks are dispatched simultaneously
-- Blocked tasks wait until all dependencies resolve
-
-### Data Privacy
-
-- All data flows through Convex (cloud) for real-time sync — acceptable for current scope
-- **README.md notice:** Document that sensitive data (financial, email, calendar) transits through Convex; users handling highly sensitive data should evaluate their risk tolerance
-- Future consideration: local-only mode for sensitive agent outputs (post-MVP)
+- Each agent invocation consumes LLM tokens — planning + N agent executions per task
+- Thread context injection multiplies cost: every dependent agent re-reads the thread
+- No hard ceiling, but the system should avoid unnecessary token waste (e.g., don't inject full diffs when file paths suffice for certain step types)
 
 ## Innovation & Novel Patterns
 
 ### Detected Innovation Areas
 
-**1. Readable Orchestration — The Anti-Complexity Play**
-Where OpenClaw community projects (ClawDeck, ClawControl, Clawe, crshdn/mission-control) all build their Mission Control on top of a 430k+ line codebase, nanobot Mission Control extends a system of ~3,862 lines. Every line of orchestration code is understandable. This isn't just a marketing angle — it's a fundamental architectural decision that makes the system debuggable, auditable, and contributable by solo developers and small teams.
+1. **Pre-Kickoff Collaborative Planning** — Existing agent orchestration tools either run fully autonomous or require the user to hardcode the plan in code. nanobot-ennio lets the user *negotiate* the plan with the AI planner in a visual modal — reassigning agents, reordering steps, changing dependencies, attaching documents — before anything executes. The AI planner is a collaborative partner, not a black box.
 
-**2. Lead Agent Planning — Structured Task Distribution**
-The Lead Agent acts as a single intelligent router with upfront execution planning. Instead of agents self-claiming tasks (race conditions) or round-robin distribution (no intelligence), the Lead Agent analyzes incoming tasks, matches them against agent capabilities, creates dependency-aware execution plans (blocking vs. parallelizable), and dispatches accordingly. If no specialist is found, it executes the task itself. This eliminates race conditions by design and provides visible, predictable task routing.
+2. **Dual Supervision Model** — The same system supports both autonomous dispatch (plan then execute) and supervised dispatch (plan then review then negotiate then kick-off). The user picks the level of control per task. Most tools are either fully autonomous or fully manual.
 
-**3. Configurable Trust Spectrum — Per-Task Trust Levels**
-Each task is configured at creation time with its own trust level: fully autonomous (agent runs and completes), agent-reviewed (specific configured reviewers provide feedback before completion), or human-approved (HITL gate requiring explicit user sign-off). This per-task granularity — rather than system-wide trust settings — lets users run low-risk tasks autonomously while maintaining human oversight on critical decisions, all within the same workflow.
+3. **Pure Orchestrator + General Agent Fallback** — The Lead Agent never self-executes. Combined with the General Agent as a system-level fallback, planning never fails due to missing capabilities. This is an architectural invariant.
+
+4. **Unified Thread as Single Source of Truth** — All agents on a task share one thread with structured completion messages (file paths + diffs + descriptions). This replaces per-agent logs or opaque internal state with a transparent, human-readable conversation that both agents and users can follow.
 
 ### Market Context & Competitive Landscape
 
-- **OpenClaw ecosystem:** 5+ community-built Mission Control dashboards exist, all sitting on 430k+ lines of framework code. None offer the readability proposition.
-- **nanobot ecosystem:** Zero multi-agent orchestration options exist today. This is the first-mover opportunity as nanobot adoption grows.
-- **General AI orchestration:** Tools like CrewAI, AutoGen, and LangGraph offer multi-agent coordination but require significant setup and Python expertise. nanobot Mission Control targets a simpler, YAML-configured, visual-first approach.
-- **Unique positioning:** The only orchestration platform where you can read the entire coordination layer in an afternoon and understand every decision the system makes.
+- **OpenClaw** — The open-source agent framework that powers the system
+- **OpenClaw Mission Control** — The orchestration dashboard where the Lead Agent, Kanban board, unified threads, and pre-kickoff modal live
+- The innovation exists within the OpenClaw ecosystem: evolving Mission Control from individual agent execution into a collaborative multi-agent orchestration platform with visual plan negotiation
+- The pre-kickoff modal and dual supervision model are the differentiators within the OpenClaw Mission Control experience
 
 ### Validation Approach
 
-- **Phase 1 — Dogfooding:** Ennio uses Mission Control daily for real work (financial tracking, daily planning, research) for 3 months. If it replaces manual workflows, the core value is validated.
-- **Phase 2 — Community Beta:** Ship as open-source. If a nanobot user (like Lucas in Journey 4) can set up and run Mission Control in under 15 minutes with just YAML files, the simplicity proposition is validated.
-- **Phase 3 — Feature Validation:** Track which features (HITL gates, inter-agent review, Lead Agent routing) are actually used vs. configured. Remove unused complexity.
+- The pre-kickoff modal must prove its value: does editing the plan before execution actually improve outcomes compared to pure autonomous mode?
+- Measurable: compare task completion rate and quality between autonomous and supervised runs
+- User confidence metric: does the user trust the system more when they can review and shape the plan?
 
 ## Orchestration Platform Specific Requirements
 
 ### Project-Type Overview
 
-nanobot Mission Control is a hybrid Orchestration Platform combining three dimensions: a **real-time web dashboard** (SPA), a **developer tool** (CLI + YAML configuration), and a **workflow engine** (task state machine + agent coordination). The platform is a purely authenticated, localhost/private-deployment application with no SEO requirements. Real-time performance optimization is deferred to post-MVP and documented as a README improvement point.
+nanobot-ennio is a **single-user orchestration platform** combining:
+- **Next.js + Convex dashboard** — Real-time reactive UI (Kanban board, threads, execution plan visualization)
+- **Python workflow engine** — Agent lifecycle, LLM-based planning, subprocess-based parallel execution
+- **AsyncIO-Convex bridge** — The glue between the Python backend and Convex real-time database
 
-### Technical Architecture Considerations
+This is NOT a SaaS product. It's a personal productivity tool where one user orchestrates multiple AI agents through a visual interface.
 
-**Dashboard (SPA):**
-- Single Page Application architecture — fits naturally with Convex's reactive query model
-- No SEO requirements — purely authenticated app (localhost or private deployment)
-- Real-time performance benchmarks deferred to post-MVP (documented in README as improvement area)
-- Navigation structure: dashboard-first with views for Kanban board, agent management, settings, and activity feed
+### Technical Architecture
 
-**State Machine — Task Lifecycle:**
-- Linear state flow: **Inbox → Assigned → In Progress → Review → Done**
-- Error states: **Retrying** (automatic single retry) → **Crashed** (red flag, manual retry)
-- **No backward transitions** — Review is a terminal working state before Done. If the reviewer requests changes, the task stays in Review while the assigned agent addresses feedback. This keeps the state machine simple and predictable.
-- Stalled state: triggered by configurable timeout (global default, per-task override)
+- **Real-time reactivity**: Convex provides reactive queries — Kanban cards, thread messages, and step statuses update live without polling
+- **Process model**: Each agent runs as a separate Python subprocess. Parallel steps use `asyncio.gather()` for true concurrency
+- **State management**: Convex is the single source of truth. The Python backend reads/writes via the bridge. No local state persistence beyond agent workspaces (`~/.nanobot/agents/`)
+- **Communication flow**: User -> Dashboard -> Convex -> Bridge -> Python Engine -> Agent Subprocess -> Convex -> Dashboard
 
-**Lead Agent Execution Plan — Dashboard Visibility:**
-- The Lead Agent's execution plan (task dependency table with blocking/parallel/review assignments) is **visible on the dashboard**
-- Accessible via click-to-expand on any task that was routed by the Lead Agent
-- Shows task dependencies, parallelization decisions, assigned agents, and current status of each sub-task
-- Updates in real-time as tasks complete and dependents unblock
+### Implementation Considerations
 
-**Inter-Agent Communication — Threaded on Task:**
-- All inter-agent messages are stored **as part of the task** in a threaded conversation format
-- Visible on the dashboard as a discussion thread within the task detail view
-- Includes: reviewer feedback, agent responses, revision notes, approval/denial records
-- No separate communication log — everything is task-scoped for clarity
-
-### CLI Interface
-
-**Subcommand Structure:**
-- `nanobot mc start` — Launch Mission Control (dashboard + agent gateway)
-- `nanobot mc stop` — Graceful shutdown
-- `nanobot mc agents list` — List registered agents and their status
-- `nanobot mc agents create` — Interactive or flag-based agent creation (generates YAML)
-- `nanobot mc tasks list` — List current tasks and their states
-- `nanobot mc tasks create` — Create a task from CLI
-- `nanobot mc status` — Show system overview (agents running, task counts, health)
-
-**Agent-Assisted CLI:**
-- The nanobot agent itself can help create agents and workflows via natural language — e.g., "create a financial agent that tracks boletos" generates the YAML configuration
-- CLI serves as both a direct interface and an entry point for agent-assisted operations
-
-### Configuration & Validation
-
-**YAML Agent Configuration:**
-- Agent YAML files are validated on load with **clear, actionable error messages**
-- Invalid configurations produce explicit errors: field name, expected type/value, line number
-- The system refuses to start an agent with invalid config — no silent degradation
-- Validation covers: required fields (name, role, prompt), valid skill references, reviewer references pointing to existing agents
-
-**Auto-Generated Documentation:**
-- API documentation auto-generated from Convex schema and function definitions
-- Built-in help accessible via `nanobot mc help` and `nanobot mc [command] --help`
-- Dashboard includes contextual help tooltips for configuration options
-
-### Performance & Scalability (README Improvement Points)
-
-Documented in README as post-MVP optimization targets:
-- Dashboard load time benchmarks
-- Maximum concurrent dashboard viewers
-- Agent message throughput under load
-- Convex query performance with large task histories
-- WebSocket connection stability over extended sessions
+- **No authentication layer**: Single-user tool, runs locally
+- **No SEO**: Dashboard is a local app, not a public website
+- **No multi-tenancy**: Single user, single instance
+- **Offline mode**: Not required — agents need LLM providers which require internet
+- **Browser support**: Modern browsers only (Chrome/Safari), no legacy support needed
 
 ## Project Scoping & Phased Development
 
 ### MVP Strategy & Philosophy
 
-**MVP Approach:** Experience MVP — deliver the full "aha!" moment (3 agents collaborating on a Kanban board with HITL and inter-agent review) for a single power user (Ennio), then expand to community.
-
-**Resource Requirements:** Solo developer (Ennio) building on existing nanobot infrastructure. The brownfield advantage — SubagentManager, MessageBus, HeartbeatService, and SkillsLoader already exist. New work is the orchestration layer, Convex integration, and dashboard.
+**MVP Approach:** Problem-solving MVP — the minimum that makes the Lead Agent useful as a pure orchestrator for multi-agent work.
+**Resource:** Single developer, brownfield codebase with existing planner, orchestrator, and execution plan visualization.
 
 ### MVP Feature Set (Phase 1)
 
-**Core User Journeys Supported:**
-- Journey 1: Morning Command Center (Kanban + HITL approval + activity feed)
-- Journey 2: Lead Agent Routing (intelligent delegation + fallback self-execution)
-- Journey 3: Inter-Agent Review (targeted reviewer flow + threaded messages)
+**Core User Journeys Supported:** All four — Autonomous Delegator, Collaborative Planner, Observer, Firefighter.
 
 **Must-Have Capabilities:**
-
-| Category | Feature | Rationale |
-|----------|---------|-----------|
-| Dashboard | Real-time Kanban board (Inbox → Assigned → In Progress → Review → Done) | Core visual interface — the product IS the board |
-| Dashboard | Agent sidebar with status indicators | Must see who's running |
-| Dashboard | Activity feed with real-time streaming | Visibility into agent actions |
-| Dashboard | HITL approval UI (approve/deny buttons) | Critical trust mechanism |
-| Dashboard | Task detail view with threaded inter-agent messages | Review flow visibility |
-| Dashboard | Lead Agent execution plan (click-to-expand) | Transparency into task routing decisions |
-| Dashboard | Global settings panel (timeouts, defaults) | Configuration without YAML editing |
-| Backend | Convex real-time state (tasks, agents, activities, messages) | Source of truth for all shared state |
-| Backend | AsyncIO ↔ Convex bridge | Connects nanobot agents to dashboard |
-| Orchestration | Lead Agent with capability matching + execution planning | Intelligent task distribution |
-| Orchestration | Task state machine (linear flow + Retrying/Crashed error states) | Reliable task lifecycle |
-| Orchestration | Inter-agent messaging (targeted to configured reviewers) | Collaboration without broadcast |
-| Orchestration | Configurable trust per-task (autonomous / reviewed / human-approved) | Flexible oversight |
-| Orchestration | Crash recovery (1x auto-retry → Crashed with error + manual retry) | Reliability |
-| Orchestration | Configurable timeouts (task + inter-agent, global defaults) | Prevent stuck states |
-| Config | YAML-based agent definitions with clear validation errors | Zero-code agent creation |
-| Config | LLM model configurable per agent, with system-wide default | Agents can use different models (e.g., fast model for secretary, powerful model for research) |
-| CLI | `nanobot mc start/stop` | Single-command startup/shutdown |
-| CLI | `nanobot mc agents list/create` | Agent management from terminal |
-| CLI | `nanobot mc tasks list/create` | Task management from terminal |
-| CLI | `nanobot mc status` | System health overview |
-| CLI | Agent-assisted CLI (natural language → YAML generation) | nanobot helps configure itself |
-| Docs | Auto-generated API docs from Convex schema | Developer reference |
-| Docs | Built-in `--help` for all CLI commands | Discoverability |
-
-**MVP Capacity:** 3 simultaneous agents, 4+ concurrent tasks.
+- Lead Agent as pure orchestrator (never executes)
+- General Agent as system fallback agent
+- Task/Step hierarchy: Task = goal, Steps = etapas on Kanban board
+- LLM-based execution planning with agent assignment, dependencies, parallel groups
+- Unified thread per task shared by all agents
+- Structured agent completion messages (file paths + diffs + descriptions)
+- Autonomous mode: plan and dispatch immediately
+- Supervised (hybrid) mode: pre-kickoff modal with plan review/editing
+- Modal capabilities: reassign agents, reorder steps, change dependencies, attach documents, chat with Lead Agent
+- Automatic unblocking of dependent steps on completion
+- Step-level error reporting and manual retry
+- Parallel step execution via asyncio.gather()
 
 ### Post-MVP Features
 
-**Phase 2 — Growth (Community Ready):**
-- Journey 4: Community Setup (welcome screen, 15-minute onboarding, auto-detection of new agents)
-- Dashboard setup wizard for visual agent/task creation
-- Agent performance metrics and cost tracking (tokens used, time per task)
-- Task templates with default agent assignments and review rules
-- Task dependencies that auto-unblock when prerequisites complete
-- Mobile-responsive dashboard
-- Notification system (browser push, Telegram, email) for approval requests
-- Performance benchmarks and optimization (load time, throughput, connection stability)
+**Phase 2 (Growth):**
+- Plan templates: save and reuse execution plan patterns for recurring goals
+- Agent performance analytics: track which agents succeed on which types of steps
+- Plan versioning: compare before/after when the user edits a plan in the modal
+- Multi-task orchestration: Lead Agent manages dependencies across tasks
 
-**Phase 3 — Expansion (Ecosystem):**
-- Agent marketplace — share and import agent personas
-- Multi-user support with roles and permissions
-- Pipeline orchestration — visual workflow builder for multi-step agent chains
-- Analytics dashboard — agent productivity, task completion rates, bottleneck identification
-- Integration with nanobot's existing channels (Telegram, Discord, Slack) for approval flows
-- Self-improving agents — agents that learn from review feedback
+**Phase 3 (Vision):**
+- Lead Agent learns from past plans to improve future planning quality
+- Proactive suggestions: Lead Agent proposes tasks based on patterns it observes
+- Cross-board orchestration: Lead Agent coordinates agents across multiple boards
 
 ### Risk Mitigation Strategy
 
-**Technical Risks (all HIGH priority):**
-
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| AsyncIO ↔ Convex bridge reliability | Data loss, sync failures, stale dashboard | Convex as single source of truth. One-directional flow: nanobot writes → Convex stores → dashboard reads. Retry logic on writes. Health check endpoint. |
-| Lead Agent intelligence quality | Bad routing, wrong agent assignments, poor execution plans | Capability matching via explicit skill tags in YAML (not fuzzy NLP). Fallback to self-execution. Users can always override with direct assignment. |
-| Real-time Kanban performance | Laggy updates, missed state transitions | Convex reactive queries handle this natively. Optimistic UI updates on dashboard side. Degrade gracefully (show spinner, not stale data). |
-| Lead Agent becomes a bottleneck | Single point of failure for task distribution | Users can always assign tasks directly to specific agents, bypassing the Lead Agent. The Lead Agent is an optimizer, not a gatekeeper. |
-| Configurable trust too complex | Users avoid configuring trust, reducing product value | Sensible defaults (autonomous for most tasks, HITL for financial actions). Users only configure when they want to. |
-| nanobot architecture insufficient | Orchestration exceeds lightweight framework capacity | Existing SubagentManager and MessageBus provide core primitives. Mission Control extends these, not replaces them. |
-
-**Market Risks:**
-- Dogfooding first. If Ennio doesn't use it daily for 3 months, the product needs rethinking before community launch.
+- **Technical risk:** LLM planning quality — mitigated by General Agent fallback and structured plan format that constrains LLM output
+- **UX risk:** Pre-kickoff modal complexity — mitigated by making supervised mode optional (autonomous is always available)
+- **Resource risk:** Single developer — mitigated by brownfield approach (existing codebase with planner, orchestrator, execution plan viz already built)
 
 ## Functional Requirements
 
-### Task Management
+### Task & Step Management
 
-- **FR1:** User can create a new task from the dashboard with a title and optional description
-- **FR2:** User can assign a task to a specific agent at creation time, or leave it unassigned for Lead Agent routing
-- **FR3:** User can configure per-task trust level at creation time (autonomous / agent-reviewed / human-approved)
-- **FR4:** User can configure specific reviewer agents for a task at creation time
-- **FR5:** User can view all tasks on a real-time Kanban board organized by state (Inbox → Assigned → In Progress → Review → Done)
-- **FR6:** User can view task details including description, assigned agent, status, and threaded inter-agent messages
-- **FR7:** User can view the Lead Agent's execution plan for any routed task via click-to-expand
-- **FR8:** User can create a task from the CLI (`nanobot mc tasks create`)
-- **FR9:** User can list all tasks and their states from the CLI (`nanobot mc tasks list`)
+- **FR1:** User can create a task by describing a goal in natural language
+- **FR2:** System decomposes a task into one or more steps (etapas), each representing a unit of work for a specialist agent
+- **FR3:** Steps are displayed as individual cards on the Kanban board, grouped under their parent task
+- **FR4:** User can select supervision mode (autonomous or supervised) when creating a task
+- **FR5:** User can attach files to a task at creation time
 
-### Agent Management
+### Execution Planning
 
-- **FR10:** User can register a new agent by dropping a YAML definition file into the agents folder
-- **FR11:** User can define agent name, role, skills, system prompt, and LLM model in the YAML configuration
-- **FR12:** User can set a system-wide default LLM model that applies to all agents unless overridden per-agent
-- **FR13:** System validates agent YAML configurations on load and surfaces clear, actionable error messages for invalid configs
-- **FR14:** System refuses to start an agent with invalid configuration — no silent degradation
-- **FR15:** User can view all registered agents and their current status (active, idle, crashed) on the dashboard sidebar
-- **FR16:** User can list registered agents and their status from the CLI (`nanobot mc agents list`)
-- **FR17:** User can create a new agent configuration from the CLI (`nanobot mc agents create`)
-- **FR18:** User can create agent configurations via natural language through the nanobot agent itself (agent-assisted CLI)
+- **FR6:** Lead Agent generates an execution plan for every submitted task, including single-step tasks
+- **FR7:** Execution plan specifies: steps, assigned agents, blocking dependencies, and parallel groups
+- **FR8:** Lead Agent assigns agents to steps based on capability matching and task context
+- **FR9:** Lead Agent considers attached file metadata (types, sizes, names) when routing steps to agents
+- **FR10:** General Agent is always available as a system-level fallback agent for any step not matching a specialist
 
-### Task Orchestration
+### Pre-Kickoff Plan Review (Supervised Mode)
 
-- **FR19:** Lead Agent can receive unassigned tasks and route them to the most appropriate agent based on capability matching against agent skill tags
-- **FR20:** Lead Agent can execute a task directly when no specialist agent matches the required capabilities
-- **FR21:** Lead Agent can create an execution plan for complex or batch tasks, identifying blocking dependencies, parallelizable tasks, and review chains
-- **FR22:** Lead Agent can dispatch parallelizable tasks simultaneously to different agents
-- **FR23:** Lead Agent can auto-unblock dependent tasks when their prerequisites complete
-- **FR24:** System transitions tasks through the state machine: Inbox → Assigned → In Progress → Review → Done
-- **FR25:** System sets task status to "Done" only when the assigned agent explicitly confirms completion
+- **FR11:** In supervised mode, system presents a pre-kickoff modal showing the full execution plan before any step executes
+- **FR12:** User can reassign agents to any step in the pre-kickoff modal
+- **FR13:** User can reorder steps in the pre-kickoff modal
+- **FR14:** User can change blocking dependencies between steps in the pre-kickoff modal
+- **FR15:** User can attach documents to specific steps in the pre-kickoff modal
+- **FR16:** User can chat with the Lead Agent in the pre-kickoff modal to negotiate plan changes
+- **FR17:** Lead Agent can dynamically modify the plan in response to user chat requests (add/remove/change steps)
+- **FR18:** User can approve the plan and trigger kick-off from the pre-kickoff modal
 
-### Inter-Agent Collaboration
+### Agent Orchestration & Dispatch
 
-- **FR26:** Agents can send messages to other agents within the context of a task (threaded on the task)
-- **FR27:** When a task is configured with reviewers, the system routes the completed work to the specified reviewer agents only — no broadcast
-- **FR28:** Reviewing agent can provide feedback on a task, visible as a threaded discussion on the dashboard
-- **FR29:** Assigned agent can address reviewer feedback while the task remains in Review state
-- **FR30:** Reviewing agent can approve a task, advancing it to the next stage (human approval if configured, or Done)
+- **FR19:** Lead Agent never executes tasks directly — it only plans, delegates, and coordinates
+- **FR20:** In autonomous mode, the plan dispatches immediately after generation without user intervention
+- **FR21:** Parallel steps launch simultaneously as separate processes
+- **FR22:** Sequential steps execute in dependency order, each waiting for its blockers to complete
+- **FR23:** Step completion automatically unblocks dependent steps
 
-### Human Oversight
+### Unified Thread & Agent Communication
 
-- **FR31:** User can approve or deny a task that requires human approval via dashboard buttons
-- **FR32:** When user approves a task, the agent resumes or the task moves to Done
-- **FR33:** When user denies a task, the agent receives the denial and the task remains actionable
-- **FR34:** Dashboard displays a notification indicator when tasks require human attention (approval requests)
-- **FR35:** User can view a real-time activity feed showing agent actions as they happen
-- **FR36:** User can trigger a manual "Retry from Beginning" for crashed tasks from the dashboard
+- **FR24:** Each task has a single unified thread shared by all agents and the user
+- **FR25:** Agents post structured completion messages to the thread containing: file paths, diffs for modified files, and descriptions for created files
+- **FR26:** User can post messages to the thread during task execution
+- **FR27:** Agents read the full thread context (including user messages and prior agent completions) when starting their step
+- **FR28:** Thread context is managed to fit within LLM context windows (truncation with omission note for long threads)
 
-### Reliability & Error Handling
+### Step Lifecycle & Error Handling
 
-- **FR37:** System automatically retries a task once when an agent crashes mid-execution (status: Retrying)
-- **FR38:** If retry also fails, system sets task status to Crashed with a red flag indicator and full error log
-- **FR39:** System flags tasks as stalled when they exceed the configured task timeout
-- **FR40:** System escalates inter-agent review requests that exceed the configured inter-agent timeout
+- **FR29:** Steps progress through a defined lifecycle: assigned -> running -> completed (or crashed)
+- **FR30:** Blocked steps display a visual indicator showing which steps they depend on
+- **FR31:** When a step crashes, the system posts an error message to the thread with actionable recovery instructions
+- **FR32:** A crashed step does not crash sibling or parent steps — only blocks dependents
+- **FR33:** User can manually retry a crashed step, re-entering the execution pipeline
+- **FR34:** Successful retry of a crashed step automatically unblocks its dependents
 
-### System Configuration
+### Dashboard & Visualization
 
-- **FR41:** User can configure global default timeouts (task timeout, inter-agent timeout) from the dashboard settings panel
-- **FR42:** User can override global timeout defaults per-task at creation time
-- **FR43:** User can configure the system-wide default LLM model from settings
-- **FR44:** User can view system health overview from the CLI (`nanobot mc status`)
-
-### System Lifecycle
-
-- **FR45:** User can start the entire Mission Control system (dashboard + agent gateway) with a single command (`nanobot mc start`)
-- **FR46:** User can stop Mission Control gracefully (`nanobot mc stop`)
-- **FR47:** System provides auto-generated API documentation from Convex schema
-- **FR48:** System provides built-in help for all CLI commands (`--help`)
+- **FR35:** Kanban board displays step cards with real-time status updates (assigned, running, completed, crashed, blocked)
+- **FR36:** Execution plan visualization shows steps, dependencies, parallel groups, and assigned agents
+- **FR37:** Thread view shows structured agent messages with file path references in real-time
+- **FR38:** Activity feed shows step completion and error events
 
 ## Non-Functional Requirements
 
 ### Performance
 
-- **NFR1:** Dashboard Kanban board updates reflect agent state changes within 2 seconds of occurrence
-- **NFR2:** Agent task pickup latency < 5 seconds from assignment to "In Progress" status
-- **NFR3:** Activity feed streams agent actions with < 3 seconds delay from execution
-- **NFR4:** Dashboard initial load completes within 5 seconds on localhost
-- **NFR5:** CLI commands (`mc status`, `mc agents list`, `mc tasks list`) return results within 2 seconds
-- **NFR6:** `nanobot mc start` launches the full system (dashboard + agent gateway) within 15 seconds
+- **NFR1:** Plan generation completes in < 10 seconds from task submission
+- **NFR2:** Pre-kickoff modal renders the full plan with editable fields within 2 seconds of opening
+- **NFR3:** Kanban board reflects step status changes within 1 second of the event (Convex reactive query)
+- **NFR4:** Thread messages from agents appear in the UI within 1 second of being posted to Convex
+- **NFR5:** Thread context injection for agents truncates to last 20 messages to stay within LLM context window limits
 
 ### Reliability
 
-- **NFR7:** System runs unattended for 24+ hours with 3 agents actively processing tasks without crashes, stuck agents, or orphaned tasks
-- **NFR8:** Every task state transition is explicitly visible on the Kanban board — no silent failures
-- **NFR9:** 100% of inter-agent messages sent are received and visible in the task thread within 10 seconds — no message loss
-- **NFR10:** Agent crash recovery (auto-retry) completes within 30 seconds of crash detection
-- **NFR11:** System handles simultaneous operation of 3 agents and 4+ concurrent tasks without degradation
-- **NFR12:** Concurrent agent updates to the same task never result in lost writes (Convex transactional integrity)
-- **NFR13:** Dashboard detects Convex connection loss and displays a disconnection indicator — never shows stale data as current
-- **NFR14:** Graceful shutdown (`nanobot mc stop`) completes within 30 seconds, preserving all task state in Convex
+- **NFR6:** A crashed agent step does not affect other running or pending steps — only blocks its direct dependents
+- **NFR7:** The system recovers gracefully from LLM provider errors (OAuth expiry, rate limits, timeouts) with actionable error messages
+- **NFR8:** Agent subprocesses run in isolation — a crash in one subprocess does not bring down the Python engine or other subprocesses
+- **NFR9:** Dependency unblocking is atomic — a step is unblocked only after all its blockers report completion
+- **NFR10:** Planning failures surface as backend errors on the task with clear error messages — no silent failures
 
 ### Integration
 
-- **NFR15:** AsyncIO ↔ Convex bridge retries failed writes up to 3 times with exponential backoff; surfaces error on activity feed only after retry exhaustion
-- **NFR16:** No component other than the nanobot backend writes to Convex; dashboard is read-only plus user actions via Convex mutations
-- **NFR17:** Agent YAML configuration changes are detected on next CLI command (`mc agents list`) or dashboard refresh — no file watcher required for MVP
-- **NFR18:** CLI and dashboard operate on the same Convex state — actions in one are immediately reflected in the other
-
-### Security
-
-- **NFR19:** Dashboard requires authentication via configurable access token for localhost deployment
-- **NFR20:** Data privacy notice documented in README regarding sensitive data (financial, email, calendar) transiting through Convex cloud
-
-### Code Quality
-
-- **NFR21:** No single orchestration module exceeds 500 lines — maintaining nanobot's readability philosophy
-- **NFR22:** YAML validation errors include field name, expected type/value, and actionable fix suggestion
-- **NFR23:** All agent and task state transitions are logged to both the activity feed (Convex) and local stdout for debugging
+- **NFR11:** The AsyncIO-Convex bridge maintains a persistent connection and reconnects automatically on disconnection
+- **NFR12:** LLM provider calls include timeout handling and retry logic for transient errors
+- **NFR13:** Structured completion messages follow a consistent format parseable by both the UI (for rendering) and agents (for context injection)

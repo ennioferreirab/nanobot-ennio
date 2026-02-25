@@ -5,6 +5,8 @@ import { v, ConvexError } from "convex/values";
 
 // Valid transition map: current_status -> [allowed_next_statuses]
 const VALID_TRANSITIONS: Record<string, string[]> = {
+  planning: ["failed", "reviewing_plan", "ready"],
+  failed: ["planning"],
   inbox: ["assigned"],
   assigned: ["in_progress"],
   in_progress: ["review", "done"],
@@ -19,6 +21,10 @@ const UNIVERSAL_TARGETS = ["retrying", "crashed", "deleted"];
 
 // Map transitions to activity event types
 const TRANSITION_EVENT_MAP: Record<string, string> = {
+  "planning->failed": "task_failed",
+  "planning->reviewing_plan": "task_planning",
+  "planning->ready": "task_planning",
+  "failed->planning": "task_planning",
   "inbox->assigned": "task_assigned",
   "assigned->in_progress": "task_started",
   "in_progress->review": "review_requested",
@@ -35,6 +41,8 @@ const TRANSITION_EVENT_MAP: Record<string, string> = {
 
 // Restore target map: previousStatus -> target status (n-1)
 const RESTORE_TARGET_MAP: Record<string, string> = {
+  planning: "planning",
+  failed: "planning",
   inbox: "inbox",
   assigned: "inbox",
   in_progress: "assigned",
@@ -85,6 +93,9 @@ export const create = mutation({
     isManual: v.optional(v.boolean()),
     boardId: v.optional(v.id("boards")),
     cronParentTaskId: v.optional(v.string()),
+    supervisionMode: v.optional(
+      v.union(v.literal("autonomous"), v.literal("supervised"))
+    ),
     files: v.optional(v.array(v.object({
       name: v.string(),
       type: v.string(),
@@ -106,6 +117,9 @@ export const create = mutation({
           | "autonomous"
           | "agent_reviewed"
           | "human_approved");
+    const supervisionMode = isManual
+      ? "autonomous"
+      : (args.supervisionMode ?? "autonomous");
 
     // Resolve boardId: use provided value or fall back to default board
     let boardId = args.boardId;
@@ -126,6 +140,7 @@ export const create = mutation({
       status: initialStatus,
       assignedAgent,
       trustLevel,
+      supervisionMode,
       reviewers: isManual ? undefined : args.reviewers,
       tags: args.tags,
       ...(isManual ? { isManual: true } : {}),
@@ -146,6 +161,9 @@ export const create = mutation({
     if (!isManual && trustLevel !== "autonomous") {
       const levelLabel = trustLevel === "agent_reviewed" ? "agent reviewed" : "human approved";
       description += ` (trust: ${levelLabel})`;
+    }
+    if (!isManual && supervisionMode === "supervised") {
+      description += " (supervised)";
     }
 
     await ctx.db.insert("activities", {
@@ -253,6 +271,8 @@ export const countHitlPending = query({
 export const listByStatus = query({
   args: {
     status: v.union(
+      v.literal("planning"),
+      v.literal("failed"),
       v.literal("inbox"),
       v.literal("assigned"),
       v.literal("in_progress"),
@@ -309,6 +329,49 @@ export const updateExecutionPlan = mutation({
     await ctx.db.patch(args.taskId, {
       executionPlan: args.executionPlan,
       updatedAt: new Date().toISOString(),
+    });
+  },
+});
+
+export const kickOff = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    stepCount: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new ConvexError("Task not found");
+    }
+
+    const allowedStatuses = [
+      "planning",
+      "reviewing_plan",
+      "ready",
+      "inbox",
+      "assigned",
+    ] as const;
+    if (!allowedStatuses.includes(task.status as (typeof allowedStatuses)[number])) {
+      throw new ConvexError(
+        `Cannot kick off task in status '${task.status}'. Expected one of: ${allowedStatuses.join(", ")}`
+      );
+    }
+    if (args.stepCount < 0) {
+      throw new ConvexError("stepCount must be >= 0");
+    }
+
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.taskId, {
+      // Schema currently uses in_progress as the active-running status.
+      status: "in_progress",
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("activities", {
+      taskId: args.taskId,
+      eventType: "task_started",
+      description: `Task kicked off with ${args.stepCount} step${args.stepCount === 1 ? "" : "s"}`,
+      timestamp: now,
     });
   },
 });
@@ -504,6 +567,8 @@ export const updateStatus = mutation({
       agentName: args.agentName,
       eventType: eventType as
         | "task_created"
+        | "task_planning"
+        | "task_failed"
         | "task_assigned"
         | "task_started"
         | "task_completed"

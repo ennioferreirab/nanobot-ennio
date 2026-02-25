@@ -1,7 +1,7 @@
-"""Task Orchestrator — LLM-based task planning, inbox routing, and review routing.
+"""Task Orchestrator — planning routing and review routing.
 
-Routes inbox tasks via TaskPlanner (LLM reasoning with heuristic fallback).
-Every task gets an ExecutionPlan. Handles review transitions (FR27).
+Routes planning tasks via TaskPlanner (LLM reasoning with heuristic fallback)
+and stores execution plans. Handles review transitions (FR27).
 """
 
 from __future__ import annotations
@@ -10,13 +10,13 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nanobot.mc.plan_materializer import PlanMaterializer
 from nanobot.mc.planner import TaskPlanner
 from nanobot.mc.types import (
     AgentData,
     ActivityEventType,
     AuthorType,
     ExecutionPlan,
-    ExecutionPlanStep,
     LEAD_AGENT_NAME,
     MessageType,
     TaskStatus,
@@ -29,59 +29,48 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def get_ready_steps(plan: ExecutionPlan) -> list[ExecutionPlanStep]:
-    """Find steps that are ready to execute (all deps met, status pending)."""
-    completed_ids = {s.step_id for s in plan.steps if s.status == "completed"}
-    ready = []
-    for step in plan.steps:
-        if step.status != "pending":
-            continue
-        if all(dep in completed_ids for dep in step.depends_on):
-            ready.append(step)
-    return ready
-
-
 class TaskOrchestrator:
-    """Routes inbox tasks and handles review transitions."""
+    """Routes planning tasks and handles review transitions."""
 
     def __init__(self, bridge: ConvexBridge) -> None:
         self._bridge = bridge
         self._lead_agent_name = LEAD_AGENT_NAME
-        self._known_inbox_ids: set[str] = set()
+        self._plan_materializer = PlanMaterializer(bridge)
+        self._known_planning_ids: set[str] = set()
         self._known_review_task_ids: set[str] = set()
 
     async def start_routing_loop(self) -> None:
-        """Subscribe to inbox tasks and route them as they arrive."""
-        logger.info("[orchestrator] Starting inbox routing loop")
+        """Subscribe to planning tasks and plan them as they arrive."""
+        logger.info("[orchestrator] Starting planning routing loop")
 
         queue = self._bridge.async_subscribe(
-            "tasks:listByStatus", {"status": "inbox"}
+            "tasks:listByStatus", {"status": "planning"}
         )
 
         while True:
             tasks = await queue.get()
             if tasks is None:
                 continue
-            # Prune IDs no longer in inbox so tasks can re-enter
-            # inbox (e.g. after retry) and be re-processed.
+            # Prune IDs no longer in planning so tasks can re-enter and be
+            # re-processed.
             current_ids = {t.get("id") for t in tasks if t.get("id")}
-            self._known_inbox_ids &= current_ids
+            self._known_planning_ids &= current_ids
             for task_data in tasks:
                 task_id = task_data.get("id")
-                if not task_id or task_id in self._known_inbox_ids:
+                if not task_id or task_id in self._known_planning_ids:
                     continue
-                self._known_inbox_ids.add(task_id)
+                self._known_planning_ids.add(task_id)
                 try:
-                    await self._process_inbox_task(task_data)
+                    await self._process_planning_task(task_data)
                 except Exception:
                     logger.warning(
-                        "[orchestrator] Error processing inbox task %s",
+                        "[orchestrator] Error processing planning task %s",
                         task_id,
                         exc_info=True,
                     )
 
-    async def _process_inbox_task(self, task_data: dict[str, Any]) -> None:
-        """Route a single inbox task using LLM-based planning."""
+    async def _process_planning_task(self, task_data: dict[str, Any]) -> None:
+        """Process a single planning task using LLM-based planning."""
         task_id = task_data.get("id")
         title = task_data.get("title", "")
         description = task_data.get("description")
@@ -133,34 +122,120 @@ class TaskOrchestrator:
                     exc_info=True,
                 )
 
-        # Use LLM-based planner (falls back to heuristic on failure)
-        planner = TaskPlanner()
-        plan = await planner.plan_task(
-            title, description, agents, explicit_agent=assigned_agent,
-            files=task_data.get("files") or [],
-        )
-
-        logger.info(
-            "[orchestrator] Task '%s': %d-step plan created",
-            title,
-            len(plan.steps),
-        )
-
-        await self._store_execution_plan(task_id, plan)
-
-        # Determine the primary agent from the plan
-        primary_agent = (
-            plan.steps[0].assigned_agent if plan.steps else LEAD_AGENT_NAME
-        )
-        # Activity event is written by the Convex tasks:updateStatus mutation.
         await asyncio.to_thread(
-            self._bridge.update_task_status,
+            self._bridge.create_activity,
+            ActivityEventType.TASK_PLANNING,
+            f"Lead Agent started planning for '{title}'",
             task_id,
-            TaskStatus.ASSIGNED,
-            primary_agent,
-            f"Lead Agent planned '{title}' ({len(plan.steps)} steps)",
+            self._lead_agent_name,
         )
-        await self._dispatch_ready_steps(task_id, plan)
+
+        try:
+            # Use LLM-based planner (falls back to heuristic on failure).
+            planner = TaskPlanner()
+            plan = await planner.plan_task(
+                title,
+                description,
+                agents,
+                explicit_agent=assigned_agent,
+                files=task_data.get("files") or [],
+            )
+
+            logger.info(
+                "[orchestrator] Task '%s': %d-step plan created",
+                title,
+                len(plan.steps),
+            )
+
+            await self._store_execution_plan(task_id, plan)
+            await asyncio.to_thread(
+                self._bridge.create_activity,
+                ActivityEventType.TASK_PLANNING,
+                f"Lead Agent generated execution plan for '{title}' "
+                f"({len(plan.steps)} steps)",
+                task_id,
+                self._lead_agent_name,
+            )
+        except Exception as exc:
+            logger.error(
+                "[orchestrator] Plan generation failed for task '%s': %s",
+                title,
+                exc,
+                exc_info=True,
+            )
+
+            await asyncio.to_thread(
+                self._bridge.update_task_status,
+                task_id,
+                TaskStatus.FAILED,
+                None,
+                f"Plan generation failed: {exc}",
+            )
+            await asyncio.to_thread(
+                self._bridge.create_activity,
+                ActivityEventType.TASK_FAILED,
+                f"Plan generation failed for '{title}': "
+                f"{type(exc).__name__}: {exc}",
+                task_id,
+                self._lead_agent_name,
+            )
+            await asyncio.to_thread(
+                self._bridge.send_message,
+                task_id,
+                "System",
+                AuthorType.SYSTEM,
+                (
+                    "Plan generation failed:\n"
+                    f"```\n{type(exc).__name__}: {exc}\n```\n"
+                    "Retry this task to try again."
+                ),
+                MessageType.SYSTEM_EVENT,
+            )
+            return
+
+        supervision_mode = task_data.get("supervision_mode", "autonomous")
+        if supervision_mode != "autonomous":
+            logger.info(
+                "[orchestrator] Task '%s' is in supervised mode; "
+                "awaiting explicit kick-off before materialization.",
+                title,
+            )
+            return
+
+        try:
+            created_step_ids = await asyncio.to_thread(
+                self._plan_materializer.materialize,
+                task_id,
+                plan,
+            )
+            logger.info(
+                "[orchestrator] Task '%s': materialized %d step records",
+                title,
+                len(created_step_ids),
+            )
+        except Exception as exc:
+            logger.error(
+                "[orchestrator] Plan materialization failed for task '%s': %s",
+                title,
+                exc,
+                exc_info=True,
+            )
+            await asyncio.to_thread(
+                self._bridge.send_message,
+                task_id,
+                "System",
+                AuthorType.SYSTEM,
+                (
+                    "Plan materialization failed:\n"
+                    f"```\n{type(exc).__name__}: {exc}\n```\n"
+                    "Task marked as failed."
+                ),
+                MessageType.SYSTEM_EVENT,
+            )
+
+    # Backwards-compatible shim while callers migrate to planning terminology.
+    async def _process_inbox_task(self, task_data: dict[str, Any]) -> None:
+        await self._process_planning_task(task_data)
 
     async def _store_execution_plan(
         self, task_id: str, plan: ExecutionPlan
@@ -171,65 +246,6 @@ class TaskOrchestrator:
             task_id,
             plan.to_dict(),
         )
-
-    async def _dispatch_ready_steps(
-        self, task_id: str, plan: ExecutionPlan
-    ) -> None:
-        """Dispatch all ready steps (deps met, pending) in parallel."""
-        ready = get_ready_steps(plan)
-        if not ready:
-            return
-
-        async def _dispatch_one(step: ExecutionPlanStep) -> None:
-            step.status = "in_progress"
-            logger.info(
-                "[orchestrator] Dispatching step '%s' on task %s",
-                step.step_id,
-                task_id,
-            )
-            await asyncio.to_thread(
-                self._bridge.create_activity,
-                ActivityEventType.TASK_STARTED,
-                f"Step {step.step_id} started: {step.description}",
-                task_id,
-                step.assigned_agent,
-            )
-
-        # Dispatch all ready steps in parallel (FR22)
-        await asyncio.gather(*[_dispatch_one(s) for s in ready])
-
-        # Persist updated plan status
-        await self._store_execution_plan(task_id, plan)
-
-    async def complete_step(
-        self,
-        task_id: str,
-        plan: ExecutionPlan,
-        step_id: str,
-        trust_level: str = TrustLevel.AUTONOMOUS,
-    ) -> None:
-        """Mark a step as completed, dispatch dependents, finalize if all done."""
-        for step in plan.steps:
-            if step.step_id == step_id:
-                step.status = "completed"
-                break
-
-        # Dispatch any newly-unblocked steps
-        await self._dispatch_ready_steps(task_id, plan)
-
-        # Check if all steps are done
-        if all(s.status == "completed" for s in plan.steps):
-            final_status = (
-                TaskStatus.DONE
-                if trust_level == TrustLevel.AUTONOMOUS
-                else TaskStatus.REVIEW
-            )
-            # Activity event is written by the Convex tasks:updateStatus mutation.
-            await asyncio.to_thread(
-                self._bridge.update_task_status,
-                task_id,
-                final_status,
-            )
 
     async def start_review_routing_loop(self) -> None:
         """Subscribe to review tasks and handle review transitions."""

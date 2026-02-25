@@ -37,6 +37,7 @@ LEAD_AGENT_CONFIG: dict = {
         "coordinate multi-agent workflows. You escalate to the human operator "
         "when confidence is low or approval is required."
     ),
+    # Planning/orchestration-only skills (no execution capabilities).
     "skills": [
         "task-routing",
         "execution-planning",

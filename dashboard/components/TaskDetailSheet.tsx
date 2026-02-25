@@ -54,6 +54,10 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     api.messages.listByTask,
     taskId ? { taskId } : "skip",
   );
+  const liveSteps = useQuery(
+    api.steps.getByTask,
+    taskId ? { taskId } : "skip",
+  );
   const approveMutation = useMutation(api.tasks.approve);
   const retryMutation = useMutation(api.tasks.retry);
   const addTaskFiles = useMutation(api.tasks.addTaskFiles);
@@ -251,7 +255,11 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
               </TabsContent>
 
               <TabsContent value="plan" className="flex-1 min-h-0 m-0 px-6 py-4">
-                <ExecutionPlanTab executionPlan={(task as any).executionPlan ?? null} />
+                <ExecutionPlanTab
+                  executionPlan={task.executionPlan ?? null}
+                  liveSteps={liveSteps ?? undefined}
+                  isPlanning={task.status === "inbox"}
+                />
               </TabsContent>
 
               <TabsContent value="config" className="flex-1 min-h-0 m-0 px-6 py-4">

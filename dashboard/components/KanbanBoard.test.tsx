@@ -1,13 +1,35 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { render, screen, cleanup, within } from "@testing-library/react";
 import { KanbanBoard } from "./KanbanBoard";
 
-// Track the mock return value
-let mockQueryResult: unknown[] | undefined = [];
+let mockQueryValues: Record<string, unknown> = {};
+const mockUseQuery = vi.fn();
+const mockClearAllDone = vi.fn();
+
+vi.mock("../convex/_generated/api", () => ({
+  api: {
+    tasks: {
+      list: { name: "tasks.list" },
+      listByBoard: { name: "tasks.listByBoard" },
+      countHitlPending: { name: "tasks.countHitlPending" },
+      listDeleted: { name: "tasks.listDeleted" },
+      clearAllDone: { name: "tasks.clearAllDone" },
+    },
+    steps: {
+      listAll: { name: "steps.listAll" },
+    },
+    taskTags: {
+      list: { name: "taskTags.list" },
+    },
+  },
+}));
 
 vi.mock("convex/react", () => ({
-  useQuery: () => mockQueryResult,
-  useMutation: () => vi.fn(),
+  useQuery: (
+    queryRef: { name?: string },
+    args?: unknown
+  ) => mockUseQuery(queryRef, args),
+  useMutation: () => mockClearAllDone,
 }));
 
 // Mock motion/react
@@ -27,6 +49,17 @@ vi.mock("motion/react-client", () => ({
   },
 }));
 
+function setDefaultQueryValues() {
+  mockQueryValues = {
+    "tasks.list": [],
+    "tasks.listByBoard": undefined,
+    "tasks.countHitlPending": 0,
+    "tasks.listDeleted": [],
+    "taskTags.list": [],
+    "steps.listAll": [],
+  };
+}
+
 function makeTask(overrides: Record<string, unknown> = {}) {
   return {
     _id: `task_${Math.random().toString(36).slice(2)}`,
@@ -40,14 +73,42 @@ function makeTask(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeStep(overrides: Record<string, unknown> = {}) {
+  return {
+    _id: `step_${Math.random().toString(36).slice(2)}`,
+    _creationTime: 1000,
+    taskId: "task_1",
+    title: "Test step",
+    description: "Test step description",
+    assignedAgent: "general-agent",
+    status: "assigned",
+    blockedBy: [],
+    parallelGroup: 1,
+    order: 1,
+    createdAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 describe("KanbanBoard", () => {
+  beforeEach(() => {
+    setDefaultQueryValues();
+    mockUseQuery.mockReset();
+    mockUseQuery.mockImplementation((queryRef: { name?: string }, args?: unknown) => {
+      if (args === "skip") {
+        return undefined;
+      }
+      return mockQueryValues[queryRef?.name ?? ""];
+    });
+    mockClearAllDone.mockReset();
+  });
+
   afterEach(() => {
     cleanup();
-    mockQueryResult = [];
   });
 
   it("renders 5 columns with correct titles", () => {
-    mockQueryResult = [makeTask()];
+    mockQueryValues["tasks.list"] = [makeTask()];
     render(<KanbanBoard />);
     expect(screen.getByText("Inbox")).toBeInTheDocument();
     expect(screen.getByText("Assigned")).toBeInTheDocument();
@@ -57,7 +118,7 @@ describe("KanbanBoard", () => {
   });
 
   it("shows empty state message when no tasks exist", () => {
-    mockQueryResult = [];
+    mockQueryValues["tasks.list"] = [];
     render(<KanbanBoard />);
     expect(
       screen.getByText("No tasks yet. Type above to create your first task.")
@@ -65,13 +126,20 @@ describe("KanbanBoard", () => {
   });
 
   it("renders nothing while loading", () => {
-    mockQueryResult = undefined;
+    mockQueryValues["tasks.list"] = undefined;
+    const { container } = render(<KanbanBoard />);
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("renders nothing while steps query is still loading", () => {
+    mockQueryValues["tasks.list"] = [makeTask()];
+    mockQueryValues["steps.listAll"] = undefined;
     const { container } = render(<KanbanBoard />);
     expect(container.innerHTML).toBe("");
   });
 
   it("groups tasks into correct columns by status", () => {
-    mockQueryResult = [
+    mockQueryValues["tasks.list"] = [
       makeTask({ _id: "t1", title: "Inbox task", status: "inbox" }),
       makeTask({ _id: "t2", title: "Assigned task", status: "assigned" }),
       makeTask({ _id: "t3", title: "Progress task", status: "in_progress" }),
@@ -87,7 +155,7 @@ describe("KanbanBoard", () => {
   });
 
   it("places retrying and crashed tasks in the In Progress column", () => {
-    mockQueryResult = [
+    mockQueryValues["tasks.list"] = [
       makeTask({ _id: "t1", title: "Retrying task", status: "retrying" }),
       makeTask({ _id: "t2", title: "Crashed task", status: "crashed" }),
     ];
@@ -97,10 +165,63 @@ describe("KanbanBoard", () => {
   });
 
   it("shows 'No tasks' for empty columns when other columns have tasks", () => {
-    mockQueryResult = [makeTask({ _id: "t1", status: "inbox" })];
+    mockQueryValues["tasks.list"] = [makeTask({ _id: "t1", status: "inbox" })];
     render(<KanbanBoard />);
     // 4 columns should show "No tasks" (all except Inbox)
     const emptyTexts = screen.getAllByText("No tasks");
     expect(emptyTexts).toHaveLength(4);
+  });
+
+  it("renders steps grouped by parent task and keeps tasks without steps as TaskCards", () => {
+    mockQueryValues["tasks.list"] = [
+      makeTask({ _id: "task_with_steps", title: "Task With Steps", status: "assigned" }),
+      makeTask({ _id: "task_without_steps", title: "Task Without Steps", status: "assigned" }),
+    ];
+    mockQueryValues["steps.listAll"] = [
+      makeStep({
+        _id: "step_1",
+        title: "Step One",
+        taskId: "task_with_steps",
+        status: "assigned",
+      }),
+      makeStep({
+        _id: "step_2",
+        title: "Step Two",
+        taskId: "task_with_steps",
+        status: "running",
+      }),
+      makeStep({
+        _id: "step_3",
+        title: "Step Blocked",
+        taskId: "task_with_steps",
+        status: "blocked",
+      }),
+      makeStep({
+        _id: "step_4",
+        title: "Step Crashed",
+        taskId: "task_with_steps",
+        status: "crashed",
+      }),
+    ];
+
+    render(<KanbanBoard />);
+
+    expect(screen.getByText("Step One")).toBeInTheDocument();
+    expect(screen.getByText("Step Two")).toBeInTheDocument();
+    expect(screen.getByText("Step Blocked")).toBeInTheDocument();
+    expect(screen.getByText("Step Crashed")).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("heading", { name: "Task With Steps", level: 3 })
+    ).toHaveLength(2);
+    const assignedHeaderRow = screen.getByText("Assigned").parentElement;
+    const inProgressHeaderRow = screen.getByText("In Progress").parentElement;
+    expect(within(assignedHeaderRow!).getByText("3")).toBeInTheDocument();
+    expect(within(inProgressHeaderRow!).getByText("2")).toBeInTheDocument();
+    expect(
+      screen.getByRole("article", { name: "Task Without Steps - assigned" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("article", { name: "Task With Steps - assigned" })
+    ).not.toBeInTheDocument();
   });
 });

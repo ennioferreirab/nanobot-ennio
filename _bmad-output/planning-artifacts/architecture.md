@@ -8,16 +8,20 @@ stepsCompleted:
   - step-06-structure
   - step-07-validation
   - step-08-complete
-lastStep: 8
-status: 'complete'
-completedAt: '2026-02-22'
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/ux-design-specification.md
+  - _bmad-output/planning-artifacts/epics.md
+  - _bmad-output/planning-artifacts/prd-thread-files-context.md
+  - _bmad-output/planning-artifacts/prd-thread-files-context-validation.md
+  - _bmad-output/planning-artifacts/architecture-backup-2026-02-24.md
 workflowType: 'architecture'
 project_name: 'nanobot-ennio'
 user_name: 'Ennio'
-date: '2026-02-22'
+date: '2026-02-24'
+lastStep: 8
+status: 'complete'
+completedAt: '2026-02-24'
 ---
 
 # Architecture Decision Document
@@ -30,56 +34,66 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 **Functional Requirements:**
 
-48 functional requirements across 8 categories:
+38 FRs across 7 categories (core orchestration) + 29 FRs across 7 categories (file layer):
 
 | Category | FRs | Architectural Implication |
 |----------|-----|--------------------------|
-| Task Management (FR1-FR9) | 9 | Task entity is the central data model — CRUD from both dashboard and CLI, real-time Kanban visualization, configurable trust/review at creation |
-| Agent Management (FR10-FR18) | 9 | YAML-driven agent registry with strict validation, auto-detection, agent-assisted CLI generation — configuration-driven architecture |
-| Task Orchestration (FR19-FR25) | 7 | Lead Agent as intelligent router with execution planning, capability matching, dependency-aware parallel dispatch — requires structured agent metadata |
-| Inter-Agent Collaboration (FR26-FR30) | 5 | Task-scoped threaded messaging, targeted reviewer routing (not broadcast), revision cycles within Review state — task entity carries conversation history |
-| Human Oversight (FR31-FR36) | 6 | HITL approval gates with approve/deny from dashboard, notification indicators, activity feed streaming, manual crash retry — user actions as Convex mutations |
-| Reliability & Error Handling (FR37-FR40) | 4 | Auto-retry (1x), crash detection with error logging, configurable timeouts for task stalls and inter-agent review escalation |
-| System Configuration (FR41-FR44) | 4 | Global defaults (timeouts, LLM model) from dashboard settings, per-task overrides at creation — layered configuration model |
-| System Lifecycle (FR45-FR48) | 4 | Single-command start/stop, auto-generated API docs, built-in CLI help — developer experience as a first-class concern |
+| Task & Step Management (FR1-FR5) | 5 | Task/Step parent-child data model — Task is the goal, Steps are work units. Steps are Kanban cards grouped under parent Task. Supervision mode (autonomous/supervised) selected per task. |
+| Execution Planning (FR6-FR10) | 5 | Lead Agent generates execution plans with steps, agent assignments, dependencies, and parallel groups. General Agent is always-present fallback. File metadata informs routing. |
+| Pre-Kickoff Plan Review (FR11-FR18) | 8 | Supervised mode opens pre-kickoff modal for plan negotiation — reassign agents, reorder steps, change dependencies, attach documents per step, chat with Lead Agent. Most complex UI surface. |
+| Agent Orchestration & Dispatch (FR19-FR23) | 5 | Pure orchestrator invariant: Lead Agent never executes. Parallel steps as separate subprocesses via asyncio.gather(). Completion auto-unblocks dependents. |
+| Unified Thread & Communication (FR24-FR28) | 5 | Single thread per task shared by all agents + user. Structured completion messages (file paths, diffs, descriptions). Thread is the ONLY inter-agent channel. Context truncation to 20 messages for LLM windows. |
+| Step Lifecycle & Error Handling (FR29-FR34) | 6 | Step lifecycle: assigned → running → completed/crashed. Crash isolation — doesn't cascade to siblings/parent. Manual retry with auto-unblock. Error messages in thread with recovery instructions. |
+| Dashboard & Visualization (FR35-FR38) | 4 | Kanban with real-time step status, execution plan visualization, thread view with structured messages, activity feed for step events. |
+| File Attachment (Thread Files) | 5 | Task directories with attachments/ and output/ subdirs. File picker at creation + on existing tasks. File manifest on task record. |
+| File Viewing (Thread Files) | 9 | Multi-format viewer modal (PDF, code, HTML, Markdown, images, text). File serving API. Type detection. Download. |
+| File Serving (Thread Files) | 2 | Next.js API routes for filesystem-to-browser file serving. MIME type detection. |
+| Agent File Context (Thread Files) | 5 | Agent receives filesDir path + fileManifest. Reads attachments, writes to output. Manifest auto-sync. |
+| File Manifest Management (Thread Files) | 4 | Convex stores file metadata. Reactive manifest updates on upload and agent output. |
+| Task Card File Indicators (Thread Files) | 2 | Paperclip icon + file count on Kanban cards. |
+| Lead Agent File Awareness (Thread Files) | 2 | File manifest in routing context. File metadata in delegation messages. |
 
 **Non-Functional Requirements:**
 
-23 NFRs across 5 categories:
+13 NFRs across 3 categories (core) + 13 NFRs across 3 categories (file layer):
 
 | Category | NFRs | Key Constraints |
 |----------|------|----------------|
-| Performance (NFR1-NFR6) | 6 | Dashboard updates < 2s, agent pickup < 5s, feed delay < 3s, initial load < 5s, CLI < 2s, system startup < 15s |
-| Reliability (NFR7-NFR14) | 8 | 24h unattended operation, no silent failures, zero message loss, crash recovery < 30s, 3 agents + 4 tasks concurrent, transactional integrity, connection loss detection, graceful shutdown < 30s |
-| Integration (NFR15-NFR18) | 4 | AsyncIO-Convex bridge with 3x retry + exponential backoff, dashboard read-only (user actions via mutations), YAML change detection on CLI/refresh, CLI-dashboard state parity |
-| Security (NFR19-NFR20) | 2 | Configurable access token auth, data privacy notice for Convex cloud transit |
-| Code Quality (NFR21-NFR23) | 3 | No module > 500 lines, actionable YAML validation errors, dual logging (Convex activity feed + local stdout) |
+| Performance (NFR1-NFR5) | 5 | Plan generation < 10s, pre-kickoff modal < 2s, Kanban updates < 1s, thread messages < 1s, thread truncation to 20 messages |
+| Reliability (NFR6-NFR10) | 5 | Crash isolation per step, graceful LLM provider error recovery, subprocess isolation, atomic dependency unblocking, planning failures surface as errors |
+| Integration (NFR11-NFR13) | 3 | Bridge persistent connection + auto-reconnect, LLM timeout + retry, consistent structured message format |
+| File Performance (NFR1-NFR5) | 5 | Upload < 3s for 10MB, file list < 1s, viewer < 2s, PDF nav < 500ms, file serving < 1s |
+| File Reliability (NFR10-NFR13) | 4 | Atomic directory creation, manifest reconcilable with filesystem, no partial files on failure, viewer fallback for unsupported types |
+| File Integration (NFR6-NFR9) | 4 | Manifest reflects upload < 2s, agent output < 5s, fresh manifest per context fetch, reactive dashboard display |
 
 **Scale & Complexity:**
 
-- Primary domain: Full-stack (Python/AsyncIO backend + Next.js/Convex frontend)
+- Primary domain: Full-stack (Next.js/TypeScript dashboard + Python/AsyncIO backend + Convex real-time BaaS)
 - Complexity level: Medium-High
-- Estimated architectural components: ~12-15 distinct modules spanning two runtimes
+- Estimated architectural components: ~18-22 distinct modules spanning two runtimes
+- Single-user localhost deployment — no auth, no multi-tenancy, no SEO
 
 ### Technical Constraints & Dependencies
 
-- **Brownfield:** Extends existing nanobot framework — SubagentManager, MessageBus, HeartbeatService, SkillsLoader are existing primitives to build on, not replace
-- **Dual runtime:** Python/AsyncIO (agent orchestration) + Node.js/Next.js (dashboard) — the AsyncIO-Convex bridge is the critical integration seam
-- **Convex as real-time backend:** Provides reactive queries, transactional mutations, and persistent storage — eliminates need for custom WebSocket server or polling
-- **One-directional data flow:** nanobot writes -> Convex stores -> dashboard reads. Dashboard user actions go through Convex mutations. No direct dashboard-to-nanobot communication
-- **ShadCN UI + Tailwind CSS:** Component library chosen, design system established — architectural decisions must align with this stack
-- **YAML-based configuration:** Agent definitions, not code — the system must load, validate, and hot-detect YAML files
-- **500-line module limit (NFR21):** Forces modular decomposition — no monolithic orchestration files
-- **MVP capacity:** 3 simultaneous agents, 4+ concurrent tasks — not a high-scale system, but must be reliable
+- **Brownfield:** Extends existing nanobot framework — the Lead Agent planner (planner.py), orchestrator (orchestrator.py), execution plan visualization (ExecutionPlanTab), inter-agent messaging, and file-aware routing already exist and will be refactored
+- **Dual runtime:** Python/AsyncIO (agent orchestration, subprocess management) + Node.js/Next.js (dashboard) — the AsyncIO-Convex bridge remains the critical integration seam
+- **Convex as real-time backend:** Reactive queries, transactional mutations, persistent storage — source of truth for all shared state
+- **One-directional data flow:** nanobot writes → Convex stores → dashboard reads. Dashboard user actions go through Convex mutations
+- **ShadCN UI + Tailwind CSS:** Component library and design system established in UX spec
+- **Existing executor pattern:** `_build_thread_context()` in executor.py already truncates to last 20 messages with omission note — architecture must preserve and extend this
+- **Agent subprocess model:** Each agent runs as a separate Python subprocess. Parallel steps use `asyncio.gather()` for true concurrency
+- **No authentication:** Single-user tool runs locally — simplified from old architecture
+- **Task directory convention:** `~/.nanobot/tasks/{task-id}/attachments/` and `output/` for file layer
 
 ### Cross-Cutting Concerns Identified
 
-- **State consistency:** Task state must be identical across nanobot runtime, Convex, and dashboard at all times. The bridge is the single point of truth synchronization. Convex is the source of truth for shared state.
-- **Error propagation:** Agent crashes, bridge failures, and Convex write failures must all surface to the user through consistent mechanisms (activity feed + card status + CLI output).
-- **Configuration layering:** Global defaults (dashboard settings) -> per-agent config (YAML) -> per-task overrides (creation-time). Architecture must support this precedence chain.
-- **Authentication:** Access token for dashboard (NFR19). Simple but must be consistent across dashboard routes and Convex API.
-- **Observability:** Dual logging to Convex activity feed (for dashboard) and local stdout (for debugging). Every state transition must be logged to both (NFR23).
-- **Graceful lifecycle:** Start and stop must be orchestrated across multiple processes (Next.js server, agent gateway, Convex connection). Single command, clean shutdown preserving state.
+- **State consistency (Task/Step hierarchy):** Task and Step state must be identical across nanobot runtime, Convex, and dashboard. The bridge synchronizes. Convex is source of truth. The parent-child relationship (Task has Steps) adds a new dimension to state tracking.
+- **Thread context management:** The unified thread accumulates structured completion messages (diffs, file paths, descriptions) that are denser than conversational messages. Context truncation, token awareness, and selective injection matter for LLM cost and quality.
+- **Error isolation:** Step-level crash handling must not cascade — a crashed step blocks dependents but doesn't crash siblings, the parent task, or the system. Provider errors (OAuth, rate limits) must surface as actionable recovery messages.
+- **Dependency management:** Auto-unblocking when prerequisites complete, parallel dispatch, blocking chains — all require reliable, atomic state transitions.
+- **File integration:** File context in agent prompts (filesDir + manifest), manifest sync between filesystem and Convex, file serving from filesystem to browser.
+- **Observability:** Activity feed for step events, thread as the human-readable record of all agent work, structured messages for both agent and human consumption.
+- **Graceful lifecycle:** Start/stop across multiple processes (Next.js, Convex dev, agent gateway). Subprocess cleanup on shutdown.
 
 ## Starter Template Evaluation
 
@@ -87,116 +101,169 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 Full-stack: Next.js/TypeScript (dashboard SPA) + Python/AsyncIO (nanobot backend, brownfield) + Convex (real-time BaaS)
 
-### Starter Options Considered
+### Starter: Already Initialized (Brownfield)
 
-| Template | Fit | Verdict |
-|----------|-----|---------|
-| `get-convex/template-nextjs-shadcn` | Next.js + TypeScript + Convex + Tailwind + ShadCN. No auth. | Best fit — minimal, exact stack match |
-| `get-convex/template-nextjs-convexauth-shadcn` | Same + Convex Auth + middleware + sign-in | Over-engineered for localhost single-user access token auth |
-| `get-convex/template-nextjs-clerk-shadcn` | Same + Clerk | External dependency, cost, overkill for MVP |
-| `convex-ents-saas-starter` | Full SaaS starter with Clerk + subscriptions | Way too much — SaaS patterns not applicable |
-| Manual setup (`create-next-app` + manual Convex + ShadCN) | Full control | More setup risk, no benefit over official template |
+The dashboard was initialized from `get-convex/template-nextjs-shadcn` and is a mature, working application with 47 component files, full Convex schema, and test coverage.
 
-### Selected Starter: `get-convex/template-nextjs-shadcn`
+**No new starter template needed.** The new architecture extends and refactors existing code.
 
-**Rationale for Selection:**
-- Exact stack match: Next.js App Router + TypeScript + Convex + Tailwind CSS + ShadCN UI
-- No unnecessary auth dependency — PRD requires simple access token (NFR19), not a full auth system
-- Minimal footprint aligns with nanobot's "readable orchestration" philosophy
-- Official Convex template, actively maintained
-- Pre-configured tooling: ESLint, Prettier, TypeScript, PostCSS
+**Current Installed Stack:**
 
-**Initialization Command:**
+| Package | Version |
+|---------|---------|
+| Next.js | ^16.1.5 |
+| React | ^19.2.4 |
+| Convex | ^1.31.6 |
+| TypeScript | ^5 |
+| Tailwind CSS | ^3.4.1 |
+| Motion | ^12.34.3 |
+| Vitest | ^4.0.18 |
+| react-pdf | ^10.4.0 |
+| react-syntax-highlighter | ^16.1.0 |
+| react-markdown | ^10.1.0 |
 
-```bash
-npm create convex@latest -t nextjs-shadcn
-```
+**Existing Components Relevant to New Architecture:**
 
-**Architectural Decisions Provided by Starter:**
+| Component | Current State | New Architecture Impact |
+|-----------|--------------|------------------------|
+| `ExecutionPlanTab.tsx` | Shows execution plan | Refactor for Task/Step hierarchy with dependency visualization |
+| `ThreadMessage.tsx` / `ThreadInput.tsx` | Thread messaging | Extend for structured completion messages (file paths, diffs, descriptions) |
+| `DocumentViewerModal.tsx` | Multi-format file viewer | Already complete — reused as-is |
+| `KanbanBoard.tsx` / `TaskCard.tsx` | Task cards on Kanban | Refactor: Steps become cards, grouped under parent Task |
+| `TaskDetailSheet.tsx` | Task detail panel | Add pre-kickoff modal integration, supervision mode |
+| `BoardContext.tsx` / `BoardSelector.tsx` | Board management | Already in place |
+| `TaskInput.tsx` | Task creation | Add supervision mode selector, file attachment |
+| `convex/schema.ts` | Current data model | Extend with steps table, step lifecycle fields |
 
-**Language & Runtime:** TypeScript (strict), Node.js runtime for Next.js, Convex runtime for backend functions
-
-**Styling Solution:** Tailwind CSS with PostCSS, ShadCN UI component library with CSS variables for theming
-
-**Build Tooling:** Next.js built-in (Turbopack dev, Webpack production), Convex CLI for backend deployment
-
-**Testing Framework:** Not included — to be decided in architectural decisions
-
-**Code Organization:** `app/` (Next.js pages), `components/` (React/ShadCN), `convex/` (backend schema + functions), `lib/` (utilities)
-
-**Development Experience:** Hot reloading via Next.js dev server, Convex dev server with live sync, TypeScript type generation from Convex schema
-
-**Additional Packages Required:**
+**Additional Packages May Be Needed:**
 
 | Package | Purpose |
 |---------|---------|
-| `framer-motion` | Kanban card transitions, UI animations (per UX spec) |
-| ShadCN components (via CLI) | Card, Badge, Sheet, Tabs, ScrollArea, Avatar, Sidebar, Tooltip, Separator, Collapsible, Switch, Select, Checkbox |
+| `@dnd-kit/core` (or similar) | Drag-and-drop for step reordering in pre-kickoff modal |
 
-**Note:** The Python/AsyncIO nanobot backend is brownfield — extends existing framework code. No starter template needed; new orchestration modules are added to the existing codebase.
-
-**Note:** Project initialization using this command should be the first implementation story.
+**Note:** The Python/AsyncIO nanobot backend is brownfield — existing planner.py, orchestrator.py, executor.py, and bridge.py will be refactored for the pure orchestrator model. No new Python packages anticipated.
 
 ## Core Architectural Decisions
 
 ### Decision Priority Analysis
 
 **Critical Decisions (Block Implementation):**
-- AsyncIO-Convex bridge via Python SDK (bidirectional communication)
-- Data model with 5 core Convex tables
-- Convex as single communication hub (no separate API layer)
-- Process orchestration for `nanobot mc start`
+- Separate `steps` table in Convex (Task/Step hierarchy data model)
+- Execution plan as structured object on task, materialized into steps on kick-off
+- `blockedBy` array for step dependency resolution
+- Unified thread with structured completion message format
+- Lead Agent as pure orchestrator with architectural enforcement
 
 **Important Decisions (Shape Architecture):**
-- No external state management library (Convex reactive queries + React built-ins)
-- Simple access token auth (no external auth service)
-- Monorepo structure (`dashboard/` within nanobot project)
-- Vitest for dashboard, pytest for Python
+- Pre-kickoff modal as dedicated full-screen modal (not Sheet overlay)
+- Steps as flat Kanban cards with task grouping header
+- General Agent as system-level fallback (always registered)
 
 **Deferred Decisions (Post-MVP):**
-- Full auth system (Convex Auth or similar) for multi-user support (Phase 3)
-- Convex self-hosting for data privacy
-- E2E testing framework
-- Performance benchmarking infrastructure
+- Plan templates (save/reuse execution plan patterns)
+- Agent performance analytics
+- Plan versioning (before/after comparison)
+- Multi-task cross-board orchestration
 
 ### Data Architecture
 
-**Database:** Convex (built-in with starter, document-based with typed schemas)
+**Database:** Convex (established — reactive queries, transactional mutations, typed schemas)
 
 **Core Tables:**
 
 | Table | Purpose | Key Relationships |
 |-------|---------|-------------------|
-| `tasks` | Central entity — Kanban card, task state machine, trust config, optional tags for Card-Rich display | References agents by name, has many messages and activities |
-| `messages` | Task-scoped threaded conversation (inter-agent + HITL feedback) | Belongs to task, authored by agent or user |
-| `agents` | Agent registry synced from YAML definitions | Referenced by tasks |
-| `activities` | Append-only activity feed events | Optionally references task and agent |
+| `tasks` | Parent entity — user's goal, supervision mode, execution plan (pre-kickoff), file manifest | Has many steps, has many messages |
+| `steps` | Work unit — assigned agent, status, dependencies, parallel group. Kanban card entity. | Belongs to task, references agent by name, has `blockedBy` array of step IDs |
+| `messages` | Unified thread — all agent completions, user messages, system events, Lead Agent planning | Belongs to task, authored by agent/user/system |
+| `agents` | Agent registry synced from YAML definitions | Referenced by steps and tasks |
+| `activities` | Append-only activity feed events | Optionally references task, step, and agent |
 | `settings` | Global configuration key-value store | Standalone |
+
+**Task/Step Hierarchy:**
+
+```
+Task (user's goal)
+├── executionPlan: { ... }     # Structured plan object (pre-kickoff, editable)
+├── supervisionMode: "autonomous" | "supervised"
+├── status: "planning" | "ready" | "running" | "completed" | "failed"
+├── files: [{ name, type, size, subfolder, uploadedAt }]
+│
+├── Step 1 (etapa)             # Separate Convex document
+│   ├── taskId → Task
+│   ├── assignedAgent: "financial-agent"
+│   ├── status: "assigned" | "running" | "completed" | "crashed" | "blocked"
+│   ├── blockedBy: [stepId, stepId]
+│   ├── parallelGroup: 1
+│   └── order: 1
+│
+├── Step 2 (etapa)
+│   ├── blockedBy: []          # No dependencies — runs in parallel with Step 1
+│   ├── parallelGroup: 1
+│   └── order: 2
+│
+└── Step 3 (etapa)
+    ├── blockedBy: [step1Id, step2Id]  # Blocked until both complete
+    ├── parallelGroup: 2
+    └── order: 3
+```
+
+**Execution Plan Structure (on task record, pre-kickoff):**
+
+```typescript
+type ExecutionPlan = {
+  steps: Array<{
+    tempId: string           // Temporary ID for pre-kickoff editing
+    title: string
+    description: string
+    assignedAgent: string
+    blockedBy: string[]      // References other tempIds
+    parallelGroup: number
+    order: number
+    attachedFiles?: string[] // File paths attached to this specific step
+  }>
+  generatedAt: string        // ISO 8601
+  generatedBy: "lead-agent"
+}
+```
+
+On kick-off, each plan step is materialized into a real `steps` table document. The `executionPlan` field is preserved on the task as a snapshot of the original plan.
+
+**Step Status Values:**
+
+```typescript
+type StepStatus = "planned" | "assigned" | "running" | "completed" | "crashed" | "blocked"
+```
+
+**Task Status Values:**
+
+```typescript
+type TaskStatus = "planning" | "reviewing_plan" | "ready" | "running" | "completed" | "failed"
+```
+
+- `planning` — Lead Agent is generating the execution plan
+- `reviewing_plan` — Supervised mode, pre-kickoff modal is open
+- `ready` — Plan approved, steps about to be dispatched
+- `running` — At least one step is assigned/running
+- `completed` — All steps completed
+- `failed` — One or more steps crashed and were not retried
 
 **Data Validation:**
 - Convex schema validators (`v.string()`, `v.number()`, etc.) enforce types at runtime in `schema.ts`
-- Python-side YAML validation via pydantic or cerberus for agent configuration (FR13-FR14)
+- Python-side YAML validation via pydantic for agent configuration
 - No Zod — Convex validators are sufficient for the TypeScript side
 
 **Data Flow:**
 - YAML files are the source of truth for agent definitions
 - nanobot reads YAML, validates, writes to Convex `agents` table
-- Convex is the source of truth for all shared runtime state (tasks, messages, activities, settings)
+- Convex is the source of truth for all shared runtime state (tasks, steps, messages, activities, settings)
 - Dashboard reads exclusively from Convex reactive queries
 
 ### Authentication & Security
 
-**MVP: Simple Access Token**
-- `MC_ACCESS_TOKEN` environment variable
-- Next.js middleware validates token on dashboard routes
-- Cookie-based session after initial token input
-- If no token configured, dashboard runs open (localhost convenience)
-- Convex deployment key authenticates Python SDK
+**No authentication for MVP.** Single-user tool running on localhost. No access token, no middleware.
 
-**Post-MVP: Full Auth System**
-- Deferred to Phase 3 (multi-user support)
-- Convex Auth or similar for user accounts, roles, permissions
-- Documented as upgrade path, not a refactoring — current token pattern is easily replaceable
+**Post-MVP:** If multi-user or remote access is needed, add Convex Auth or simple token middleware.
 
 ### API & Communication Patterns
 
@@ -215,39 +282,75 @@ No REST API layer, no WebSocket server, no message broker. All communication flo
 
 | Path | Mechanism | Examples |
 |------|-----------|---------|
-| Dashboard → Convex | Mutations | Create task, approve/deny, update settings |
-| Convex → Dashboard | Reactive queries | Auto-updating Kanban, feed, agent status |
-| nanobot → Convex | Mutations (Python SDK) | Task state changes, activity events, agent status, messages |
-| Convex → nanobot | Subscriptions (Python SDK) | New tasks, HITL decisions, settings changes |
-| CLI → Convex | Queries (Python SDK) | `mc tasks list`, `mc agents list`, `mc status` |
+| Dashboard → Convex | Mutations | Create task, approve plan, kick-off, post thread message |
+| Convex → Dashboard | Reactive queries | Auto-updating Kanban (steps), thread, activity feed |
+| nanobot → Convex | Mutations (Python SDK) | Step status changes, thread messages, activity events |
+| Convex → nanobot | Subscriptions (Python SDK) | New tasks, plan approvals, step assignments |
+
+**Exception: File I/O via Next.js API Routes**
+
+File upload and serving bypass Convex (filesystem access required):
+- `POST /api/tasks/[taskId]/files` — Upload files to task directory
+- `GET /api/tasks/[taskId]/files/[...path]` — Serve files to viewer
+
+**Structured Completion Message Format:**
+
+```typescript
+type ThreadMessage = {
+  taskId: Id<"tasks">
+  role: "agent" | "user" | "system" | "lead_agent"
+  agentName?: string
+  stepId?: Id<"steps">
+  type: "step_completion" | "user_message" | "system_error" | "lead_agent_plan" | "lead_agent_chat"
+  content: string                    // Human-readable text
+  artifacts?: Array<{
+    path: string                     // File path relative to task directory
+    action: "created" | "modified"
+    description?: string             // For created files
+    diff?: string                    // For modified files
+  }>
+  timestamp: string                  // ISO 8601
+}
+```
 
 **Error Handling:**
-- Python SDK retries failed writes 3x with exponential backoff (NFR15)
-- After retry exhaustion: log to local stdout + best-effort error activity event
-- Dashboard detects connection loss → "Reconnecting..." banner (NFR13)
-- All errors surface through consistent mechanisms: activity feed + card status + local stdout (NFR23)
+- Python SDK retries failed writes 3x with exponential backoff
+- After retry exhaustion: log to local stdout + error activity event
+- Dashboard detects connection loss → "Reconnecting..." banner
+- Step crashes post structured error messages to the unified thread with actionable recovery instructions
 
 ### Frontend Architecture
 
 **State Management:**
-- Primary: Convex reactive queries (tasks, agents, activities, settings — all server state)
-- Local: React `useState`/`useReducer` (sidebar toggle, Sheet open/close, input text, form state)
+- Primary: Convex reactive queries (tasks, steps, agents, activities, settings, messages)
+- Local: React `useState`/`useReducer` (modal state, form inputs, plan editing state)
 - No additional library (no Redux, Zustand, Jotai)
 
 **Routing:**
-- `/` — Main dashboard (Kanban + sidebar + feed). Task detail is a Sheet overlay, not a route.
-- `/login` — Access token input (only if `MC_ACCESS_TOKEN` is configured)
+- `/` — Main dashboard (Kanban + sidebar + feed). Task detail is a Sheet overlay.
+- Pre-kickoff modal is a full-screen modal overlay, not a route.
+
+**Pre-Kickoff Modal:**
+- Full modal with two-panel layout: plan editor (left) + Lead Agent chat (right)
+- Plan editor: steps as editable cards, agent dropdown per step, drag-and-drop reorder, dependency toggles, file attachment per step
+- Chat: thread with Lead Agent for plan negotiation (FR16-FR17)
+- Kick-off button materializes plan into step records and dispatches
+
+**Step Rendering on Kanban:**
+- Steps are flat cards in Kanban columns
+- Task grouping header separates steps by parent task within each column
+- Step cards show: step title, assigned agent avatar, status badge, blocked indicator (lock icon + dependency names), file indicator
+- Parent task name shown as subtle label on each step card
 
 **Performance:**
 - Optimistic UI via Convex built-in optimistic updates
-- Framer Motion `layoutId` for GPU-accelerated card transitions
+- Motion `layoutId` for GPU-accelerated card transitions
 - `prefers-reduced-motion` media query respect
-- No SSR — localhost SPA, no SEO requirements
+- No SSR — localhost SPA
 
 **Component Organization:**
 - `components/ui/` — ShadCN UI primitives
-- `components/` — Custom compositions (KanbanBoard, TaskCard, TaskInput, ActivityFeed, etc.)
-- Flat structure for MVP
+- `components/` — Custom compositions (existing flat structure, extended with new components)
 
 ### Infrastructure & Deployment
 
@@ -255,45 +358,61 @@ No REST API layer, no WebSocket server, no message broker. All communication flo
 
 | Process | Role | Lifecycle |
 |---------|------|-----------|
-| Agent Gateway | Python AsyncIO — connects agents to Convex, manages agent lifecycle | Main process |
+| Agent Gateway | Python AsyncIO — manages agent lifecycle, subprocess dispatch, bridge connection | Main process |
 | Next.js dev server | Dashboard at `localhost:3000` | Child subprocess |
 | Convex dev server | Backend function sync + reactive backend | Child subprocess |
 
-- `nanobot mc start` spawns all three, monitors health
-- `nanobot mc stop` sends graceful shutdown, waits up to 30s (NFR14), preserves all state in Convex
+**Subprocess Model for Parallel Steps:**
 
-**Convex Deployment:**
-- MVP: Convex Cloud (zero infrastructure, free tier sufficient)
-- Post-MVP: Self-hosted via Docker + SQLite/Postgres (data privacy upgrade path)
+```python
+# In gateway/executor
+async def dispatch_parallel_group(steps: list[Step]):
+    tasks = [run_agent_subprocess(step) for step in steps]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for step, result in zip(steps, results):
+        if isinstance(result, Exception):
+            await mark_step_crashed(step, result)
+        else:
+            await mark_step_completed(step)
+            await unblock_dependents(step)
+```
 
-**Project Structure:**
-- Monorepo — `dashboard/` directory within nanobot project
-- Single `nanobot mc start` command runs everything
-- Hot-reload for both dashboard (Next.js) and backend functions (Convex CLI)
+Each agent runs as a separate Python subprocess — no shared state, no agent contention. A crash in one subprocess doesn't bring down others.
+
+**Lead Agent Orchestrator Enforcement:**
+- The executor module checks agent identity before dispatch
+- Lead Agent's agent loop only has planning tools (no execution tools)
+- If executor receives Lead Agent as assigned agent, it routes to planner module
+- Structurally impossible for Lead Agent to execute — not just a convention
+
+**General Agent:**
+- System-level agent, always registered in the agents table
+- Configured with a general-purpose system prompt
+- Used by Lead Agent as fallback when no specialist matches
+- Cannot be deleted or deactivated
 
 **Testing Strategy:**
-- Dashboard: Vitest (fast, native ESM, Convex-recommended)
-- Python: pytest (existing nanobot convention)
-- E2E: Manual testing through dashboard for MVP, framework deferred to post-MVP
+- Dashboard: Vitest (established)
+- Python: pytest (established)
+- E2E: Manual testing for MVP
 
 ### Decision Impact Analysis
 
 **Implementation Sequence:**
-1. Initialize dashboard project (`npm create convex@latest -t nextjs-shadcn`)
-2. Define Convex schema (`tasks`, `messages`, `agents`, `activities`, `settings`)
-3. Build AsyncIO-Convex bridge (Python SDK integration)
-4. Implement task state machine (Convex mutations)
-5. Build dashboard layout (Kanban + sidebar + feed)
-6. Wire reactive queries to dashboard components
-7. Implement HITL approval flow
-8. Build CLI commands
-9. Add access token auth
+1. Extend Convex schema — add `steps` table, update `tasks` with `executionPlan` and `supervisionMode`, extend `messages` with structured format
+2. Refactor Lead Agent planner — pure orchestrator, produces `ExecutionPlan` structure
+3. Implement step materializer — converts `ExecutionPlan` into step records on kick-off
+4. Build subprocess dispatcher — `asyncio.gather()` for parallel groups, dependency resolution
+5. Refactor Kanban — steps as cards with task grouping headers
+6. Build pre-kickoff modal — plan editor + Lead Agent chat
+7. Extend thread — structured completion messages with artifacts
+8. Implement step lifecycle — crash isolation, manual retry, auto-unblock
 
 **Cross-Component Dependencies:**
-- Convex schema must be defined before any dashboard or bridge work
-- Python SDK bridge must work before agents can process tasks
-- Task state machine (Convex mutations) must exist before dashboard can display state transitions
-- Agent YAML validation (Python) feeds into Convex `agents` table — both sides must agree on the agent data shape
+- Convex schema (steps table) must exist before any step-related work
+- Lead Agent planner must produce valid `ExecutionPlan` before pre-kickoff modal can render
+- Step materializer must work before subprocess dispatcher can dispatch
+- Structured message format must be defined before thread rendering and agent context injection
 
 ## Implementation Patterns & Consistency Rules
 
@@ -303,111 +422,87 @@ No REST API layer, no WebSocket server, no message broker. All communication flo
 
 | Element | Convention | Example |
 |---------|-----------|---------|
-| Table names | camelCase, plural | `tasks`, `messages`, `agents`, `activities`, `settings` |
-| Field names | camelCase | `assignedAgent`, `trustLevel`, `taskId`, `createdAt` |
-| Convex functions | camelCase, verb-first | `tasks.create`, `tasks.updateStatus`, `agents.list` |
-| Convex function files | camelCase, plural (matches table) | `convex/tasks.ts`, `convex/messages.ts` |
+| Table names | camelCase, plural | `tasks`, `steps`, `messages`, `agents`, `activities`, `settings` |
+| Field names | camelCase | `assignedAgent`, `taskId`, `blockedBy`, `parallelGroup`, `executionPlan` |
+| Convex functions | camelCase, verb-first | `steps.create`, `steps.updateStatus`, `tasks.kickOff` |
+| Convex function files | camelCase, plural (matches table) | `convex/tasks.ts`, `convex/steps.ts`, `convex/messages.ts` |
 
 **React/Dashboard (TypeScript side):**
 
 | Element | Convention | Example |
 |---------|-----------|---------|
-| Component files | PascalCase | `KanbanBoard.tsx`, `TaskCard.tsx`, `ActivityFeed.tsx` |
-| Component names | PascalCase | `export function KanbanBoard()` |
-| Hook files | camelCase, `use` prefix | `useTaskSubscription.ts` |
+| Component files | PascalCase | `KanbanBoard.tsx`, `StepCard.tsx`, `PreKickoffModal.tsx` |
+| Component names | PascalCase | `export function PreKickoffModal()` |
+| Hook files | camelCase, `use` prefix | `useStepSubscription.ts` |
 | Utility files | camelCase | `formatTimestamp.ts` |
 | CSS/style | Tailwind utilities only | No CSS modules, no styled-components |
-| Props interfaces | `{Component}Props` | `TaskCardProps`, `FeedItemProps` |
+| Props interfaces | `{Component}Props` | `StepCardProps`, `PreKickoffModalProps` |
 
 **Python (nanobot side):**
 
 | Element | Convention | Example |
 |---------|-----------|---------|
-| Module files | snake_case | `convex_bridge.py`, `task_state_machine.py` |
-| Classes | PascalCase | `ConvexBridge`, `AgentGateway`, `TaskOrchestrator` |
-| Functions/methods | snake_case | `update_task_status()`, `sync_agent_registry()` |
+| Module files | snake_case | `convex_bridge.py`, `step_dispatcher.py` |
+| Classes | PascalCase | `ConvexBridge`, `StepDispatcher`, `PlanMaterializer` |
+| Functions/methods | snake_case | `dispatch_parallel_group()`, `materialize_plan()` |
 | Constants | UPPER_SNAKE_CASE | `MAX_RETRY_COUNT`, `DEFAULT_TIMEOUT_SECONDS` |
-| Config keys (YAML) | snake_case | `assigned_to`, `trust_level`, `require_human_approval` |
+| Config keys (YAML) | snake_case | `assigned_to`, `parallel_group` |
 
 **Cross-boundary rule:** When data crosses the Python-Convex boundary, field names convert to match the target convention. Python sends `snake_case`, the bridge layer converts to `camelCase` for Convex mutations. Convex subscription data arrives as `camelCase` and is converted to `snake_case` for Python consumption.
 
 ### Structure Patterns
 
-**Dashboard (`dashboard/`) organization:**
-
-```
-dashboard/
-├── app/
-│   ├── layout.tsx
-│   ├── page.tsx
-│   └── login/
-│       └── page.tsx
-├── components/
-│   ├── ui/                  # ShadCN primitives (auto-generated)
-│   ├── KanbanBoard.tsx
-│   ├── TaskCard.tsx
-│   ├── TaskInput.tsx
-│   ├── ActivityFeed.tsx
-│   ├── FeedItem.tsx
-│   ├── AgentSidebarItem.tsx
-│   ├── TaskDetailSheet.tsx
-│   ├── ThreadMessage.tsx
-│   └── InlineRejection.tsx
-├── convex/
-│   ├── schema.ts
-│   ├── tasks.ts
-│   ├── messages.ts
-│   ├── agents.ts
-│   ├── activities.ts
-│   └── settings.ts
-├── lib/
-│   └── utils.ts
-└── public/
-```
-
-**Python orchestration modules (within existing nanobot):**
-
-```
-nanobot/
-├── mc/
-│   ├── __init__.py
-│   ├── cli.py
-│   ├── gateway.py
-│   ├── bridge.py
-│   ├── orchestrator.py
-│   ├── state_machine.py
-│   ├── yaml_validator.py
-│   └── process_manager.py
-```
-
 **Test location:** Co-located with source files.
-- Dashboard: `KanbanBoard.test.tsx` next to `KanbanBoard.tsx`
-- Python: `test_bridge.py` next to `bridge.py`
+- Dashboard: `StepCard.test.tsx` next to `StepCard.tsx`
+- Python: `test_step_dispatcher.py` next to `step_dispatcher.py`
+
+**Component organization:** Flat structure in `components/`. No nested folders for MVP.
+
+**Convex function organization:** One file per table (`tasks.ts`, `steps.ts`, `messages.ts`, etc.). All queries, mutations, and actions for a table in one file.
 
 ### Format Patterns
 
-**Task Status Values (exact strings, used across all systems):**
+**Step Status Values (exact strings, used across all systems):**
 
 ```typescript
-type TaskStatus = "inbox" | "assigned" | "in_progress" | "review" | "done" | "retrying" | "crashed"
+type StepStatus = "planned" | "assigned" | "running" | "completed" | "crashed" | "blocked"
+```
+
+**Task Status Values:**
+
+```typescript
+type TaskStatus = "planning" | "reviewing_plan" | "ready" | "running" | "completed" | "failed"
+```
+
+**Supervision Mode Values:**
+
+```typescript
+type SupervisionMode = "autonomous" | "supervised"
+```
+
+**Thread Message Roles:**
+
+```typescript
+type MessageRole = "agent" | "user" | "system" | "lead_agent"
+```
+
+**Thread Message Types:**
+
+```typescript
+type MessageType = "step_completion" | "user_message" | "system_error" | "lead_agent_plan" | "lead_agent_chat"
 ```
 
 **Activity Event Types:**
 
 ```typescript
 type ActivityEventType =
-  | "task_created" | "task_assigned" | "task_started" | "task_completed"
-  | "task_crashed" | "task_retrying"
-  | "review_requested" | "review_feedback" | "review_approved"
-  | "hitl_requested" | "hitl_approved" | "hitl_denied"
+  | "task_created" | "task_planning" | "task_plan_approved" | "task_kicked_off"
+  | "task_completed" | "task_failed"
+  | "step_assigned" | "step_started" | "step_completed"
+  | "step_crashed" | "step_retrying" | "step_unblocked"
   | "agent_connected" | "agent_disconnected" | "agent_crashed"
+  | "file_uploaded" | "file_output_created"
   | "system_error"
-```
-
-**Trust Level Values:**
-
-```typescript
-type TrustLevel = "autonomous" | "agent_reviewed" | "human_approved"
 ```
 
 **Agent Status Values:**
@@ -416,22 +511,55 @@ type TrustLevel = "autonomous" | "agent_reviewed" | "human_approved"
 type AgentStatus = "active" | "idle" | "crashed"
 ```
 
-**Timestamps:** ISO 8601 strings (`2026-02-22T10:30:00Z`) everywhere — Convex, Python, dashboard.
+**Timestamps:** ISO 8601 strings (`2026-02-24T10:30:00Z`) everywhere — Convex, Python, dashboard.
 
 ### Communication Patterns
 
-**Convex Mutation Pattern:** Every mutation that modifies task state MUST also write a corresponding activity event. No task state change without a feed entry.
+**Convex Mutation Pattern:** Every mutation that modifies step or task state MUST also write a corresponding activity event. No state change without a feed entry.
 
 ```typescript
-export const updateStatus = mutation({
-  args: { taskId: v.id("tasks"), status: v.string(), agentName: v.string() },
+export const updateStepStatus = mutation({
+  args: { stepId: v.id("steps"), status: v.string(), agentName: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.taskId, { status: args.status });
+    const step = await ctx.db.get(args.stepId);
+    await ctx.db.patch(args.stepId, { status: args.status });
     await ctx.db.insert("activities", {
-      taskId: args.taskId,
+      taskId: step.taskId,
+      stepId: args.stepId,
       agentName: args.agentName,
-      eventType: "task_started",
-      description: "Agent started working on task",
+      eventType: `step_${args.status}`,
+      description: `Agent ${args.agentName} — step ${args.status}`,
+      timestamp: new Date().toISOString(),
+    });
+  },
+});
+```
+
+**Step Completion with Structured Message Pattern:** When an agent completes a step, it posts a structured completion message to the task's unified thread:
+
+```typescript
+export const postStepCompletion = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    stepId: v.id("steps"),
+    agentName: v.string(),
+    content: v.string(),
+    artifacts: v.optional(v.array(v.object({
+      path: v.string(),
+      action: v.string(),
+      description: v.optional(v.string()),
+      diff: v.optional(v.string()),
+    }))),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("messages", {
+      taskId: args.taskId,
+      stepId: args.stepId,
+      role: "agent",
+      agentName: args.agentName,
+      type: "step_completion",
+      content: args.content,
+      artifacts: args.artifacts,
       timestamp: new Date().toISOString(),
     });
   },
@@ -441,11 +569,38 @@ export const updateStatus = mutation({
 **Python Bridge Call Pattern:** Every bridge call follows try-retry-log pattern.
 
 ```python
-async def update_task_status(self, task_id: str, status: str, agent_name: str):
+async def update_step_status(self, step_id: str, status: str, agent_name: str):
     await self._call_mutation_with_retry(
-        "tasks:updateStatus",
-        {"taskId": task_id, "status": status, "agentName": agent_name}
+        "steps:updateStepStatus",
+        {"stepId": step_id, "status": status, "agentName": agent_name}
     )
+```
+
+**Dependency Unblocking Pattern:** After a step completes, check all steps that reference it in `blockedBy`. If all blockers are completed, transition the dependent step from "blocked" to "assigned".
+
+```typescript
+export const checkAndUnblockDependents = mutation({
+  args: { completedStepId: v.id("steps"), taskId: v.id("tasks") },
+  handler: async (ctx, args) => {
+    const allSteps = await ctx.db
+      .query("steps")
+      .withIndex("by_taskId", (q) => q.eq("taskId", args.taskId))
+      .collect();
+    for (const step of allSteps) {
+      if (step.status === "blocked" && step.blockedBy?.includes(args.completedStepId)) {
+        const remainingBlockers = step.blockedBy.filter((id) => id !== args.completedStepId);
+        const allResolved = remainingBlockers.every((blockerId) => {
+          const blocker = allSteps.find((s) => s._id === blockerId);
+          return blocker?.status === "completed";
+        });
+        if (allResolved) {
+          await ctx.db.patch(step._id, { status: "assigned", blockedBy: [] });
+          // Activity event for unblocking
+        }
+      }
+    }
+  },
+});
 ```
 
 ### Process Patterns
@@ -456,26 +611,38 @@ async def update_task_status(self, task_id: str, status: str, agent_name: str):
 |-------|---------|
 | Convex mutations | Throw `ConvexError` with user-readable message |
 | Python bridge | Catch, retry 3x with exponential backoff, then log + write error activity |
-| Dashboard | Convex handles errors via `useQuery`/`useMutation` error states — show in feed, red badge on card |
-| YAML validation | Collect all errors, return list with field + expected + actual + line number |
+| Step crash | Post structured error message to unified thread with actionable recovery instructions. Set step status to "crashed". Do NOT cascade to sibling steps. |
+| Dashboard | Convex handles errors via `useQuery`/`useMutation` error states — show in feed, red badge on step card |
+
+**Step Crash Isolation Rule:** A crashed step ONLY affects its direct dependents (they stay "blocked"). Sibling steps in the same parallel group continue running. The parent task does NOT fail unless explicitly marked by the user or all steps are crashed.
 
 **Loading States:**
 - Convex's built-in loading states (`useQuery` returns `undefined` while loading)
 - No custom loading state management, no skeleton screens for MVP
-- Feed shows "Waiting for activity..." when empty (empty state, not loading state)
+- Feed shows "Waiting for activity..." when empty
+
+**Plan Materialization Pattern:** On kick-off, the `executionPlan` object is converted into real step records:
+1. For each plan step, create a `steps` document with `taskId` reference
+2. Set initial status: "assigned" for steps with no blockers, "blocked" for steps with dependencies
+3. Preserve the `executionPlan` on the task record as a snapshot
+4. Update task status to "running"
+5. Notify the Python backend via subscription that steps are ready for dispatch
 
 ### Enforcement Guidelines
 
 **All AI Agents MUST:**
 
 1. Follow naming conventions exactly — camelCase in TypeScript, snake_case in Python, PascalCase for React components
-2. Never change task status without writing a corresponding activity event
-3. Use the exact string values for task status, trust level, agent status, and event types
-4. Convert field names at the Python-Convex boundary (snake_case to camelCase and back)
-5. Keep all modules under 500 lines (NFR21)
-6. Co-locate tests with source files
-7. Use Convex validators for TypeScript-side validation, pydantic for Python-side YAML validation
-8. Use ISO 8601 for all timestamps
+2. Never change step or task status without writing a corresponding activity event
+3. Use the exact string values for step status, task status, supervision mode, message roles/types, and event types
+4. Convert field names at the Python-Convex boundary (snake_case ↔ camelCase)
+5. Post structured completion messages to the unified thread when a step completes — always include `artifacts` array for any file operations
+6. Respect crash isolation — a crashed step blocks dependents only, never crashes siblings or parent task
+7. Never allow the Lead Agent to execute tasks — route to planner module, not execution pipeline
+8. Use `blockedBy` array for dependency resolution — check all blockers before unblocking a step
+9. Co-locate tests with source files
+10. Use Convex validators for TypeScript-side validation, pydantic for Python-side YAML validation
+11. Use ISO 8601 for all timestamps
 
 ## Project Structure & Boundaries
 
@@ -502,118 +669,156 @@ nanobot-ennio/                          # Root — existing nanobot project
 │   │   ├── events.py
 │   │   └── queue.py
 │   ├── cli/                            # Existing CLI
-│   │   ├── commands.py
-│   │   └── mc.py                       # NEW — nanobot mc subcommands
+│   │   └── mc.py                       # nanobot mc subcommands
 │   ├── config/
-│   │   ├── loader.py
-│   │   └── schema.py
 │   ├── heartbeat/
-│   │   └── service.py
 │   ├── channels/
 │   ├── providers/
 │   ├── session/
 │   ├── skills/
 │   ├── utils/
 │   │
-│   └── mc/                             # NEW — Mission Control package
+│   └── mc/                             # Mission Control package
 │       ├── __init__.py
 │       ├── gateway.py                  # Agent Gateway — AsyncIO main loop
-│       ├── gateway.test.py
-│       ├── bridge.py                   # Convex Python SDK wrapper
-│       ├── bridge.test.py
-│       ├── orchestrator.py             # Lead Agent routing + execution planning
-│       ├── orchestrator.test.py
-│       ├── state_machine.py            # Task state transitions + validation
-│       ├── state_machine.test.py
+│       ├── test_gateway.py
+│       ├── bridge.py                   # Convex Python SDK wrapper (SOLE boundary)
+│       ├── test_bridge.py
+│       ├── orchestrator.py             # Lead Agent coordination (REFACTOR: pure orchestrator)
+│       ├── test_orchestrator.py
+│       ├── planner.py                  # Lead Agent planning — produces ExecutionPlan (REFACTOR)
+│       ├── executor.py                 # Step execution — subprocess dispatch (REFACTOR)
+│       ├── step_dispatcher.py          # NEW — asyncio.gather() parallel dispatch + dependency resolution
+│       ├── plan_materializer.py        # NEW — converts ExecutionPlan → step records on kick-off
+│       ├── state_machine.py            # Task/Step state transitions (REFACTOR for steps)
+│       ├── test_state_machine.py
 │       ├── yaml_validator.py           # Agent YAML schema validation (pydantic)
-│       ├── yaml_validator.test.py
+│       ├── test_yaml_validator.py
 │       ├── process_manager.py          # Subprocess mgmt (Next.js, Convex dev)
-│       └── types.py                    # Shared Python types/dataclasses
+│       ├── test_process_manager.py
+│       ├── timeout_checker.py          # Step timeout detection
+│       ├── test_timeout_checker.py
+│       ├── provider_factory.py         # LLM provider setup
+│       ├── agent_assist.py             # Agent-assisted CLI
+│       ├── test_agent_assist.py
+│       ├── init_wizard.py              # First-run setup
+│       └── types.py                    # Shared Python types/dataclasses (EXTEND for steps)
 │
-├── dashboard/                          # NEW — Next.js + Convex dashboard
+├── dashboard/                          # Next.js + Convex dashboard
 │   ├── package.json
-│   ├── package-lock.json
 │   ├── next.config.ts
 │   ├── tailwind.config.ts
 │   ├── tsconfig.json
 │   ├── postcss.config.mjs
 │   ├── eslint.config.mjs
-│   ├── .prettierrc
 │   ├── components.json                 # ShadCN UI config
-│   ├── .env.local                      # NEXT_PUBLIC_CONVEX_URL, MC_ACCESS_TOKEN
-│   ├── .env.example
+│   ├── .env.local
 │   │
 │   ├── app/
-│   │   ├── globals.css                 # Tailwind base + ShadCN theme tokens
-│   │   ├── layout.tsx                  # Root layout — ConvexProvider wrapper
+│   │   ├── globals.css
+│   │   ├── layout.tsx
 │   │   ├── page.tsx                    # Main dashboard
-│   │   ├── providers.tsx               # ConvexClientProvider component
-│   │   └── login/
-│   │       └── page.tsx                # Access token input page
+│   │   ├── login/
+│   │   │   └── page.tsx
+│   │   └── api/
+│   │       ├── tasks/                  # File upload/serving API routes
+│   │       ├── agents/                 # Agent config API routes
+│   │       ├── auth/
+│   │       └── cron/
 │   │
 │   ├── components/
 │   │   ├── ui/                         # ShadCN primitives (auto-generated)
-│   │   │   ├── button.tsx
-│   │   │   ├── card.tsx
-│   │   │   ├── badge.tsx
-│   │   │   ├── input.tsx
-│   │   │   ├── textarea.tsx
-│   │   │   ├── sheet.tsx
-│   │   │   ├── tabs.tsx
-│   │   │   ├── scroll-area.tsx
-│   │   │   ├── avatar.tsx
-│   │   │   ├── tooltip.tsx
-│   │   │   ├── separator.tsx
-│   │   │   ├── collapsible.tsx
-│   │   │   ├── switch.tsx
-│   │   │   ├── select.tsx
-│   │   │   └── checkbox.tsx
 │   │   │
-│   │   ├── DashboardLayout.tsx         # CSS Grid layout orchestrator
-│   │   ├── KanbanBoard.tsx             # 5-column board with CSS Grid
+│   │   │   # === LAYOUT & NAVIGATION ===
+│   │   ├── DashboardLayout.tsx
+│   │   ├── DashboardLayout.test.tsx
+│   │   ├── BoardContext.tsx
+│   │   ├── BoardSelector.tsx
+│   │   ├── BoardSettingsSheet.tsx
+│   │   ├── ConvexClientProvider.tsx
+│   │   ├── ThemeToggle.tsx
+│   │   ├── UserMenu.tsx
+│   │   │
+│   │   │   # === KANBAN BOARD ===
+│   │   ├── KanbanBoard.tsx             # REFACTOR: steps as cards with task grouping
 │   │   ├── KanbanBoard.test.tsx
-│   │   ├── KanbanColumn.tsx            # Single column with ScrollArea
-│   │   ├── TaskCard.tsx                # Card with status border + badge + avatar
+│   │   ├── KanbanColumn.tsx            # REFACTOR: step-based columns
+│   │   ├── TaskCard.tsx                # REFACTOR → StepCard rendering
 │   │   ├── TaskCard.test.tsx
-│   │   ├── TaskInput.tsx               # Always-visible input + progressive disclosure
+│   │   ├── StepCard.tsx                # NEW — step card for Kanban
+│   │   ├── TaskGroupHeader.tsx         # NEW — groups steps by parent task in columns
+│   │   │
+│   │   │   # === TASK CREATION & DETAIL ===
+│   │   ├── TaskInput.tsx               # EXTEND: supervision mode selector
 │   │   ├── TaskInput.test.tsx
-│   │   ├── ActivityFeed.tsx            # Real-time event stream
-│   │   ├── ActivityFeed.test.tsx
-│   │   ├── FeedItem.tsx                # Single feed entry
-│   │   ├── AgentSidebar.tsx            # Sidebar container (collapsible)
-│   │   ├── AgentSidebarItem.tsx        # Agent entry with status dot
-│   │   ├── TaskDetailSheet.tsx         # Slide-out panel with tabs
+│   │   ├── TaskDetailSheet.tsx         # EXTEND: step list, unified thread, plan snapshot
 │   │   ├── TaskDetailSheet.test.tsx
-│   │   ├── ThreadMessage.tsx           # Single message in task thread
-│   │   └── InlineRejection.tsx         # Expandable deny feedback
+│   │   ├── PreKickoffModal.tsx         # NEW — full-screen plan editor + Lead Agent chat
+│   │   ├── PlanEditor.tsx              # NEW — step cards, drag-and-drop, dependency editing
+│   │   ├── PlanStepCard.tsx            # NEW — editable step card in plan editor
+│   │   │
+│   │   │   # === THREAD & MESSAGING ===
+│   │   ├── ThreadMessage.tsx           # EXTEND: structured completion messages with artifacts
+│   │   ├── ThreadInput.tsx
+│   │   ├── ArtifactRenderer.tsx        # NEW — renders file paths + diffs in thread messages
+│   │   │
+│   │   │   # === EXECUTION & VISUALIZATION ===
+│   │   ├── ExecutionPlanTab.tsx         # REFACTOR: Task/Step hierarchy visualization
+│   │   ├── ExecutionPlanTab.test.tsx
+│   │   │
+│   │   │   # === ACTIVITY FEED ===
+│   │   ├── ActivityFeed.tsx
+│   │   ├── ActivityFeed.test.tsx
+│   │   ├── ActivityFeedPanel.tsx
+│   │   ├── FeedItem.tsx                # EXTEND: step-level events
+│   │   │
+│   │   │   # === AGENT MANAGEMENT ===
+│   │   ├── AgentSidebar.tsx
+│   │   ├── AgentSidebarItem.tsx
+│   │   ├── AgentSidebarItem.test.tsx
+│   │   ├── AgentConfigSheet.tsx
+│   │   ├── AgentConfigSheet.test.tsx
+│   │   ├── AgentTextViewerModal.tsx
+│   │   ├── CreateAgentSheet.tsx
+│   │   ├── PromptEditModal.tsx
+│   │   ├── SkillsSelector.tsx
+│   │   ├── SkillsSelector.test.tsx
+│   │   │
+│   │   │   # === FILE VIEWING ===
+│   │   ├── DocumentViewerModal.tsx     # Already built — multi-format viewer
+│   │   ├── MarkdownRenderer.tsx
+│   │   ├── Code.tsx
+│   │   │
+│   │   │   # === OTHER ===
+│   │   ├── InlineRejection.tsx
+│   │   ├── InlineRejection.test.tsx
+│   │   ├── SettingsPanel.tsx
+│   │   ├── SettingsPanel.test.tsx
+│   │   ├── TagsPanel.tsx
+│   │   ├── TrashBinSheet.tsx
+│   │   ├── DoneTasksSheet.tsx
+│   │   └── CronJobsModal.tsx
 │   │
 │   ├── convex/
 │   │   ├── _generated/                 # Auto-generated by Convex CLI
-│   │   ├── schema.ts                   # All table definitions
-│   │   ├── tasks.ts                    # Task queries + mutations
-│   │   ├── messages.ts                 # Message queries + mutations
-│   │   ├── agents.ts                   # Agent queries + mutations
-│   │   ├── activities.ts               # Activity queries + mutations
-│   │   └── settings.ts                 # Settings queries + mutations
+│   │   ├── schema.ts                   # EXTEND: add steps table, update tasks/messages
+│   │   ├── tasks.ts                    # REFACTOR: add executionPlan, supervisionMode, kickOff
+│   │   ├── steps.ts                    # NEW — step CRUD, status updates, dependency unblocking
+│   │   ├── messages.ts                 # EXTEND: structured completion message format
+│   │   ├── agents.ts
+│   │   ├── activities.ts               # EXTEND: step-level event types
+│   │   ├── settings.ts
+│   │   ├── boards.ts
+│   │   ├── skills.ts
+│   │   └── taskTags.ts
 │   │
 │   ├── lib/
-│   │   ├── utils.ts                    # ShadCN cn() utility + helpers
-│   │   └── constants.ts                # Shared constants (status values, event types)
-│   │
-│   ├── middleware.ts                   # Access token validation
+│   │   └── utils.ts
 │   │
 │   └── public/
-│       └── favicon.ico
 │
-├── workspace/                          # Existing — shared agent workspace
-│   ├── AGENTS.md
-│   ├── SOUL.md
-│   ├── TOOLS.md
-│   ├── USER.md
-│   ├── HEARTBEAT.md
-│   └── memory/
-│
-├── tests/                              # Existing test directory
+├── workspace/                          # Shared agent workspace
+├── tests/                              # Additional Python tests
 └── docs/
 ```
 
@@ -621,139 +826,229 @@ nanobot-ennio/                          # Root — existing nanobot project
 
 **Boundary 1: Python to Convex (the Bridge)**
 
-`nanobot/mc/bridge.py` is the ONLY Python module that imports the `convex` Python SDK. All other Python modules call `bridge.py` methods — never Convex directly. Bridge handles: connection management, retry logic, snake_case to camelCase conversion, error wrapping.
+`nanobot/mc/bridge.py` is the ONLY Python module that imports the `convex` Python SDK. All other Python modules call `bridge.py` methods — never Convex directly. Bridge handles: connection management, retry logic, snake_case ↔ camelCase conversion, error wrapping.
 
 **Boundary 2: Convex Functions to Dashboard**
 
-Components never access Convex directly — always through `useQuery(api.tasks.list)` or `useMutation(api.tasks.create)`. Convex functions are the API layer — all business logic (validation, state transitions, activity logging) lives in Convex functions. Components are purely presentational + user interaction.
+Components never access Convex directly — always through `useQuery(api.steps.byTask)` or `useMutation(api.tasks.kickOff)`. Convex functions are the API layer — all business logic (validation, state transitions, activity logging, dependency unblocking) lives in Convex functions. Components are purely presentational + user interaction.
 
 **Boundary 3: Existing nanobot to Mission Control**
 
-Mission Control imports from existing nanobot modules (SubagentManager, MessageBus, HeartbeatService). Existing nanobot modules do NOT import from `mc/` — the dependency is one-directional. `mc/gateway.py` is the integration point — it uses existing agent infrastructure to run Mission Control agents.
+Mission Control imports from existing nanobot modules (SubagentManager, MessageBus, HeartbeatService). Existing nanobot modules do NOT import from `mc/` — the dependency is one-directional. `mc/gateway.py` is the integration point.
 
-**Boundary 4: CLI to Mission Control**
+**Boundary 4: Lead Agent Boundary**
 
-`nanobot/cli/mc.py` defines the `nanobot mc` subcommands. CLI commands call `mc/` package functions — thin command layer, no business logic in CLI.
+The Lead Agent can ONLY interact with the planner module. The executor checks agent identity and routes the Lead Agent to `planner.py`, never to the execution pipeline. This is an architectural enforcement, not a convention.
+
+**Boundary 5: File I/O Boundary**
+
+File upload and serving go through Next.js API routes (`/api/tasks/[taskId]/files`), NOT through Convex. Convex stores file metadata only (manifest). The filesystem is accessed only by: the Python backend (reading/writing files) and the Next.js API routes (serving/uploading files).
 
 ### Requirements to Structure Mapping
 
 | FR Category | Dashboard Files | Python Files | Convex Files |
 |-------------|----------------|--------------|--------------|
-| Task Management (FR1-FR9) | `TaskInput.tsx`, `KanbanBoard.tsx`, `TaskCard.tsx`, `TaskDetailSheet.tsx` | — | `tasks.ts`, `schema.ts` |
-| Agent Management (FR10-FR18) | `AgentSidebar.tsx`, `AgentSidebarItem.tsx` | `yaml_validator.py`, `gateway.py` | `agents.ts`, `schema.ts` |
-| Task Orchestration (FR19-FR25) | `TaskCard.tsx` (status updates) | `orchestrator.py`, `state_machine.py` | `tasks.ts` (mutations) |
-| Inter-Agent Collaboration (FR26-FR30) | `ThreadMessage.tsx`, `TaskDetailSheet.tsx` | `orchestrator.py`, `bridge.py` | `messages.ts` |
-| Human Oversight (FR31-FR36) | `InlineRejection.tsx`, `TaskCard.tsx`, `ActivityFeed.tsx` | `bridge.py` (subscriptions) | `tasks.ts`, `activities.ts` |
-| Reliability (FR37-FR40) | `TaskCard.tsx` (crashed badge), `FeedItem.tsx` | `state_machine.py`, `bridge.py` | `tasks.ts`, `activities.ts` |
-| System Configuration (FR41-FR44) | Settings panel in `DashboardLayout.tsx` | `bridge.py` | `settings.ts` |
-| System Lifecycle (FR45-FR48) | — | `cli/mc.py`, `process_manager.py` | — |
+| Task & Step Management (FR1-FR5) | `TaskInput.tsx`, `StepCard.tsx`, `TaskGroupHeader.tsx`, `TaskDetailSheet.tsx` | — | `tasks.ts`, `steps.ts`, `schema.ts` |
+| Execution Planning (FR6-FR10) | `ExecutionPlanTab.tsx` | `planner.py`, `orchestrator.py` | `tasks.ts` (executionPlan field) |
+| Pre-Kickoff Plan Review (FR11-FR18) | `PreKickoffModal.tsx`, `PlanEditor.tsx`, `PlanStepCard.tsx` | `planner.py` (chat responses) | `tasks.ts` (plan mutations), `messages.ts` (chat) |
+| Agent Orchestration (FR19-FR23) | `StepCard.tsx` (status updates) | `step_dispatcher.py`, `plan_materializer.py`, `executor.py` | `steps.ts` (mutations) |
+| Unified Thread (FR24-FR28) | `ThreadMessage.tsx`, `ArtifactRenderer.tsx`, `ThreadInput.tsx` | `executor.py` (builds thread context) | `messages.ts` |
+| Step Lifecycle (FR29-FR34) | `StepCard.tsx` (crashed badge, blocked icon), `FeedItem.tsx` | `step_dispatcher.py`, `bridge.py` | `steps.ts`, `activities.ts` |
+| Dashboard Viz (FR35-FR38) | `KanbanBoard.tsx`, `KanbanColumn.tsx`, `ActivityFeed.tsx` | — | all query files |
+| File Layer (Thread Files PRD) | `DocumentViewerModal.tsx`, `TaskInput.tsx` (file picker) | `bridge.py` (manifest sync) | `tasks.ts` (files field) |
 
 ### Cross-Cutting Concerns Mapping
 
 | Concern | Files Involved |
 |---------|---------------|
-| State consistency | `bridge.py`, `convex/tasks.ts`, all dashboard components via `useQuery` |
-| Error propagation | `bridge.py` (retry + log), `convex/activities.ts` (error events), `FeedItem.tsx` (error display), `TaskCard.tsx` (crashed badge) |
-| Dual logging | `bridge.py` (local stdout), `convex/activities.ts` (Convex feed) |
-| Configuration layering | `convex/settings.ts` (global), `yaml_validator.py` (per-agent), `convex/tasks.ts` (per-task) |
-| Access token auth | `middleware.ts`, `app/login/page.tsx`, `.env.local` |
+| State consistency (Task/Step) | `bridge.py`, `convex/tasks.ts`, `convex/steps.ts`, all dashboard components via `useQuery` |
+| Error isolation | `step_dispatcher.py` (subprocess crash handling), `convex/steps.ts` (crash status), `StepCard.tsx` (crashed badge), `convex/activities.ts` (error events) |
+| Thread context management | `executor.py` (`_build_thread_context()`), `convex/messages.ts`, `ThreadMessage.tsx` |
+| Dependency management | `convex/steps.ts` (`checkAndUnblockDependents`), `step_dispatcher.py` (dispatch order), `StepCard.tsx` (blocked indicator) |
+| File integration | `bridge.py` (manifest sync), `/api/tasks/[taskId]/files` (upload/serve), `DocumentViewerModal.tsx`, `executor.py` (file context injection) |
 
 ### Data Flow
 
 ```
-User Action (Dashboard)
-  → Convex Mutation (convex/tasks.ts)
-    → Convex DB updated
-      → Python SDK Subscription (bridge.py) triggers
-        → Agent Gateway (gateway.py) dispatches to agent
-          → Agent processes task
-            → Bridge writes status mutation (bridge.py)
-              → Convex DB updated
-                → Dashboard reactive query auto-updates
-                  → KanbanBoard re-renders with new state
+User creates task (Dashboard)
+  → Convex Mutation (tasks.create) — sets status "planning"
+    → Python bridge subscription fires
+      → Lead Agent planner generates ExecutionPlan
+        → Bridge writes plan to task (tasks.setExecutionPlan)
+          → If autonomous: plan_materializer creates step records → dispatch
+          → If supervised: task status → "reviewing_plan" → PreKickoffModal opens
+            → User edits plan → chat with Lead Agent → clicks Kick-Off
+              → plan_materializer creates step records in Convex
+                → step_dispatcher reads steps, groups by parallelGroup
+                  → asyncio.gather() dispatches parallel steps as subprocesses
+                    → Each agent runs, posts structured completion to thread
+                      → On step completion: checkAndUnblockDependents
+                        → Next parallel group dispatched
+                          → All steps done → task status "completed"
+                            → Dashboard reactive queries update Kanban
 ```
 
 ## Architecture Validation Results
 
-### Coherence Validation
+### Coherence Validation ✅
 
-**Decision Compatibility:** All technology choices work together without conflicts. Next.js + Convex + ShadCN + Tailwind + Framer Motion on the dashboard, Python AsyncIO + Convex Python SDK on the backend. Convex as single communication hub eliminates transport conflicts.
+**Decision Compatibility:**
 
-**Pattern Consistency:** Naming conventions are standard per language, conversion rules at the Python-Convex boundary are explicit, activity event pattern is uniformly applied, test location strategy is consistent.
+All technology choices are proven and compatible. Next.js 16.1.5 + React 19.2.4 + Convex 1.31.6 form a mature, well-tested stack already running in production for this project. Python/AsyncIO + Convex Python SDK are established in the existing nanobot codebase. No version conflicts detected — all dependencies are already installed and working.
 
-**Structure Alignment:** Clean separation between dashboard (TypeScript) and backend (Python). Single integration point (bridge.py). One-directional dependency from mc/ to existing nanobot modules.
+The new architectural decisions (separate `steps` table, `blockedBy` dependency arrays, ExecutionPlan on task record, subprocess parallelism) layer cleanly on top of the existing infrastructure without requiring library changes.
 
-### Requirements Coverage Validation
+**Pattern Consistency:**
 
-**Functional Requirements:** 48/48 FRs fully covered by architectural components with explicit file mapping.
+- Naming conventions (camelCase for TS/Convex, snake_case for Python, PascalCase for React components) are consistent with existing codebase conventions
+- The snake_case ↔ camelCase bridge conversion pattern is already implemented in `bridge.py` and extends naturally to step-related fields
+- Communication patterns (Convex as single hub, mutations + reactive queries) align with the established data flow
+- Activity event pattern (every state change writes an activity) is consistent across all new step-level events
 
-**Non-Functional Requirements:** 23/23 NFRs addressed through architectural decisions (Convex reactive queries for performance, retry logic for reliability, access token for security, 500-line limit for code quality).
+**Structure Alignment:**
 
-### Implementation Readiness Validation
+- Project structure preserves the existing flat component layout in `components/` and one-file-per-table pattern in `convex/`
+- New files (`steps.ts`, `StepCard.tsx`, `PreKickoffModal.tsx`, `step_dispatcher.py`, `plan_materializer.py`) follow established naming patterns
+- Architectural boundaries (bridge as sole Python-Convex boundary, components never call Convex directly, one-directional nanobot → MC dependency) remain intact and are extended, not violated
 
-**Decision Completeness:** All critical decisions documented with versions. 8 mandatory enforcement rules for AI agents. Code examples for key patterns.
+### Requirements Coverage Validation ✅
 
-**Structure Completeness:** Full directory tree defined. All custom components listed. All Convex function files specified. Python module structure mapped.
+**Functional Requirements Coverage:**
 
-**Pattern Completeness:** Naming, structure, format, communication, and process patterns all defined. Exact string values specified for all enums (task status, trust level, agent status, event types).
+| FR Category | Coverage | Notes |
+|-------------|----------|-------|
+| Task & Step Management (FR1-FR5) | ✅ Full | `steps` table, task/step hierarchy, supervision mode selector in TaskInput |
+| Execution Planning (FR6-FR10) | ✅ Full | ExecutionPlan type, planner.py refactor, General Agent fallback |
+| Pre-Kickoff Plan Review (FR11-FR18) | ✅ Full | PreKickoffModal with PlanEditor + Lead Agent chat panel |
+| Agent Orchestration (FR19-FR23) | ✅ Full | Pure orchestrator enforcement, step_dispatcher.py, asyncio.gather() parallelism |
+| Unified Thread (FR24-FR28) | ✅ Full | ThreadMessage structured format, artifacts array, context truncation to 20 messages |
+| Step Lifecycle (FR29-FR34) | ✅ Full | Step status lifecycle, crash isolation, manual retry, checkAndUnblockDependents |
+| Dashboard & Visualization (FR35-FR38) | ✅ Full | StepCard Kanban, TaskGroupHeader, ExecutionPlanTab refactor, ActivityFeed extension |
+| File Layer (29 FRs) | ✅ Full | Task directories, file manifest, DocumentViewerModal (existing), API routes, agent file context |
+
+**Non-Functional Requirements Coverage:**
+
+| NFR Category | Coverage | Notes |
+|-------------|----------|-------|
+| Performance (NFR1-NFR5) | ✅ Full | Convex reactive queries (<1s updates), optimistic UI, Motion GPU transitions, thread truncation |
+| Reliability (NFR6-NFR10) | ✅ Full | Subprocess crash isolation, bridge retry (3x exponential), atomic dependency unblocking |
+| Integration (NFR11-NFR13) | ✅ Full | Persistent bridge connection, LLM retry, structured message format consistency |
+| File Performance (5 NFRs) | ✅ Full | API routes for file serving, manifest reconciliation, reactive display |
+| File Reliability (4 NFRs) | ✅ Full | Atomic directory creation, manifest sync, fallback viewer |
+| File Integration (4 NFRs) | ✅ Full | Manifest reflects upload <2s via Convex mutation, fresh manifest per context fetch |
+
+### Implementation Readiness Validation ✅
+
+**Decision Completeness:**
+
+- All critical decisions include exact type definitions (`StepStatus`, `TaskStatus`, `SupervisionMode`, `ExecutionPlan`, `ThreadMessage`)
+- Implementation patterns include code examples for every major interaction (Convex mutations, bridge calls, dependency unblocking, subprocess dispatch)
+- Enforcement guidelines provide 11 concrete rules for AI agent consistency
+- String literal types prevent drift (exact status values used across all systems)
+
+**Structure Completeness:**
+
+- Complete directory tree with NEW/REFACTOR/EXTEND annotations for every affected file
+- 5 architectural boundaries clearly defined with enforcement rules
+- FR-to-file mapping table provides direct implementation routing
+- Cross-cutting concerns mapped to specific files
+
+**Pattern Completeness:**
+
+- Naming patterns cover all three runtimes (TypeScript, Python, Convex)
+- Communication patterns include complete Convex mutation examples with activity logging
+- Error handling patterns cover all layers (Convex, Python bridge, step crash, dashboard)
+- Process patterns include plan materialization sequence and dependency unblocking algorithm
+
+### Gap Analysis Results
+
+**Critical Gaps:** None identified. All blocking decisions are documented.
+
+**Important Gaps (4):**
+
+1. **Task Status Derivation from Steps** — The architecture defines `TaskStatus` values but doesn't specify the exact algorithm for deriving task status from step states. For example: when does a task transition from "running" to "completed" — when ALL steps complete? What if some steps are "crashed" and others "completed"? **Recommendation:** Define in the step lifecycle Convex mutation: task is "completed" when all steps are "completed"; task is "failed" when any step is "crashed" AND no retries are pending; task stays "running" otherwise.
+
+2. **Pre-Kickoff Chat Interaction Pattern** — FR16-FR17 specify that the user can chat with the Lead Agent during plan review to request changes. The architecture defines the PreKickoffModal layout and message types (`lead_agent_plan`, `lead_agent_chat`) but doesn't specify how the chat triggers Lead Agent re-planning. **Recommendation:** Use the existing thread mechanism — user posts a `lead_agent_chat` message, Python bridge subscription fires, Lead Agent planner receives the message + current plan, responds with updated `ExecutionPlan` or a chat reply.
+
+3. **General Agent Registration Mechanism** — The architecture states the General Agent is "always registered" and "cannot be deleted" but doesn't specify where it's defined or how it's bootstrapped. **Recommendation:** Define a `general-agent.yaml` in the agent definitions directory, loaded at gateway startup. The `agents` table seed logic ensures it exists — if missing, recreate from YAML.
+
+4. **Thread Context for Dependent Steps** — When Step 3 depends on Step 1 and Step 2, how does Step 3's agent know what those steps produced? The thread truncation (20 messages) might exclude earlier completion messages. **Recommendation:** When building step context, always inject the structured completion messages of direct `blockedBy` predecessors, even if they fall outside the 20-message window. This is a targeted extension of the existing `_build_thread_context()` pattern.
+
+**Nice-to-Have Gaps:**
+
+- Drag-and-drop library selection (suggested `@dnd-kit/core` but not finalized)
+- Step timeout configuration (timeout_checker.py exists but step-level timeout values not specified)
+- Pre-kickoff modal keyboard shortcuts for plan editing efficiency
 
 ### Architecture Completeness Checklist
 
-**Requirements Analysis**
-- [x] Project context thoroughly analyzed (48 FRs, 23 NFRs)
-- [x] Scale and complexity assessed (medium-high)
-- [x] Technical constraints identified (brownfield, dual runtime, 500-line limit)
-- [x] Cross-cutting concerns mapped (state consistency, error propagation, config layering, auth, observability, lifecycle)
+**✅ Requirements Analysis**
 
-**Architectural Decisions**
-- [x] Critical decisions documented (Convex Python SDK bridge, 5-table data model, Convex as comm hub, process orchestration)
-- [x] Technology stack fully specified (versions verified via web search)
-- [x] Integration patterns defined (bidirectional through Convex)
-- [x] Performance considerations addressed (reactive queries, optimistic UI)
+- [x] Project context thoroughly analyzed
+- [x] Scale and complexity assessed
+- [x] Technical constraints identified
+- [x] Cross-cutting concerns mapped
 
-**Implementation Patterns**
-- [x] Naming conventions established (per-language + cross-boundary conversion)
-- [x] Structure patterns defined (co-located tests, flat component structure)
-- [x] Communication patterns specified (mutation + activity event, bridge retry)
-- [x] Process patterns documented (error handling, loading states)
+**✅ Architectural Decisions**
 
-**Project Structure**
-- [x] Complete directory structure defined
-- [x] Component boundaries established (4 explicit boundaries)
-- [x] Integration points mapped (bridge.py as single point)
-- [x] Requirements to structure mapping complete (FR to file mapping table)
+- [x] Critical decisions documented with types and versions
+- [x] Technology stack fully specified (brownfield — all packages installed)
+- [x] Integration patterns defined (Convex as hub, bridge as boundary)
+- [x] Performance considerations addressed (reactive queries, optimistic UI, thread truncation)
+
+**✅ Implementation Patterns**
+
+- [x] Naming conventions established (3 runtimes)
+- [x] Structure patterns defined (flat components, one-file-per-table, co-located tests)
+- [x] Communication patterns specified (mutations with activity events, structured thread messages)
+- [x] Process patterns documented (error handling, plan materialization, dependency unblocking)
+
+**✅ Project Structure**
+
+- [x] Complete directory structure defined with change annotations
+- [x] Component boundaries established (5 architectural boundaries)
+- [x] Integration points mapped (FR-to-file mapping)
+- [x] Requirements to structure mapping complete
 
 ### Architecture Readiness Assessment
 
 **Overall Status:** READY FOR IMPLEMENTATION
 
-**Confidence Level:** High
+**Confidence Level:** High — brownfield project with proven tech stack, all critical decisions documented with type definitions and code examples, 4 important gaps identified with clear recommendations.
 
 **Key Strengths:**
-- Clean separation between two runtimes with a single, well-defined bridge
-- Convex as single communication hub eliminates transport complexity
-- Brownfield approach preserves existing nanobot infrastructure
-- Every FR and NFR has an explicit architectural home
-- Enforcement rules prevent AI agent inconsistency
+
+- Precise type definitions eliminate ambiguity for AI agents (`StepStatus`, `TaskStatus`, `ExecutionPlan`, `ThreadMessage`)
+- Code examples for every major pattern (Convex mutations, bridge calls, subprocess dispatch, dependency unblocking)
+- 11 enforcement guidelines provide concrete guardrails
+- Brownfield advantage — 47 existing components and full Convex schema reduce implementation risk
+- Pure orchestrator enforcement is architectural (executor checks identity), not conventional
+- Crash isolation is subprocess-based (true process boundaries), not exception-based
 
 **Areas for Future Enhancement:**
-- Full auth system (Phase 3, multi-user)
-- Convex self-hosting (post-MVP, data privacy)
-- E2E testing framework (post-MVP)
-- Performance benchmarking infrastructure (post-MVP)
-- Heartbeat/cron integration detail (during gateway.py implementation)
+
+- Plan templates (save/reuse common execution plan patterns)
+- Agent performance analytics (track step completion times, crash rates)
+- Plan versioning (compare original plan with actual execution)
+- Multi-task cross-board orchestration
+- Step timeout auto-escalation
 
 ### Implementation Handoff
 
 **AI Agent Guidelines:**
+
 - Follow all architectural decisions exactly as documented
 - Use implementation patterns consistently across all components
-- Respect project structure and boundaries — especially the 4 architectural boundaries
+- Respect project structure and boundaries (especially the 5 architectural boundaries)
 - Refer to this document for all architectural questions
-- When in doubt, check the Enforcement Guidelines (8 mandatory rules)
+- Use the exact string literal types for all status values, message roles, and event types
+- Convert field names at the Python-Convex boundary (snake_case ↔ camelCase)
+- Always write an activity event when changing step or task status
 
 **First Implementation Priority:**
-1. `npm create convex@latest -t nextjs-shadcn` (initialize dashboard)
-2. Define `convex/schema.ts` with all 5 tables
-3. Build `nanobot/mc/bridge.py` (Python SDK integration)
 
+1. Extend Convex schema (`schema.ts`) — add `steps` table, update `tasks` with `executionPlan` and `supervisionMode`, extend `messages` with structured format
+2. Create `convex/steps.ts` — step CRUD, status updates, dependency unblocking
+3. Refactor Lead Agent planner to produce `ExecutionPlan` structure
+4. Implement `plan_materializer.py` — convert ExecutionPlan → step records on kick-off
+5. Build `step_dispatcher.py` — asyncio.gather() parallel dispatch + dependency resolution

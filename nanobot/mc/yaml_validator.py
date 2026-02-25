@@ -54,6 +54,7 @@ class AgentConfig(BaseModel):
     model: Optional[str] = None
     display_name: Optional[str] = None
     soul: Optional[str] = None
+    is_system: Optional[bool] = None
 
     @field_validator("name")
     @classmethod
@@ -226,4 +227,5 @@ def _config_to_agent_data(config: AgentConfig) -> AgentData:
         soul=config.soul,
         skills=config.skills,
         model=config.model,
+        is_system=config.is_system or False,
     )
