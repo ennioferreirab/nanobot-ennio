@@ -53,14 +53,14 @@ development_status:
   epic-1-retrospective: optional
 
   # Epic 2: Autonomous Execution & Agent Collaboration
-  epic-2: in-progress
+  epic-2: done
   2-1-dispatch-steps-in-autonomous-mode: done
   2-2-execute-steps-as-agent-subprocesses: done
   2-3-auto-unblock-dependent-steps: done
   2-4-build-unified-thread-per-task: done
-  2-5-post-structured-completion-messages: ready-for-dev
-  2-6-build-thread-context-for-agents: ready-for-dev
-  2-7-render-thread-view-in-real-time: ready-for-dev
+  2-5-post-structured-completion-messages: done
+  2-6-build-thread-context-for-agents: done
+  2-7-render-thread-view-in-real-time: done
   epic-2-retrospective: optional
 
   # Epic 3: Step Lifecycle & Error Recovery
