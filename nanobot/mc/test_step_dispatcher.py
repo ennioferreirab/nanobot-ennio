@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nanobot.mc.step_dispatcher import StepDispatcher
-from nanobot.mc.types import ActivityEventType, AuthorType, MessageType, StepStatus, TaskStatus
+from nanobot.mc.types import ActivityEventType, AuthorType, MessageType, StepStatus, TaskStatus, TrustLevel
 
 
 async def _sync_to_thread(func, *args, **kwargs):
@@ -123,13 +123,13 @@ class TestStepDispatcher:
             "task-1",
         )
         bridge.create_activity.assert_any_call(
-            ActivityEventType.STEP_DISPATCHED,
+            ActivityEventType.STEP_STARTED,
             "Agent general-agent started step: Analyze",
             "task-1",
             "general-agent",
         )
         bridge.create_activity.assert_any_call(
-            ActivityEventType.STEP_DISPATCHED,
+            ActivityEventType.STEP_COMPLETED,
             "Agent general-agent completed step: Analyze",
             "task-1",
             "general-agent",
@@ -329,3 +329,76 @@ class TestStepDispatcher:
             None,
             "All 2 steps completed",
         )
+
+    @pytest.mark.asyncio
+    async def test_dispatch_failure_posts_system_message(self) -> None:
+        """When dispatch_steps crashes entirely, a system message is posted."""
+        bridge = MagicMock()
+        bridge.create_activity.side_effect = RuntimeError("bridge down")
+        bridge.send_message.return_value = None
+        dispatcher = StepDispatcher(bridge)
+
+        with patch("nanobot.mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread):
+            await dispatcher.dispatch_steps("task-1", ["step-1"])
+
+        bridge.send_message.assert_called_once()
+        call_args = bridge.send_message.call_args
+        assert call_args[0][0] == "task-1"
+        assert call_args[0][2] == AuthorType.SYSTEM
+        assert "Step dispatch failed" in call_args[0][3]
+
+
+class TestSupervisedModeSkipsDispatch:
+    """Verify supervised mode guard at orchestrator level (AC4)."""
+
+    @pytest.mark.asyncio
+    async def test_supervised_mode_does_not_trigger_dispatch(self) -> None:
+        from nanobot.mc.orchestrator import TaskOrchestrator
+        from nanobot.mc.types import ExecutionPlan, ExecutionPlanStep
+
+        bridge = MagicMock()
+        bridge.list_agents.return_value = [
+            {
+                "name": "general-agent",
+                "display_name": "General Agent",
+                "role": "general",
+                "status": "active",
+                "model": "test",
+            }
+        ]
+        orchestrator = TaskOrchestrator(bridge)
+        orchestrator._step_dispatcher = MagicMock()
+        orchestrator._step_dispatcher.dispatch_steps = AsyncMock()
+
+        task = {
+            "id": "task-1",
+            "title": "Supervised task",
+            "description": "test",
+            "status": "planning",
+            "supervision_mode": "supervised",
+        }
+
+        plan = ExecutionPlan(
+            steps=[
+                ExecutionPlanStep(
+                    temp_id="s1", title="Step", description="d",
+                    assigned_agent="general-agent", blocked_by=[],
+                    parallel_group=1, order=1,
+                )
+            ]
+        )
+
+        with (
+            patch("nanobot.mc.orchestrator.asyncio.to_thread", new=_sync_to_thread),
+            patch("nanobot.mc.orchestrator.asyncio.create_task") as mock_create_task,
+            patch("nanobot.mc.orchestrator.TaskPlanner") as planner_cls,
+        ):
+            planner = planner_cls.return_value
+            planner.plan_task = AsyncMock(return_value=plan)
+            await orchestrator._process_planning_task(task)
+
+        # Supervised mode should NOT trigger dispatch or materialization
+        bridge.batch_create_steps.assert_not_called()
+        bridge.kick_off_task.assert_not_called()
+        orchestrator._step_dispatcher.dispatch_steps.assert_not_called()
+        mock_create_task.assert_not_called()
