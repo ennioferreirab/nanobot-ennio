@@ -40,7 +40,8 @@ class TestBuildThreadContextBasic:
             _msg("User", "user", "Please fix the bug", "user_message", "2026-02-23T10:00:00Z"),
         ]
         result = _build_thread_context(messages)
-        assert "[Thread History]" in result
+        # Single user message goes to [Latest Follow-up]; no thread history
+        # is rendered because there are no other messages to show.
         assert "[Latest Follow-up]" in result
         assert "User: Please fix the bug" in result
 

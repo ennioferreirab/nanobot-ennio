@@ -129,6 +129,10 @@ class ThreadContextBuilder:
                 ):
                     predecessors_outside.append((orig_idx, m))
 
+        # Adjust omission count: predecessors shown in preamble are not truly
+        # omitted from the agent's view, so subtract them from the note.
+        effective_omitted = omitted_count - len(predecessors_outside)
+
         # Find the latest user message in the WINDOW
         latest_user_idx_in_window = -1
         for i in range(len(window) - 1, -1, -1):
@@ -146,10 +150,10 @@ class ThreadContextBuilder:
                 preamble_lines.append(self._format_message(m))
             result_parts.append("[Predecessor Context]\n" + "\n".join(preamble_lines))
 
-        # 2. Omission note (when truncated)
+        # 2. Omission note (when truncated) + thread history window
         thread_lines: list[str] = []
-        if omitted_count > 0:
-            thread_lines.append(f"({omitted_count} earlier messages omitted)")
+        if effective_omitted > 0:
+            thread_lines.append(f"({effective_omitted} earlier messages omitted)")
 
         # 3. [Thread History] — window messages minus the latest user message
         for i, m in enumerate(window):
@@ -157,15 +161,16 @@ class ThreadContextBuilder:
                 continue
             thread_lines.append(self._format_message(m))
 
-        result_parts.append("\n[Thread History]\n" + "\n".join(thread_lines))
+        if thread_lines:
+            result_parts.append("[Thread History]\n" + "\n".join(thread_lines))
 
         # 4. [Latest Follow-up] — the most recent user message
         if 0 <= latest_user_idx_in_window < len(window):
             latest = window[latest_user_idx_in_window]
             latest_content = latest.get("content", "")
-            result_parts.append(f"\n[Latest Follow-up]\nUser: {latest_content}")
+            result_parts.append(f"[Latest Follow-up]\nUser: {latest_content}")
 
-        return "\n".join(result_parts)
+        return "\n\n".join(result_parts)
 
     def _format_message(self, message: dict[str, Any]) -> str:
         """Render a single message including artifacts if present."""

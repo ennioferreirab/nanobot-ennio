@@ -292,7 +292,11 @@ class TestPredecessorMessages:
         assert "Step 1 complete." in ctx
 
     def test_predecessor_outside_window_still_has_omission_note(self):
-        """When truncated, omission note still appears alongside predecessor preamble."""
+        """When truncated, omission note accounts for predecessors shown in preamble.
+
+        The predecessor message is explicitly shown in [Predecessor Context],
+        so only truly hidden messages count as "omitted".
+        """
         predecessor_msg = _step_completion_msg(
             "Step 1 done.", step_id="step-1", timestamp="2026-01-01T09:00:00Z"
         )
@@ -304,6 +308,27 @@ class TestPredecessorMessages:
         builder = ThreadContextBuilder()
         ctx = builder.build(messages, predecessor_step_ids=["step-1"])
 
+        # Only 1 message omitted from window, but it's the predecessor shown
+        # in preamble, so effective omitted = 0 — no omission note.
+        assert "earlier messages omitted" not in ctx
+        assert "[Predecessor Context]" in ctx
+
+    def test_omission_note_with_predecessors_and_non_predecessor_omissions(self):
+        """Omission note correctly counts only non-predecessor omitted messages."""
+        predecessor_msg = _step_completion_msg(
+            "Step 1 done.", step_id="step-1", timestamp="2026-01-01T08:00:00Z"
+        )
+        extra_early_msg = _agent_msg("Very early work", timestamp="2026-01-01T08:30:00Z")
+        later_messages = [_agent_msg(f"Msg {i}") for i in range(19)]
+        later_messages.append(_user_msg("Follow-up"))
+        messages = [predecessor_msg, extra_early_msg] + later_messages
+        assert len(messages) == 22
+
+        builder = ThreadContextBuilder()
+        ctx = builder.build(messages, predecessor_step_ids=["step-1"])
+
+        # 2 messages omitted from window: predecessor + extra_early.
+        # Predecessor is shown in preamble, so effective omitted = 1.
         assert "(1 earlier messages omitted)" in ctx
         assert "[Predecessor Context]" in ctx
 
