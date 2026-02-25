@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import * as motion from "motion/react-client";
+import { useReducedMotion } from "motion/react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
@@ -63,6 +65,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const addTaskFiles = useMutation(api.tasks.addTaskFiles);
   const removeTaskFile = useMutation(api.tasks.removeTaskFile);
   const createActivity = useMutation(api.activities.create);
+  const shouldReduceMotion = useReducedMotion();
   const [viewerFile, setViewerFile] = useState<{ name: string; type: string; size: number; subfolder: string } | null>(null);
   const [showRejection, setShowRejection] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -71,17 +74,30 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const [deleteError, setDeleteError] = useState("");
   const attachInputRef = useRef<HTMLInputElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
-  // Auto-scroll thread to bottom when messages change
+  // Track if user is at bottom via IntersectionObserver
+  useEffect(() => {
+    const sentinel = threadEndRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsAtBottom(entry.isIntersecting),
+      { threshold: 0.1 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
+
+  // Auto-scroll only when at bottom and new messages arrive
   const scrollToBottom = useCallback(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
   useEffect(() => {
-    if (messages && messages.length > 0) {
-      scrollToBottom();
+    if (isAtBottom && messages && messages.length > 0) {
+      threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages?.length, scrollToBottom]);
+  }, [messages?.length, isAtBottom]);
 
   // Guard: task must be a valid document (not undefined, null, or a non-object from test mocks)
   const isTaskLoaded = task != null && typeof task === "object" && "status" in task;
@@ -245,7 +261,21 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                   ) : (
                     <div className="flex flex-col gap-2">
                       {messages.map((msg) => (
-                        <ThreadMessage key={msg._id} message={msg} />
+                        <motion.div
+                          key={msg._id}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={
+                            shouldReduceMotion
+                              ? { duration: 0 }
+                              : { duration: 0.2 }
+                          }
+                        >
+                          <ThreadMessage
+                            message={msg}
+                            steps={liveSteps ?? undefined}
+                          />
+                        </motion.div>
                       ))}
                       <div ref={threadEndRef} />
                     </div>

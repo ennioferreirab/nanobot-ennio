@@ -1,19 +1,31 @@
 "use client";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import { Doc } from "../convex/_generated/dataModel";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { ArtifactRenderer } from "./ArtifactRenderer";
+import { STRUCTURED_MESSAGE_TYPE } from "@/lib/constants";
 
 interface ThreadMessageProps {
   message: Doc<"messages">;
+  steps?: Doc<"steps">[];
 }
 
 function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-function getMessageStyles(messageType: string, authorType: string) {
+type MessageStyles = {
+  bg: string;
+  label: string | null;
+  labelColor: string;
+};
+
+function getLegacyMessageStyles(
+  messageType: string,
+  authorType: string,
+): MessageStyles {
   switch (messageType) {
     case "review_feedback":
       return { bg: "bg-amber-50", label: "Review", labelColor: "text-amber-600" };
@@ -29,11 +41,38 @@ function getMessageStyles(messageType: string, authorType: string) {
   }
 }
 
-export function ThreadMessage({ message }: ThreadMessageProps) {
-  const styles = getMessageStyles(message.messageType, message.authorType);
-  const isSystem = message.authorType === "system" || message.messageType === "system_event";
+function getMessageStyles(message: Doc<"messages">): MessageStyles {
+  // Prefer new structured type if present
+  if (message.type) {
+    switch (message.type) {
+      case STRUCTURED_MESSAGE_TYPE.STEP_COMPLETION:
+        return { bg: "bg-background", label: "Step Complete", labelColor: "text-green-600" };
+      case STRUCTURED_MESSAGE_TYPE.SYSTEM_ERROR:
+        return { bg: "bg-red-50", label: "Error", labelColor: "text-red-600" };
+      case STRUCTURED_MESSAGE_TYPE.LEAD_AGENT_PLAN:
+        return { bg: "bg-indigo-50", label: "Plan", labelColor: "text-indigo-600" };
+      case STRUCTURED_MESSAGE_TYPE.LEAD_AGENT_CHAT:
+        return { bg: "bg-indigo-50", label: "Chat", labelColor: "text-indigo-600" };
+      case STRUCTURED_MESSAGE_TYPE.USER_MESSAGE:
+        return { bg: "bg-blue-50", label: null, labelColor: "" };
+    }
+  }
+  // Fall back to legacy messageType
+  return getLegacyMessageStyles(message.messageType, message.authorType);
+}
+
+export function ThreadMessage({ message, steps }: ThreadMessageProps) {
+  const styles = getMessageStyles(message);
+  const isSystem =
+    message.authorType === "system" || message.messageType === "system_event";
+  const isSystemError = message.type === STRUCTURED_MESSAGE_TYPE.SYSTEM_ERROR;
   const isApproval = message.messageType === "approval";
   const isDenial = message.messageType === "denial";
+
+  // Resolve step title for step_completion messages (Option A: passed from parent)
+  const stepTitle = message.stepId && steps
+    ? steps.find((s) => s._id === message.stepId)?.title
+    : undefined;
 
   return (
     <div className={`flex gap-2 p-2 rounded-md ${styles.bg}`}>
@@ -43,7 +82,7 @@ export function ThreadMessage({ message }: ThreadMessageProps) {
         </AvatarFallback>
       </Avatar>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-medium text-foreground">
             {message.authorName}
           </span>
@@ -52,10 +91,21 @@ export function ThreadMessage({ message }: ThreadMessageProps) {
               {styles.label}
             </span>
           )}
+          {isSystemError && (
+            <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
+          )}
           <span className="text-xs text-muted-foreground">
             {new Date(message.timestamp).toLocaleTimeString()}
           </span>
         </div>
+
+        {/* Step reference badge for step_completion messages */}
+        {stepTitle && (
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Step: {stepTitle}
+          </p>
+        )}
+
         <div className="flex items-start gap-1 mt-0.5">
           {isApproval && (
             <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0 mt-0.5" />
@@ -64,7 +114,9 @@ export function ThreadMessage({ message }: ThreadMessageProps) {
             <XCircle className="h-3.5 w-3.5 text-red-600 shrink-0 mt-0.5" />
           )}
           {isSystem || message.authorType === "user" ? (
-            <p className={`text-sm text-muted-foreground ${isSystem ? "italic" : ""}`}>
+            <p
+              className={`text-sm text-muted-foreground ${isSystem || isSystemError ? "italic" : ""}`}
+            >
               {message.content}
             </p>
           ) : (
@@ -74,6 +126,11 @@ export function ThreadMessage({ message }: ThreadMessageProps) {
             />
           )}
         </div>
+
+        {/* Render artifacts if present */}
+        {message.artifacts && message.artifacts.length > 0 && (
+          <ArtifactRenderer artifacts={message.artifacts} />
+        )}
       </div>
     </div>
   );
