@@ -78,6 +78,22 @@ export const MESSAGE_TYPE = {
   SYSTEM_EVENT: "system_event",
 } as const;
 
+// Structured message type values (new `type` field added in Story 1.1)
+export const STRUCTURED_MESSAGE_TYPE = {
+  STEP_COMPLETION: "step_completion",
+  USER_MESSAGE: "user_message",
+  SYSTEM_ERROR: "system_error",
+  LEAD_AGENT_PLAN: "lead_agent_plan",
+  LEAD_AGENT_CHAT: "lead_agent_chat",
+} as const;
+
+// Artifact action values
+export const ARTIFACT_ACTION = {
+  CREATED: "created",
+  MODIFIED: "modified",
+  DELETED: "deleted",
+} as const;
+
 // Author type values
 export const AUTHOR_TYPE = {
   AGENT: "agent",
@@ -96,6 +112,8 @@ export type AgentStatus = (typeof AGENT_STATUS)[keyof typeof AGENT_STATUS];
 export type ActivityEventType =
   (typeof ACTIVITY_EVENT_TYPE)[keyof typeof ACTIVITY_EVENT_TYPE];
 export type MessageType = (typeof MESSAGE_TYPE)[keyof typeof MESSAGE_TYPE];
+export type StructuredMessageType = (typeof STRUCTURED_MESSAGE_TYPE)[keyof typeof STRUCTURED_MESSAGE_TYPE];
+export type ArtifactAction = (typeof ARTIFACT_ACTION)[keyof typeof ARTIFACT_ACTION];
 export type AuthorType = (typeof AUTHOR_TYPE)[keyof typeof AUTHOR_TYPE];
 
 // Status color mapping for Kanban board

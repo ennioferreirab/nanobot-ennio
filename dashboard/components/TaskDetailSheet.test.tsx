@@ -278,4 +278,111 @@ describe("ThreadMessage", () => {
       screen.getByText("Starting work on feature X"),
     ).toBeInTheDocument();
   });
+
+  // --- Story 2.7: Structured type field support ---
+
+  it("renders step_completion message with bg-background", () => {
+    const stepCompletionMsg = {
+      ...baseMessage,
+      type: "step_completion" as const,
+      content: "Step is done",
+    };
+    const { container } = render(<ThreadMessage message={stepCompletionMsg} />);
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper.className).toContain("bg-background");
+    expect(screen.getByText("Step Complete")).toBeInTheDocument();
+  });
+
+  it("renders system_error message with bg-red-50 and Error label", () => {
+    const systemErrorMsg = {
+      ...baseMessage,
+      type: "system_error" as const,
+      messageType: "system_event" as const,
+      authorType: "system" as const,
+      content: "An error occurred",
+    };
+    const { container } = render(<ThreadMessage message={systemErrorMsg} />);
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper.className).toContain("bg-red-50");
+    expect(screen.getByText("Error")).toBeInTheDocument();
+  });
+
+  it("renders lead_agent_plan message with bg-indigo-50 and Plan label", () => {
+    const planMsg = {
+      ...baseMessage,
+      type: "lead_agent_plan" as const,
+      content: "Here is the plan",
+    };
+    const { container } = render(<ThreadMessage message={planMsg} />);
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper.className).toContain("bg-indigo-50");
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+  });
+
+  it("renders lead_agent_chat message with bg-indigo-50 and Chat label", () => {
+    const chatMsg = {
+      ...baseMessage,
+      type: "lead_agent_chat" as const,
+      content: "Let me help coordinate",
+    };
+    const { container } = render(<ThreadMessage message={chatMsg} />);
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper.className).toContain("bg-indigo-50");
+    expect(screen.getByText("Chat")).toBeInTheDocument();
+  });
+
+  it("renders user_message type with bg-blue-50", () => {
+    const userTypeMsg = {
+      ...baseMessage,
+      type: "user_message" as const,
+      messageType: "user_message" as const,
+      authorType: "user" as const,
+      authorName: "human-user",
+      content: "Hello agent",
+    };
+    const { container } = render(<ThreadMessage message={userTypeMsg} />);
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper.className).toContain("bg-blue-50");
+  });
+
+  it("renders artifacts via ArtifactRenderer when present in step_completion", () => {
+    const msgWithArtifacts = {
+      ...baseMessage,
+      type: "step_completion" as const,
+      content: "Step completed",
+      artifacts: [
+        { path: "/output/result.csv", action: "created" as const, description: "Result file" },
+      ],
+    };
+    render(<ThreadMessage message={msgWithArtifacts} />);
+    expect(screen.getByText("/output/result.csv")).toBeInTheDocument();
+    expect(screen.getByText("created")).toBeInTheDocument();
+    expect(screen.getByText("Result file")).toBeInTheDocument();
+  });
+
+  it("resolves step title from steps prop when stepId is present", () => {
+    const stepId = "step1" as never;
+    const msgWithStepId = {
+      ...baseMessage,
+      type: "step_completion" as const,
+      stepId,
+      content: "Done",
+    };
+    const steps = [
+      {
+        _id: stepId,
+        _creationTime: 1000,
+        taskId: "task1" as never,
+        title: "Extract invoice data",
+        description: "Extract data",
+        assignedAgent: "agent-alpha",
+        status: "completed" as const,
+        parallelGroup: 0,
+        order: 0,
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ];
+    render(<ThreadMessage message={msgWithStepId} steps={steps} />);
+    expect(screen.getByText("Step: Extract invoice data")).toBeInTheDocument();
+  });
 });
