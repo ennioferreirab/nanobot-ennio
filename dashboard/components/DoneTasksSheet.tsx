@@ -34,7 +34,10 @@ export function DoneTasksSheet({ open, onClose }: DoneTasksSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="w-[480px] sm:w-[480px] flex flex-col p-0">
+      <SheetContent
+        side="right"
+        className="w-[480px] sm:w-[480px] sm:max-w-none flex flex-col p-0"
+      >
         <SheetHeader className="px-6 pt-6 pb-4">
           <SheetTitle className="flex items-center gap-2 text-lg font-semibold">
             <CheckCircle2 className="h-5 w-5" />
@@ -50,79 +53,81 @@ export function DoneTasksSheet({ open, onClose }: DoneTasksSheetProps) {
           </SheetDescription>
         </SheetHeader>
 
-        <ScrollArea className="flex-1 px-6 pb-6">
-          {doneHistory === undefined ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              Loading...
-            </p>
-          ) : doneHistory.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              No completed tasks yet
-            </p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {doneHistory.map((task) => {
-                const isCleared = task.status === "deleted";
+        <ScrollArea className="flex-1">
+          <div className="px-6 pb-6">
+            {doneHistory === undefined ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                Loading...
+              </p>
+            ) : doneHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No completed tasks yet
+              </p>
+            ) : (
+              <div className="flex flex-col gap-3 pr-3">
+                {doneHistory.map((task) => {
+                  const isCleared = task.status === "deleted";
 
-                return (
-                  <div
-                    key={task._id}
-                    className="rounded-lg border border-border p-3 space-y-2"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <h4 className="text-sm font-medium text-foreground">
-                        {task.title}
-                      </h4>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatDate(task.updatedAt)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isCleared ? (
-                        <Badge
-                          variant="outline"
-                          className="text-xs bg-gray-100 dark:bg-gray-900 text-gray-500 dark:text-gray-400 border-0"
-                        >
-                          Cleared
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="text-xs bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 border-0"
-                        >
-                          On board
-                        </Badge>
-                      )}
-                      {task.assignedAgent && (
-                        <span className="text-xs text-muted-foreground">
-                          {task.assignedAgent}
+                  return (
+                    <div
+                      key={task._id}
+                      className="rounded-lg border border-border p-3 space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className="flex-1 min-w-0 text-sm font-medium text-foreground break-words">
+                          {task.title}
+                        </h4>
+                        <span className="shrink-0 text-xs text-muted-foreground whitespace-nowrap">
+                          {formatDate(task.updatedAt)}
                         </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {isCleared ? (
+                          <Badge
+                            variant="outline"
+                            className="text-xs bg-gray-100 dark:bg-gray-900 text-gray-500 dark:text-gray-400 border-0"
+                          >
+                            Cleared
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="text-xs bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 border-0"
+                          >
+                            On board
+                          </Badge>
+                        )}
+                        {task.assignedAgent && (
+                          <span className="text-xs text-muted-foreground">
+                            {task.assignedAgent}
+                          </span>
+                        )}
+                      </div>
+                      {isCleared && (
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-7 px-2"
+                            title="Restore to done on board"
+                            onClick={() =>
+                              restoreMutation({
+                                taskId: task._id,
+                                mode: "previous",
+                              })
+                            }
+                          >
+                            <Undo2 className="h-3.5 w-3.5 mr-1" />
+                            Restore
+                          </Button>
+                        </div>
                       )}
                     </div>
-                    {isCleared && (
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs h-7 px-2"
-                          title="Restore to done on board"
-                          onClick={() =>
-                            restoreMutation({
-                              taskId: task._id,
-                              mode: "previous",
-                            })
-                          }
-                        >
-                          <Undo2 className="h-3.5 w-3.5 mr-1" />
-                          Restore
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </ScrollArea>
       </SheetContent>
     </Sheet>
