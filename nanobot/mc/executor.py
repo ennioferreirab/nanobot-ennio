@@ -165,6 +165,84 @@ async def _run_agent_on_task(
     return result
 
 
+def _human_size(b: int) -> str:
+    """Convert a byte count to a human-readable size string."""
+    if b < 1024 * 1024:
+        return f"{b // 1024} KB"
+    return f"{b / (1024 * 1024):.1f} MB"
+
+
+def _snapshot_output_dir(task_id: str) -> dict[str, float]:
+    """Capture {relative_path: mtime} for all files in the task's output dir.
+
+    The relative path is relative to the task base directory (two levels above
+    the file), e.g. ``"output/report.pdf"`` for a file stored in
+    ``~/.nanobot/tasks/{safe_id}/output/report.pdf``.
+    """
+    import re
+
+    safe_id = re.sub(r"[^\w\-]", "_", task_id)
+    output_dir = Path.home() / ".nanobot" / "tasks" / safe_id / "output"
+    snapshot: dict[str, float] = {}
+    if output_dir.exists():
+        for entry in output_dir.rglob("*"):
+            if entry.is_file():
+                # relative to task base dir (one level above output/)
+                rel = str(entry.relative_to(output_dir.parent))
+                snapshot[rel] = entry.stat().st_mtime
+    return snapshot
+
+
+def _collect_output_artifacts(
+    task_id: str,
+    pre_snapshot: dict[str, float] | None,
+) -> list[dict[str, Any]]:
+    """Compare post-execution output dir against pre-snapshot to detect artifacts.
+
+    Returns a list of artifact dicts (Convex-compatible) describing files
+    that were created or modified during agent execution.
+
+    Each dict has keys: ``path``, ``action``, and optionally ``description``
+    (for created files) or ``diff`` (for modified files).
+
+    The ``path`` is relative to the task base directory (e.g., ``"output/report.pdf"``).
+    """
+    import re
+
+    safe_id = re.sub(r"[^\w\-]", "_", task_id)
+    output_dir = Path.home() / ".nanobot" / "tasks" / safe_id / "output"
+    artifacts: list[dict[str, Any]] = []
+    pre = pre_snapshot or {}
+
+    if not output_dir.exists():
+        return artifacts
+
+    for entry in output_dir.rglob("*"):
+        if not entry.is_file():
+            continue
+        # relative to task base dir (parent of output/)
+        rel = str(entry.relative_to(output_dir.parent))
+        size = entry.stat().st_size
+
+        if rel not in pre:
+            # New file — created
+            ext = entry.suffix.lstrip(".").upper() or "file"
+            artifacts.append({
+                "path": rel,
+                "action": "created",
+                "description": f"{ext}, {_human_size(size)}",
+            })
+        elif entry.stat().st_mtime > pre[rel]:
+            # Existing file with newer mtime — modified
+            artifacts.append({
+                "path": rel,
+                "action": "modified",
+                "diff": f"File updated ({_human_size(size)})",
+            })
+
+    return artifacts
+
+
 def _build_thread_context(messages: list[dict[str, Any]], max_messages: int = 20) -> str:
     """Format thread messages as conversation context for the agent.
 
@@ -210,7 +288,26 @@ def _build_thread_context(messages: list[dict[str, Any]], max_messages: int = 20
         author_type = m.get("author_type", "system")
         ts = m.get("timestamp", "")
         content = m.get("content", "")
-        lines.append(f"{author} [{author_type}] ({ts}): {content}")
+        msg_type = m.get("type")
+
+        if msg_type == "step_completion":
+            lines.append(f"{author} [{author_type}] ({ts}) [Step Completion]: {content}")
+            artifacts = m.get("artifacts") or []
+            if artifacts:
+                lines.append("  Artifacts:")
+                for artifact in artifacts:
+                    path = artifact.get("path", "")
+                    action = artifact.get("action", "")
+                    description = artifact.get("description")
+                    diff = artifact.get("diff")
+                    if description:
+                        lines.append(f"  - [{action}] {path}: {description}")
+                    elif diff:
+                        lines.append(f"  - [{action}] {path} ({diff})")
+                    else:
+                        lines.append(f"  - [{action}] {path}")
+        else:
+            lines.append(f"{author} [{author_type}] ({ts}): {content}")
 
     result = "\n[Thread History]\n" + "\n".join(lines)
 
@@ -591,6 +688,7 @@ class TaskExecutor:
         agent_name: str,
         trust_level: str,
         task_data: dict[str, Any] | None = None,
+        step_id: str | None = None,
     ) -> None:
         """Run the agent on the task and handle completion or crash."""
         if is_lead_agent(agent_name):
@@ -720,6 +818,10 @@ class TaskExecutor:
                     exc_info=True,
                 )
 
+        # Snapshot the output directory before agent execution so we can detect
+        # created/modified files afterwards (Story 2.5).
+        pre_snapshot = await asyncio.to_thread(_snapshot_output_dir, task_id)
+
         try:
             result = await _run_agent_on_task(
                 agent_name=agent_name,
@@ -734,15 +836,31 @@ class TaskExecutor:
                 task_id=task_id,
             )
 
-            # Write agent output as a work message
-            await asyncio.to_thread(
-                self._bridge.send_message,
-                task_id,
-                agent_name,
-                AuthorType.AGENT,
-                result,
-                MessageType.WORK,
+            # Collect file artifacts produced during agent execution.
+            artifacts = await asyncio.to_thread(
+                _collect_output_artifacts, task_id, pre_snapshot
             )
+
+            if step_id:
+                # Post structured completion message with step context (Story 2.5).
+                await asyncio.to_thread(
+                    self._bridge.post_step_completion,
+                    task_id,
+                    step_id,
+                    agent_name,
+                    result,
+                    artifacts or None,
+                )
+            else:
+                # Legacy path: no step context available — post plain work message.
+                await asyncio.to_thread(
+                    self._bridge.send_message,
+                    task_id,
+                    agent_name,
+                    AuthorType.AGENT,
+                    result,
+                    MessageType.WORK,
+                )
 
             # Sync output file manifest to Convex (best-effort, non-blocking)
             try:

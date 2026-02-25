@@ -381,6 +381,10 @@ class StepDispatcher:
             if thread_context:
                 execution_description += f"\n{thread_context}"
 
+            # Snapshot output dir before agent execution for artifact detection (Story 2.5).
+            from nanobot.mc.executor import _snapshot_output_dir, _collect_output_artifacts
+            pre_snapshot = await asyncio.to_thread(_snapshot_output_dir, task_id)
+
             result = await _run_step_agent(
                 agent_name=agent_name,
                 agent_prompt=agent_prompt,
@@ -393,13 +397,17 @@ class StepDispatcher:
                 task_id=task_id,
             )
 
+            # Collect artifacts and post structured completion message (Story 2.5).
+            artifacts = await asyncio.to_thread(
+                _collect_output_artifacts, task_id, pre_snapshot
+            )
             await asyncio.to_thread(
-                self._bridge.send_message,
+                self._bridge.post_step_completion,
                 task_id,
+                step_id,
                 agent_name,
-                AuthorType.AGENT,
                 result,
-                MessageType.WORK,
+                artifacts or None,
             )
             await asyncio.to_thread(
                 self._bridge.update_step_status,

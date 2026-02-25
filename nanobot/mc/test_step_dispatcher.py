@@ -83,8 +83,23 @@ def _make_stateful_bridge(
     bridge.query.return_value = {"title": "Main Task"}
     bridge.get_board_by_id.return_value = None
     bridge.send_message.return_value = None
+    bridge.post_step_completion.return_value = None
 
     return bridge, state
+
+
+def _patch_executor_helpers():
+    """Return a context manager stack that stubs out executor artifact helpers."""
+    return (
+        patch(
+            "nanobot.mc.executor._snapshot_output_dir",
+            return_value={},
+        ),
+        patch(
+            "nanobot.mc.executor._collect_output_artifacts",
+            return_value=[],
+        ),
+    )
 
 
 class TestStepDispatcher:
@@ -93,6 +108,7 @@ class TestStepDispatcher:
         bridge, state = _make_stateful_bridge([_step("step-1", "Analyze", order=1)])
         dispatcher = StepDispatcher(bridge)
 
+        snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("nanobot.mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
             patch(
@@ -107,6 +123,8 @@ class TestStepDispatcher:
                 "nanobot.mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(return_value="step output"),
             ),
+            snap_patch,
+            collect_patch,
         ):
             await dispatcher.dispatch_steps("task-1", ["step-1"])
 
@@ -161,6 +179,7 @@ class TestStepDispatcher:
             running -= 1
             return f"done {kwargs['task_title']}"
 
+        snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("nanobot.mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
             patch(
@@ -172,6 +191,8 @@ class TestStepDispatcher:
                 side_effect=lambda agent_name, prompt: prompt,
             ),
             patch("nanobot.mc.step_dispatcher._run_step_agent", side_effect=_run_agent),
+            snap_patch,
+            collect_patch,
         ):
             await dispatcher.dispatch_steps("task-1", ["step-1", "step-2"])
 
@@ -194,6 +215,7 @@ class TestStepDispatcher:
             execution_order.append(kwargs["task_title"])
             return "ok"
 
+        snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("nanobot.mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
             patch(
@@ -205,6 +227,8 @@ class TestStepDispatcher:
                 side_effect=lambda agent_name, prompt: prompt,
             ),
             patch("nanobot.mc.step_dispatcher._run_step_agent", side_effect=_run_agent),
+            snap_patch,
+            collect_patch,
         ):
             await dispatcher.dispatch_steps("task-1", ["step-1", "step-2"])
 
@@ -230,6 +254,7 @@ class TestStepDispatcher:
             await asyncio.sleep(0.01)
             return "ok"
 
+        snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("nanobot.mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
             patch(
@@ -241,6 +266,8 @@ class TestStepDispatcher:
                 side_effect=lambda agent_name, prompt: prompt,
             ),
             patch("nanobot.mc.step_dispatcher._run_step_agent", side_effect=_run_agent),
+            snap_patch,
+            collect_patch,
         ):
             await dispatcher.dispatch_steps("task-1", ["step-1", "step-2"])
 
@@ -278,6 +305,7 @@ class TestStepDispatcher:
             titles.append(kwargs["task_title"])
             return "ok"
 
+        snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("nanobot.mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
             patch(
@@ -289,6 +317,8 @@ class TestStepDispatcher:
                 side_effect=lambda agent_name, prompt: prompt,
             ),
             patch("nanobot.mc.step_dispatcher._run_step_agent", side_effect=_run_agent),
+            snap_patch,
+            collect_patch,
         ):
             await dispatcher.dispatch_steps("task-1", ["step-1", "step-2"])
 
@@ -306,6 +336,7 @@ class TestStepDispatcher:
         )
         dispatcher = StepDispatcher(bridge)
 
+        snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("nanobot.mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
             patch(
@@ -320,6 +351,8 @@ class TestStepDispatcher:
                 "nanobot.mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(return_value="ok"),
             ),
+            snap_patch,
+            collect_patch,
         ):
             await dispatcher.dispatch_steps("task-1", ["step-1", "step-2"])
 
@@ -329,6 +362,106 @@ class TestStepDispatcher:
             None,
             "All 2 steps completed",
         )
+
+    @pytest.mark.asyncio
+    async def test_step_completion_calls_post_step_completion(self) -> None:
+        """After a step runs successfully, post_step_completion is called (Story 2.5)."""
+        bridge, state = _make_stateful_bridge([_step("step-1", "Write Report", order=1)])
+        dispatcher = StepDispatcher(bridge)
+
+        snap_patch, collect_patch = _patch_executor_helpers()
+        with (
+            patch("nanobot.mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
+            patch(
+                "nanobot.mc.step_dispatcher._load_agent_config",
+                return_value=(None, None, None),
+            ),
+            patch(
+                "nanobot.mc.step_dispatcher._maybe_inject_orientation",
+                side_effect=lambda agent_name, prompt: prompt,
+            ),
+            patch(
+                "nanobot.mc.step_dispatcher._run_step_agent",
+                new=AsyncMock(return_value="Report written."),
+            ),
+            snap_patch,
+            collect_patch,
+        ):
+            await dispatcher.dispatch_steps("task-1", ["step-1"])
+
+        # post_step_completion should be called instead of send_message for the success path
+        bridge.post_step_completion.assert_called_once()
+        call_args = bridge.post_step_completion.call_args
+        assert call_args[0][0] == "task-1"        # task_id
+        assert call_args[0][1] == "step-1"        # step_id
+        assert call_args[0][2] == "general-agent" # agent_name
+        assert call_args[0][3] == "Report written." # content
+
+    @pytest.mark.asyncio
+    async def test_step_completion_passes_artifacts(self) -> None:
+        """Artifacts collected are forwarded to post_step_completion."""
+        bridge, state = _make_stateful_bridge([_step("step-1", "Analyze", order=1)])
+        dispatcher = StepDispatcher(bridge)
+
+        fake_artifacts = [{"path": "output/report.pdf", "action": "created", "description": "PDF, 10 KB"}]
+
+        with (
+            patch("nanobot.mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
+            patch(
+                "nanobot.mc.step_dispatcher._load_agent_config",
+                return_value=(None, None, None),
+            ),
+            patch(
+                "nanobot.mc.step_dispatcher._maybe_inject_orientation",
+                side_effect=lambda agent_name, prompt: prompt,
+            ),
+            patch(
+                "nanobot.mc.step_dispatcher._run_step_agent",
+                new=AsyncMock(return_value="Analysis done."),
+            ),
+            patch("nanobot.mc.executor._snapshot_output_dir", return_value={}),
+            patch(
+                "nanobot.mc.executor._collect_output_artifacts",
+                return_value=fake_artifacts,
+            ),
+        ):
+            await dispatcher.dispatch_steps("task-1", ["step-1"])
+
+        bridge.post_step_completion.assert_called_once()
+        call_args = bridge.post_step_completion.call_args
+        # When artifacts is non-empty, it is passed as the last positional arg
+        assert call_args[0][4] == fake_artifacts
+
+    @pytest.mark.asyncio
+    async def test_step_completion_no_artifacts_passes_none(self) -> None:
+        """When no artifacts are produced, None is passed to post_step_completion."""
+        bridge, state = _make_stateful_bridge([_step("step-1", "Compute", order=1)])
+        dispatcher = StepDispatcher(bridge)
+
+        snap_patch, collect_patch = _patch_executor_helpers()
+        with (
+            patch("nanobot.mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
+            patch(
+                "nanobot.mc.step_dispatcher._load_agent_config",
+                return_value=(None, None, None),
+            ),
+            patch(
+                "nanobot.mc.step_dispatcher._maybe_inject_orientation",
+                side_effect=lambda agent_name, prompt: prompt,
+            ),
+            patch(
+                "nanobot.mc.step_dispatcher._run_step_agent",
+                new=AsyncMock(return_value="Computation done."),
+            ),
+            snap_patch,
+            collect_patch,
+        ):
+            await dispatcher.dispatch_steps("task-1", ["step-1"])
+
+        bridge.post_step_completion.assert_called_once()
+        call_args = bridge.post_step_completion.call_args
+        # Empty artifacts list → None passed
+        assert call_args[0][4] is None
 
     @pytest.mark.asyncio
     async def test_dispatch_failure_posts_system_message(self) -> None:

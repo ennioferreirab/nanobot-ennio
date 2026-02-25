@@ -1,6 +1,6 @@
 # Story 2.5: Post Structured Completion Messages
 
-Status: draft
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -30,52 +30,52 @@ So that I can see exactly what each agent produced and dependent agents get prec
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Extend Convex `messages:create` mutation to accept structured completion fields** (AC: 1, 8)
-  - [ ] 1.1 Add `stepId` as `v.optional(v.id("steps"))` to the `messages:create` mutation args
-  - [ ] 1.2 Add `type` as `v.optional(v.union(v.literal("step_completion"), ...))` to the `messages:create` mutation args
-  - [ ] 1.3 Add `artifacts` as `v.optional(v.array(v.object({...})))` to the `messages:create` mutation args
-  - [ ] 1.4 Pass the new optional fields through to `ctx.db.insert("messages", ...)` when present
-  - [ ] 1.5 Verify existing callers of `messages:create` (which don't pass these fields) still work
+- [x] **Task 1: Extend Convex `messages:create` mutation to accept structured completion fields** (AC: 1, 8)
+  - [x]1.1 Add `stepId` as `v.optional(v.id("steps"))` to the `messages:create` mutation args
+  - [x]1.2 Add `type` as `v.optional(v.union(v.literal("step_completion"), ...))` to the `messages:create` mutation args
+  - [x]1.3 Add `artifacts` as `v.optional(v.array(v.object({...})))` to the `messages:create` mutation args
+  - [x]1.4 Pass the new optional fields through to `ctx.db.insert("messages", ...)` when present
+  - [x]1.5 Verify existing callers of `messages:create` (which don't pass these fields) still work
 
-- [ ] **Task 2: Add `post_step_completion()` method to ConvexBridge** (AC: 1, 2, 3, 7)
-  - [ ] 2.1 Add `post_step_completion(task_id, step_id, agent_name, content, artifacts)` method to `ConvexBridge`
-  - [ ] 2.2 Method calls `messages:create` with `author_type="agent"`, `message_type="work"`, `type="step_completion"`, and passes `step_id` and `artifacts`
-  - [ ] 2.3 `artifacts` parameter is `list[dict] | None` — each dict has keys: `path`, `action`, `description` (optional), `diff` (optional)
-  - [ ] 2.4 Uses `_mutation_with_retry` for reliability (consistent with all other bridge mutations)
-  - [ ] 2.5 Logs the step completion via `_log_state_transition`
+- [x] **Task 2: Add `post_step_completion()` method to ConvexBridge** (AC: 1, 2, 3, 7)
+  - [x]2.1 Add `post_step_completion(task_id, step_id, agent_name, content, artifacts)` method to `ConvexBridge`
+  - [x]2.2 Method calls `messages:create` with `author_type="agent"`, `message_type="work"`, `type="step_completion"`, and passes `step_id` and `artifacts`
+  - [x]2.3 `artifacts` parameter is `list[dict] | None` — each dict has keys: `path`, `action`, `description` (optional), `diff` (optional)
+  - [x]2.4 Uses `_mutation_with_retry` for reliability (consistent with all other bridge mutations)
+  - [x]2.5 Logs the step completion via `_log_state_transition`
 
-- [ ] **Task 3: Add `StepCompletionArtifact` dataclass to types.py** (AC: 2, 6)
-  - [ ] 3.1 Create `StepCompletionArtifact` dataclass with fields: `path: str`, `action: str`, `description: str | None`, `diff: str | None`
-  - [ ] 3.2 Add `StructuredMessageType` StrEnum mirroring the `type` field values from the Convex schema: `STEP_COMPLETION`, `USER_MESSAGE`, `SYSTEM_ERROR`, `LEAD_AGENT_PLAN`, `LEAD_AGENT_CHAT`
-  - [ ] 3.3 Add `to_dict()` method on `StepCompletionArtifact` for serialization to Convex-compatible format
+- [x] **Task 3: Add `StepCompletionArtifact` dataclass to types.py** (AC: 2, 6)
+  - [x]3.1 Create `StepCompletionArtifact` dataclass with fields: `path: str`, `action: str`, `description: str | None`, `diff: str | None`
+  - [x]3.2 Add `StructuredMessageType` StrEnum mirroring the `type` field values from the Convex schema: `STEP_COMPLETION`, `USER_MESSAGE`, `SYSTEM_ERROR`, `LEAD_AGENT_PLAN`, `LEAD_AGENT_CHAT`
+  - [x]3.3 Add `to_dict()` method on `StepCompletionArtifact` for serialization to Convex-compatible format
 
-- [ ] **Task 4: Collect file artifacts from agent output** (AC: 1, 2, 3, 4)
-  - [ ] 4.1 Create helper function `_collect_output_artifacts(task_id: str, pre_snapshot: dict[str, float] | None) -> list[dict]` in `executor.py`
-  - [ ] 4.2 The function scans the task's `output/` directory and compares against a pre-execution snapshot to detect created/modified files
-  - [ ] 4.3 For **created** files: artifact entry has `action="created"`, `description` with file type and size, `path` relative to task dir
-  - [ ] 4.4 For **modified** files: artifact entry has `action="modified"`, `diff` as a summary of the change (size delta), `path` relative to task dir
-  - [ ] 4.5 Create helper function `_snapshot_output_dir(task_id: str) -> dict[str, float]` that captures file paths and modification times before execution
+- [x] **Task 4: Collect file artifacts from agent output** (AC: 1, 2, 3, 4)
+  - [x]4.1 Create helper function `_collect_output_artifacts(task_id: str, pre_snapshot: dict[str, float] | None) -> list[dict]` in `executor.py`
+  - [x]4.2 The function scans the task's `output/` directory and compares against a pre-execution snapshot to detect created/modified files
+  - [x]4.3 For **created** files: artifact entry has `action="created"`, `description` with file type and size, `path` relative to task dir
+  - [x]4.4 For **modified** files: artifact entry has `action="modified"`, `diff` as a summary of the change (size delta), `path` relative to task dir
+  - [x]4.5 Create helper function `_snapshot_output_dir(task_id: str) -> dict[str, float]` that captures file paths and modification times before execution
 
-- [ ] **Task 5: Post structured completion message after step execution** (AC: 1, 3, 4, 5)
-  - [ ] 5.1 In `TaskExecutor._execute_task()`, capture output directory snapshot **before** agent execution
-  - [ ] 5.2 After successful agent execution, call `_collect_output_artifacts()` to build the artifacts list
-  - [ ] 5.3 Call `bridge.post_step_completion()` with the agent's text result as `content`, the collected `artifacts`, the `step_id`, and the `agent_name`
-  - [ ] 5.4 Replace the existing `bridge.send_message()` call (the "work" message) with the new structured completion call when a `step_id` is available
-  - [ ] 5.5 When no `step_id` is available (legacy single-task execution), fall back to the existing `send_message()` behavior
+- [x] **Task 5: Post structured completion message after step execution** (AC: 1, 3, 4, 5)
+  - [x]5.1 In `TaskExecutor._execute_task()`, capture output directory snapshot **before** agent execution
+  - [x]5.2 After successful agent execution, call `_collect_output_artifacts()` to build the artifacts list
+  - [x]5.3 Call `bridge.post_step_completion()` with the agent's text result as `content`, the collected `artifacts`, the `step_id`, and the `agent_name`
+  - [x]5.4 Replace the existing `bridge.send_message()` call (the "work" message) with the new structured completion call when a `step_id` is available
+  - [x]5.5 When no `step_id` is available (legacy single-task execution), fall back to the existing `send_message()` behavior
 
-- [ ] **Task 6: Update `_build_thread_context()` to format artifacts** (AC: 6)
-  - [ ] 6.1 Detect messages with `type == "step_completion"` and non-empty `artifacts` in the thread
-  - [ ] 6.2 Format each artifact as: `  - [action] path: description` or `  - [action] path (diff: summary)`
-  - [ ] 6.3 Append formatted artifacts after the message content line in the thread context string
-  - [ ] 6.4 Non-step-completion messages continue to render as before (backward compatible)
+- [x] **Task 6: Update `_build_thread_context()` to format artifacts** (AC: 6)
+  - [x]6.1 Detect messages with `type == "step_completion"` and non-empty `artifacts` in the thread
+  - [x]6.2 Format each artifact as: `  - [action] path: description` or `  - [action] path (diff: summary)`
+  - [x]6.3 Append formatted artifacts after the message content line in the thread context string
+  - [x]6.4 Non-step-completion messages continue to render as before (backward compatible)
 
-- [ ] **Task 7: Write tests** (AC: 1-8)
-  - [ ] 7.1 Unit test for `_collect_output_artifacts()` — verifies created vs. modified detection
-  - [ ] 7.2 Unit test for `_snapshot_output_dir()` — verifies snapshot capture
-  - [ ] 7.3 Unit test for `StepCompletionArtifact.to_dict()` serialization
-  - [ ] 7.4 Unit test for `_build_thread_context()` with step_completion messages containing artifacts
-  - [ ] 7.5 Unit test for `_build_thread_context()` with step_completion messages with empty artifacts
-  - [ ] 7.6 Integration test: `post_step_completion()` bridge method serializes correctly (mock Convex client)
+- [x] **Task 7: Write tests** (AC: 1-8)
+  - [x]7.1 Unit test for `_collect_output_artifacts()` — verifies created vs. modified detection
+  - [x]7.2 Unit test for `_snapshot_output_dir()` — verifies snapshot capture
+  - [x]7.3 Unit test for `StepCompletionArtifact.to_dict()` serialization
+  - [x]7.4 Unit test for `_build_thread_context()` with step_completion messages containing artifacts
+  - [x]7.5 Unit test for `_build_thread_context()` with step_completion messages with empty artifacts
+  - [x]7.6 Integration test: `post_step_completion()` bridge method serializes correctly (mock Convex client)
 
 ## Dev Notes
 
