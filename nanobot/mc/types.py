@@ -96,6 +96,8 @@ class ActivityEventType(StrEnum):
     AGENT_DEACTIVATED = "agent_deactivated"
     TASK_DISPATCH_STARTED = "task_dispatch_started"
     STEP_DISPATCHED = "step_dispatched"
+    STEP_STARTED = "step_started"
+    STEP_COMPLETED = "step_completed"
     SYSTEM_ERROR = "system_error"
     TASK_DELETED = "task_deleted"
     TASK_RESTORED = "task_restored"

@@ -251,12 +251,29 @@ class StepDispatcher:
                     f"Task completed -- all {step_count} steps finished",
                     task_id,
                 )
-        except Exception:
+        except Exception as exc:
             logger.error(
                 "[dispatcher] Dispatch failed for task %s",
                 task_id,
                 exc_info=True,
             )
+            try:
+                await asyncio.to_thread(
+                    self._bridge.send_message,
+                    task_id,
+                    "System",
+                    AuthorType.SYSTEM,
+                    (
+                        "Step dispatch failed:\n"
+                        f"```\n{type(exc).__name__}: {exc}\n```"
+                    ),
+                    MessageType.SYSTEM_EVENT,
+                )
+            except Exception:
+                logger.error(
+                    "[dispatcher] Failed to post dispatch failure message",
+                    exc_info=True,
+                )
 
     @staticmethod
     def _group_by_parallel_group(
@@ -316,7 +333,7 @@ class StepDispatcher:
         )
         await asyncio.to_thread(
             self._bridge.create_activity,
-            ActivityEventType.STEP_DISPATCHED,
+            ActivityEventType.STEP_STARTED,
             f"Agent {agent_name} started step: {step_title}",
             task_id,
             agent_name,
@@ -391,7 +408,7 @@ class StepDispatcher:
             )
             await asyncio.to_thread(
                 self._bridge.create_activity,
-                ActivityEventType.STEP_DISPATCHED,
+                ActivityEventType.STEP_COMPLETED,
                 f"Agent {agent_name} completed step: {step_title}",
                 task_id,
                 agent_name,
