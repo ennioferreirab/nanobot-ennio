@@ -349,6 +349,7 @@ export const deactivateExcept = mutation({
     const timestamp = new Date().toISOString();
 
     for (const agent of allAgents) {
+      if (agent.isSystem) continue;
       if (!args.activeNames.includes(agent.name)) {
         await ctx.db.patch(agent._id, {
           status: "idle",

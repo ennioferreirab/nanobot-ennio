@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { Id } from "../convex/_generated/dataModel";
+import { Doc, Id } from "../convex/_generated/dataModel";
 import { LayoutGroup } from "motion/react";
 import { KanbanColumn } from "./KanbanColumn";
 import { TrashBinSheet } from "./TrashBinSheet";
@@ -23,6 +23,25 @@ interface KanbanBoardProps {
   onTaskClick?: (taskId: Id<"tasks">) => void;
 }
 
+type ColumnStatus = (typeof COLUMNS)[number]["status"];
+
+function stepStatusToColumnStatus(
+  stepStatus: Doc<"steps">["status"]
+): ColumnStatus | null {
+  switch (stepStatus) {
+    case "assigned":
+    case "blocked":
+      return "assigned";
+    case "running":
+    case "crashed":
+      return "in_progress";
+    case "completed":
+      return "done";
+    default:
+      return null;
+  }
+}
+
 export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
   const { activeBoardId, isDefaultBoard } = useBoard();
 
@@ -35,6 +54,7 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
       : "skip",
   );
   const tasks = activeBoardId ? boardTasksResult : allTasksResult;
+  const allStepsResult = useQuery(api.steps.listAll);
 
   const hitlCount = useQuery(api.tasks.countHitlPending) ?? 0;
   const deletedTasks = useQuery(api.tasks.listDeleted);
@@ -47,9 +67,10 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
   const [trashOpen, setTrashOpen] = useState(false);
   const [doneSheetOpen, setDoneSheetOpen] = useState(false);
 
-  if (tasks === undefined) {
+  if (tasks === undefined || allStepsResult === undefined) {
     return null;
   }
+  const allSteps = allStepsResult;
 
   if (tasks.length === 0 && deletedCount === 0) {
     return (
@@ -59,9 +80,29 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
     );
   }
 
-  const tasksByStatus = COLUMNS.map((col) => ({
-    ...col,
-    tasks: tasks
+  const visibleTaskIds = new Set(tasks.map((task) => task._id));
+  const boardSteps = allSteps.filter((step) => visibleTaskIds.has(step.taskId));
+  const taskTitleMap = new Map(tasks.map((task) => [task._id, task.title] as const));
+  const taskCreationTimeMap = new Map(
+    tasks.map((task) => [task._id, task._creationTime] as const)
+  );
+
+  const stepsByTaskId = new Map<Id<"tasks">, Doc<"steps">[]>();
+  for (const step of boardSteps) {
+    const mappedColumn = stepStatusToColumnStatus(step.status);
+    if (!mappedColumn) {
+      continue;
+    }
+    const current = stepsByTaskId.get(step.taskId) ?? [];
+    current.push(step);
+    stepsByTaskId.set(step.taskId, current);
+  }
+
+  const tasksWithRenderableSteps = new Set(stepsByTaskId.keys());
+  const regularTasks = tasks.filter((task) => !tasksWithRenderableSteps.has(task._id));
+
+  const tasksByStatus = COLUMNS.map((col) => {
+    const columnTasks = regularTasks
       .filter((t) => {
         if (col.status === "in_progress") {
           return (
@@ -72,10 +113,38 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
         }
         return t.status === col.status;
       })
-      .sort((a, b) => b._creationTime - a._creationTime),
-  }));
+      .sort((a, b) => b._creationTime - a._creationTime);
 
-  const doneCount = tasksByStatus.find((c) => c.status === "done")?.tasks.length ?? 0;
+    const stepGroups = Array.from(stepsByTaskId.entries())
+      .map(([taskId, taskSteps]) => {
+        const steps = taskSteps
+          .filter((step) => stepStatusToColumnStatus(step.status) === col.status)
+          .sort((a, b) => a.order - b.order);
+        return {
+          taskId,
+          taskTitle: taskTitleMap.get(taskId) ?? "Unknown Task",
+          steps,
+        };
+      })
+      .filter((group) => group.steps.length > 0)
+      .sort(
+        (a, b) =>
+          (taskCreationTimeMap.get(b.taskId) ?? 0) -
+          (taskCreationTimeMap.get(a.taskId) ?? 0)
+      );
+
+    return {
+      ...col,
+      tasks: columnTasks,
+      stepGroups,
+      totalCount:
+        columnTasks.length +
+        stepGroups.reduce((count, group) => count + group.steps.length, 0),
+    };
+  });
+
+  const doneTaskCount =
+    tasksByStatus.find((c) => c.status === "done")?.tasks.length ?? 0;
 
   return (
     <LayoutGroup>
@@ -87,6 +156,8 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
               title={col.title}
               status={col.status}
               tasks={col.tasks}
+              stepGroups={col.stepGroups}
+              totalCount={col.totalCount}
               accentColor={col.accentColor}
               onTaskClick={onTaskClick}
               hitlCount={col.status === "review" ? hitlCount : undefined}
@@ -94,7 +165,7 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
               {...(col.status === "done"
                 ? {
                     onClear: () => clearAllDone(),
-                    clearDisabled: doneCount === 0,
+                    clearDisabled: doneTaskCount === 0,
                     onViewAll: () => setDoneSheetOpen(true),
                   }
                 : {})}

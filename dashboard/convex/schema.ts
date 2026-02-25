@@ -19,6 +19,8 @@ export default defineSchema({
     title: v.string(),
     description: v.optional(v.string()),
     status: v.union(
+      v.literal("planning"),
+      v.literal("failed"),
       v.literal("inbox"),
       v.literal("assigned"),
       v.literal("in_progress"),
@@ -39,6 +41,10 @@ export default defineSchema({
     taskTimeout: v.optional(v.number()),
     interAgentTimeout: v.optional(v.number()),
     executionPlan: v.optional(v.any()),
+    supervisionMode: v.optional(v.union(
+      v.literal("autonomous"),
+      v.literal("supervised"),
+    )),
     stalledAt: v.optional(v.string()),
     isManual: v.optional(v.boolean()),
     deletedAt: v.optional(v.string()),
@@ -58,8 +64,33 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_boardId", ["boardId"]),
 
+  steps: defineTable({
+    taskId: v.id("tasks"),
+    title: v.string(),
+    description: v.string(),
+    assignedAgent: v.string(),
+    status: v.union(
+      v.literal("planned"),
+      v.literal("assigned"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("crashed"),
+      v.literal("blocked"),
+    ),
+    blockedBy: v.optional(v.array(v.id("steps"))),
+    parallelGroup: v.number(),
+    order: v.number(),
+    createdAt: v.string(),
+    startedAt: v.optional(v.string()),
+    completedAt: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+  })
+    .index("by_taskId", ["taskId"])
+    .index("by_status", ["status"]),
+
   messages: defineTable({
     taskId: v.id("tasks"),
+    stepId: v.optional(v.id("steps")),
     authorName: v.string(),
     authorType: v.union(
       v.literal("agent"),
@@ -75,6 +106,23 @@ export default defineSchema({
       v.literal("system_event"),
       v.literal("user_message"),
     ),
+    type: v.optional(v.union(
+      v.literal("step_completion"),
+      v.literal("user_message"),
+      v.literal("system_error"),
+      v.literal("lead_agent_plan"),
+      v.literal("lead_agent_chat"),
+    )),
+    artifacts: v.optional(v.array(v.object({
+      path: v.string(),
+      action: v.union(
+        v.literal("created"),
+        v.literal("modified"),
+        v.literal("deleted"),
+      ),
+      description: v.optional(v.string()),
+      diff: v.optional(v.string()),
+    }))),
     timestamp: v.string(),
   }).index("by_taskId", ["taskId"]),
 
@@ -108,6 +156,8 @@ export default defineSchema({
     agentName: v.optional(v.string()),
     eventType: v.union(
       v.literal("task_created"),
+      v.literal("task_planning"),
+      v.literal("task_failed"),
       v.literal("task_assigned"),
       v.literal("task_started"),
       v.literal("task_completed"),
@@ -138,6 +188,9 @@ export default defineSchema({
       v.literal("board_updated"),
       v.literal("board_deleted"),
       v.literal("thread_message_sent"),
+      v.literal("step_created"),
+      v.literal("step_status_changed"),
+      v.literal("step_unblocked"),
     ),
     description: v.string(),
     timestamp: v.string(),

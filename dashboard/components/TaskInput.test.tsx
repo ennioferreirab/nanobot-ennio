@@ -67,6 +67,7 @@ describe("TaskInput", () => {
     expect(mockMutate).toHaveBeenCalledWith({
       title: "Research AI trends",
       tags: undefined,
+      supervisionMode: "autonomous",
     });
   });
 
@@ -93,6 +94,7 @@ describe("TaskInput", () => {
     expect(mockMutate).toHaveBeenCalledWith({
       title: "My task",
       tags: undefined,
+      supervisionMode: "autonomous",
     });
   });
 
@@ -143,6 +145,7 @@ describe("TaskInput", () => {
     expect(mockMutate).toHaveBeenCalledWith({
       title: "Auto task",
       tags: undefined,
+      supervisionMode: "autonomous",
     });
   });
 
@@ -171,7 +174,72 @@ describe("TaskInput", () => {
     render(<TaskInput />);
     fireEvent.click(screen.getByLabelText("Toggle options"));
     expect(screen.getByText("Trust Level")).toBeInTheDocument();
-    expect(screen.getByText("Autonomous")).toBeInTheDocument();
+    const trustTrigger = screen.getAllByRole("combobox")[1];
+    expect(trustTrigger).toHaveTextContent("Autonomous");
+  });
+
+  // --- Story 1.2: Supervision mode configuration ---
+
+  it("shows supervision mode selector when expanded", () => {
+    render(<TaskInput />);
+    fireEvent.click(screen.getByLabelText("Toggle options"));
+    expect(screen.getByText("Supervision Mode")).toBeInTheDocument();
+    const supervisionTrigger = screen.getAllByRole("combobox")[2];
+    expect(supervisionTrigger).toHaveTextContent("Autonomous");
+  });
+
+  it("submits with supervisionMode autonomous by default", () => {
+    mockMutate.mockResolvedValue("taskId123");
+    render(<TaskInput />);
+    const input = screen.getByPlaceholderText("Create a new task...");
+    fireEvent.change(input, { target: { value: "Default mode task" } });
+    fireEvent.click(screen.getByText("Create"));
+
+    expect(mockMutate).toHaveBeenCalledWith({
+      title: "Default mode task",
+      tags: undefined,
+      supervisionMode: "autonomous",
+    });
+  });
+
+  it("submits with supervisionMode supervised when selected", () => {
+    mockMutate.mockResolvedValue("taskId123");
+    render(<TaskInput />);
+    const input = screen.getByPlaceholderText("Create a new task...");
+    fireEvent.change(input, { target: { value: "Supervised task" } });
+    fireEvent.click(screen.getByLabelText("Toggle options"));
+
+    const supervisionTrigger = screen.getAllByRole("combobox")[2];
+    fireEvent.click(supervisionTrigger);
+    fireEvent.click(screen.getByRole("option", { name: "Supervised" }));
+    fireEvent.click(screen.getByText("Create"));
+
+    expect(mockMutate).toHaveBeenCalledWith({
+      title: "Supervised task",
+      tags: undefined,
+      supervisionMode: "supervised",
+    });
+  });
+
+  it("resets supervision mode after submission", async () => {
+    mockMutate.mockResolvedValue("taskId123");
+    render(<TaskInput />);
+    const input = screen.getByPlaceholderText("Create a new task...");
+    fireEvent.change(input, { target: { value: "Needs review first" } });
+    fireEvent.click(screen.getByLabelText("Toggle options"));
+
+    const supervisionTrigger = screen.getAllByRole("combobox")[2];
+    fireEvent.click(supervisionTrigger);
+    fireEvent.click(screen.getByRole("option", { name: "Supervised" }));
+    fireEvent.click(screen.getByText("Create"));
+
+    await vi.waitFor(() => {
+      expect(screen.queryByText("Agent:")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("Toggle options"));
+    const resetSupervisionTrigger = screen.getAllByRole("combobox")[2];
+    expect(resetSupervisionTrigger).toHaveTextContent("Autonomous");
   });
 
   it("does not show reviewer section when trust level is autonomous", () => {
@@ -186,10 +254,9 @@ describe("TaskInput", () => {
     fireEvent.click(screen.getByLabelText("Toggle options"));
 
     // Change trust level to agent_reviewed
-    // Click the trust level trigger to open dropdown
-    const trustTrigger = screen.getByText("Autonomous");
+    const trustTrigger = screen.getAllByRole("combobox")[1];
     fireEvent.click(trustTrigger);
-    fireEvent.click(screen.getByText("Agent Reviewed"));
+    fireEvent.click(screen.getByRole("option", { name: "Agent Reviewed" }));
 
     // Reviewer section should now be visible
     expect(screen.getByText("Reviewers")).toBeInTheDocument();
@@ -202,13 +269,13 @@ describe("TaskInput", () => {
     fireEvent.click(screen.getByLabelText("Toggle options"));
 
     // Change to agent_reviewed
-    fireEvent.click(screen.getByText("Autonomous"));
-    fireEvent.click(screen.getByText("Agent Reviewed"));
+    fireEvent.click(screen.getAllByRole("combobox")[1]);
+    fireEvent.click(screen.getByRole("option", { name: "Agent Reviewed" }));
     expect(screen.getByText("Reviewers")).toBeInTheDocument();
 
     // Change back to autonomous
-    fireEvent.click(screen.getByText("Agent Reviewed"));
-    fireEvent.click(screen.getByText("Autonomous"));
+    fireEvent.click(screen.getAllByRole("combobox")[1]);
+    fireEvent.click(screen.getByRole("option", { name: "Autonomous" }));
     expect(screen.queryByText("Reviewers")).not.toBeInTheDocument();
   });
 
@@ -216,8 +283,8 @@ describe("TaskInput", () => {
     render(<TaskInput />);
     fireEvent.click(screen.getByLabelText("Toggle options"));
 
-    fireEvent.click(screen.getByText("Autonomous"));
-    fireEvent.click(screen.getByText("Human Approved"));
+    fireEvent.click(screen.getAllByRole("combobox")[1]);
+    fireEvent.click(screen.getByRole("option", { name: "Human Approved" }));
 
     expect(screen.getByText("Require human approval")).toBeInTheDocument();
   });
@@ -232,8 +299,8 @@ describe("TaskInput", () => {
 
     // Expand options and set trust level
     fireEvent.click(screen.getByLabelText("Toggle options"));
-    fireEvent.click(screen.getByText("Autonomous"));
-    fireEvent.click(screen.getByText("Agent Reviewed"));
+    fireEvent.click(screen.getAllByRole("combobox")[1]);
+    fireEvent.click(screen.getByRole("option", { name: "Agent Reviewed" }));
 
     // Select a reviewer
     fireEvent.click(screen.getByLabelText("Coder Agent"));
@@ -244,6 +311,7 @@ describe("TaskInput", () => {
     expect(mockMutate).toHaveBeenCalledWith({
       title: "Review this",
       tags: undefined,
+      supervisionMode: "autonomous",
       trustLevel: "agent_reviewed",
       reviewers: ["coder"],
     });

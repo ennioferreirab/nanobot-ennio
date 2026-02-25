@@ -7,6 +7,8 @@ export const create = mutation({
     agentName: v.optional(v.string()),
     eventType: v.union(
       v.literal("task_created"),
+      v.literal("task_planning"),
+      v.literal("task_failed"),
       v.literal("task_assigned"),
       v.literal("task_started"),
       v.literal("task_completed"),
@@ -33,6 +35,9 @@ export const create = mutation({
       v.literal("board_created"),
       v.literal("board_updated"),
       v.literal("board_deleted"),
+      v.literal("step_created"),
+      v.literal("step_status_changed"),
+      v.literal("step_unblocked"),
     ),
     description: v.string(),
     timestamp: v.string(),

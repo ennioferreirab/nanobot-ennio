@@ -1,4 +1,4 @@
-# generated: 2026-02-22
+# generated: 2026-02-24
 # project: nanobot-ennio
 # project_key: NOKEY
 # tracking_system: file-system
@@ -12,8 +12,8 @@
 #   - done: All stories in epic completed
 #
 # Epic Status Transitions:
-#   - backlog → in-progress: Automatically when first story is created (via create-story)
-#   - in-progress → done: Manually when all stories reach 'done' status
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
 #
 # Story Status:
 #   - backlog: Story only exists in epic file
@@ -33,114 +33,72 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-22
+generated: 2026-02-24
 project: nanobot-ennio
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 
 development_status:
-  # Epic 1: Project Foundation & System Lifecycle
-  epic-1: done
-  1-1-initialize-dashboard-project-with-starter-template: done
-  1-2-define-convex-data-schema: done
-  1-3-build-asyncio-convex-bridge-core: done
-  1-4-add-bridge-retry-logic-and-dual-logging: done
-  1-5-implement-process-manager: done
-  1-6-implement-cli-lifecycle-commands: done
+  # Epic 1: Task Creation & Execution Planning
+  epic-1: in-progress
+  1-1-extend-convex-schema-for-task-step-hierarchy: done
+  1-2-add-supervision-mode-to-task-creation: done
+  1-3-register-general-agent-as-system-fallback: review
+  1-4-enforce-lead-agent-as-pure-orchestrator: review
+  1-5-generate-execution-plans: review
+  1-6-materialize-plans-into-step-records: review
+  1-7-render-step-cards-on-kanban-board: done
+  1-8-visualize-execution-plan: done
   epic-1-retrospective: optional
 
-  # Epic 2: Task Board & Real-Time Visibility
-  epic-2: done
-  2-1-build-dashboard-layout-shell: done
-  2-2-implement-task-creation-from-dashboard: done
-  2-3-build-kanban-board-with-real-time-task-cards: done
-  2-4-implement-task-state-machine: done
-  2-5-build-activity-feed: done
-  2-6-build-task-detail-sheet: done
-  2-7-implement-cli-task-commands: done
+  # Epic 2: Autonomous Execution & Agent Collaboration
+  epic-2: in-progress
+  2-1-dispatch-steps-in-autonomous-mode: ready-for-dev
+  2-2-execute-steps-as-agent-subprocesses: ready-for-dev
+  2-3-auto-unblock-dependent-steps: ready-for-dev
+  2-4-build-unified-thread-per-task: ready-for-dev
+  2-5-post-structured-completion-messages: ready-for-dev
+  2-6-build-thread-context-for-agents: ready-for-dev
+  2-7-render-thread-view-in-real-time: ready-for-dev
   epic-2-retrospective: optional
 
-  # Epic 3: Agent Registration & Dashboard Presence
-  epic-3: done
-  3-1-implement-yaml-agent-validator: done
-  3-2-build-agent-registry-sync: done
-  3-3-build-agent-sidebar: done
-  3-4-implement-cli-agent-commands: done
-  3-5-implement-agent-assisted-cli: done
+  # Epic 3: Step Lifecycle & Error Recovery
+  epic-3: backlog
+  3-1-implement-step-status-state-machine: backlog
+  3-2-visualize-blocked-and-crashed-steps: backlog
+  3-3-post-crash-errors-with-recovery-instructions: backlog
+  3-4-retry-crashed-steps: backlog
+  3-5-extend-activity-feed-with-step-events: backlog
   epic-3-retrospective: optional
 
-  # Epic 4: Intelligent Task Routing & Orchestration
-  epic-4: in-progress
-  4-1-implement-lead-agent-capability-matching: done
-  4-2-implement-execution-planning: done
-  4-3-build-execution-plan-visualization: done
-  4-4-add-agent-assignment-to-task-input: done
-  4-5-llm-based-lead-agent-planning: done
+  # Epic 4: Pre-Kickoff Plan Review & Negotiation
+  epic-4: backlog
+  4-1-build-pre-kickoff-modal-shell: backlog
+  4-2-reassign-agents-to-steps: backlog
+  4-3-reorder-steps-and-edit-dependencies: backlog
+  4-4-attach-documents-to-steps: backlog
+  4-5-chat-with-lead-agent-for-plan-negotiation: backlog
+  4-6-approve-plan-and-kick-off: backlog
   epic-4-retrospective: optional
 
-  # Epic 5: Inter-Agent Review & Collaboration
-  epic-5: done
-  5-1-implement-trust-level-and-reviewer-configuration: done
-  5-2-implement-inter-agent-messaging: done
-  5-3-build-review-feedback-flow: done
+  # Epic 5: File Attachment & Viewing
+  epic-5: backlog
+  5-1-extend-schema-and-create-task-directories: backlog
+  5-2-upload-files-at-task-creation: backlog
+  5-3-build-files-tab-in-task-detail: backlog
+  5-4-attach-files-to-existing-tasks: backlog
+  5-5-file-indicators-on-task-cards: backlog
+  5-6-file-serving-api-route: backlog
+  5-7-viewer-modal-with-text-and-code-viewers: backlog
+  5-8-pdf-viewer: backlog
+  5-9-html-and-markdown-viewers: backlog
+  5-10-image-viewer: backlog
   epic-5-retrospective: optional
 
-  # Epic 6: Human-in-the-Loop Approval
-  epic-6: done
-  6-1-implement-hitl-approve-action: done
-  6-2-implement-hitl-deny-with-inline-rejection: done
-  6-3-implement-hitl-notification-badges: done
-  6-4-implement-manual-crash-retry: done
+  # Epic 6: Agent File Integration
+  epic-6: backlog
+  6-1-inject-file-context-into-agent-task-context: backlog
+  6-2-bridge-manifest-sync-for-agent-output: backlog
+  6-3-lead-agent-file-aware-routing: backlog
   epic-6-retrospective: optional
-
-  # Epic 7: Reliability, Configuration & Security
-  epic-7: done
-  7-1-implement-auto-retry-on-agent-crash: done
-  7-2-implement-timeout-detection-and-escalation: done
-  7-3-build-dashboard-settings-panel: done
-  7-4-implement-access-token-authentication: done
-  7-5-implement-cli-system-health-and-documentation: done
-  epic-7-retrospective: optional
-
-  # Epic 8: Integration Hardening & End-to-End Flow
-  epic-8: in-progress
-  8-1-fix-gateway-placeholders-and-agent-execution-pipeline: in-progress
-  8-2-build-agent-config-editor-dashboard: done
-  8-3-add-clear-done-and-done-list: in-progress
-  8-4-fix-orchestrator-bridge-reliability: done
-  8-5-fix-provider-integration-validation: done
-  8-4-implement-agent-activation-status: done
-  8-6-human-manual-tasks-kanban: done
-  8-7-implement-task-tags-management: done
-  8-9-agent-memory-history-viewer: done
-
-  # Epic 9: Thread Files Context
-  epic-9: in-progress
-  # Group A: Attach Files to Tasks
-  9-1-extend-convex-schema-and-create-task-directories: done
-  9-2-upload-files-at-task-creation: done
-  9-3-build-files-tab-in-task-detail-sheet: done
-  9-4-attach-files-to-existing-tasks: done
-  9-5-file-indicators-on-task-cards: done
-  # Group B: View Files in Dashboard
-  9-6-file-serving-api-route: done
-  9-7-viewer-modal-shell-with-text-and-code-viewers: done
-  9-8-pdf-viewer: done
-  9-9-html-and-markdown-viewers-with-raw-toggle: done
-  9-10-image-viewer: done
-  # Group C: Agent File Integration
-  9-11-inject-file-context-into-agent-task-context: done
-  9-12-bridge-manifest-sync-for-agent-output-files: done
-  9-13-lead-agent-file-aware-routing: done
-  epic-9-retrospective: optional
-
-  # Epic 10: Mission Control Boards & Agent Memory Isolation
-  epic-10: in-progress
-  10-1-mission-control-boards-foundation: review
-  epic-10-retrospective: optional
-
-  # Epic 11: Human-Agent Thread Interaction
-  epic-11: in-progress
-  11-1-thread-based-agent-interaction: done
-  epic-11-retrospective: optional

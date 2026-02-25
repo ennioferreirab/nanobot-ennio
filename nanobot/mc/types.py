@@ -8,7 +8,7 @@ String values MUST match exactly — any mismatch will cause runtime errors.
 from __future__ import annotations
 
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,10 +23,22 @@ else:
 
 
 LEAD_AGENT_NAME = "lead-agent"
+GENERAL_AGENT_NAME = "general-agent"
+
+
+class LeadAgentExecutionError(RuntimeError):
+    """Raised when lead-agent execution is attempted."""
+
+
+def is_lead_agent(agent_name: str | None) -> bool:
+    """Return True when the given name is the lead-agent."""
+    return agent_name == LEAD_AGENT_NAME
 
 
 class TaskStatus(StrEnum):
     """Task lifecycle states. Matches Convex tasks.status union type."""
+    PLANNING = "planning"
+    FAILED = "failed"
     INBOX = "inbox"
     ASSIGNED = "assigned"
     IN_PROGRESS = "in_progress"
@@ -53,6 +65,8 @@ class AgentStatus(StrEnum):
 class ActivityEventType(StrEnum):
     """Activity feed event types. Matches Convex activities.eventType union type."""
     TASK_CREATED = "task_created"
+    TASK_PLANNING = "task_planning"
+    TASK_FAILED = "task_failed"
     TASK_ASSIGNED = "task_assigned"
     TASK_STARTED = "task_started"
     TASK_COMPLETED = "task_completed"
@@ -97,57 +111,117 @@ class AuthorType(StrEnum):
 
 @dataclass
 class ExecutionPlanStep:
-    """A single step in an execution plan."""
-    step_id: str
+    """A single step in an execution plan (pre-materialization)."""
+    temp_id: str
+    title: str
     description: str
-    assigned_agent: str | None = None
-    depends_on: list[str] = field(default_factory=list)
-    parallel_group: str | None = None
-    status: str = "pending"  # "pending" | "in_progress" | "completed" | "failed"
+    assigned_agent: str = GENERAL_AGENT_NAME
+    blocked_by: list[str] = field(default_factory=list)
+    parallel_group: int = 1
+    order: int = 1
+
+
+def _as_int(value: Any, default: int) -> int:
+    """Coerce arbitrary values to a positive integer with a fallback."""
+    try:
+        parsed = int(value)
+        return parsed if parsed > 0 else default
+    except (TypeError, ValueError):
+        return default
 
 
 @dataclass
 class ExecutionPlan:
     """Structured execution plan stored as JSON on a task document."""
     steps: list[ExecutionPlanStep] = field(default_factory=list)
-    created_at: str = ""
+    generated_at: str = ""
+    generated_by: str = LEAD_AGENT_NAME
 
     def __post_init__(self) -> None:
-        if not self.created_at:
-            self.created_at = datetime.now(timezone.utc).isoformat()
+        if not self.generated_at:
+            self.generated_at = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a dict with camelCase keys for Convex storage."""
         return {
             "steps": [
                 {
-                    "stepId": s.step_id,
+                    "tempId": s.temp_id,
+                    "title": s.title,
                     "description": s.description,
                     "assignedAgent": s.assigned_agent,
-                    "dependsOn": s.depends_on,
+                    "blockedBy": s.blocked_by,
                     "parallelGroup": s.parallel_group,
-                    "status": s.status,
+                    "order": s.order,
                 }
                 for s in self.steps
             ],
-            "createdAt": self.created_at,
+            "generatedAt": self.generated_at,
+            "generatedBy": self.generated_by,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ExecutionPlan:
         """Deserialize from a Convex JSON dict (handles both snake and camel keys)."""
-        steps = [
-            ExecutionPlanStep(
-                step_id=s.get("step_id") or s.get("stepId", ""),
-                description=s["description"],
-                assigned_agent=s.get("assigned_agent") or s.get("assignedAgent"),
-                depends_on=s.get("depends_on") or s.get("dependsOn", []),
-                parallel_group=s.get("parallel_group") or s.get("parallelGroup"),
-                status=s.get("status", "pending"),
+        steps: list[ExecutionPlanStep] = []
+        for index, raw_step in enumerate(data.get("steps", []), start=1):
+            temp_id = (
+                raw_step.get("temp_id")
+                or raw_step.get("tempId")
+                or raw_step.get("step_id")
+                or raw_step.get("stepId")
+                or f"step_{index}"
             )
-            for s in data.get("steps", [])
-        ]
-        return cls(steps=steps, created_at=data.get("createdAt", data.get("created_at", "")))
+            title = raw_step.get("title") or raw_step.get("description") or temp_id
+            description = raw_step.get("description") or title
+            assigned_agent = (
+                raw_step.get("assigned_agent")
+                or raw_step.get("assignedAgent")
+                or GENERAL_AGENT_NAME
+            )
+            blocked_by = (
+                raw_step.get("blocked_by")
+                or raw_step.get("blockedBy")
+                or raw_step.get("depends_on")
+                or raw_step.get("dependsOn")
+                or []
+            )
+            if isinstance(blocked_by, str):
+                blocked_by_list = [blocked_by] if blocked_by else []
+            elif isinstance(blocked_by, list):
+                blocked_by_list = [str(dep) for dep in blocked_by if str(dep).strip()]
+            else:
+                blocked_by_list = []
+
+            steps.append(
+                ExecutionPlanStep(
+                    temp_id=temp_id,
+                    title=title,
+                    description=description,
+                    assigned_agent=assigned_agent,
+                    blocked_by=blocked_by_list,
+                    parallel_group=_as_int(
+                        raw_step.get("parallel_group", raw_step.get("parallelGroup")),
+                        1,
+                    ),
+                    order=_as_int(raw_step.get("order"), index),
+                )
+            )
+
+        return cls(
+            steps=steps,
+            generated_at=(
+                data.get("generatedAt")
+                or data.get("generated_at")
+                or data.get("createdAt")
+                or data.get("created_at", "")
+            ),
+            generated_by=(
+                data.get("generatedBy")
+                or data.get("generated_by")
+                or LEAD_AGENT_NAME
+            ),
+        )
 
 
 @dataclass
@@ -179,6 +253,7 @@ class AgentData:
     status: str = "idle"  # AgentStatus value
     enabled: bool = True  # User-controlled activation flag
     model: str | None = None
+    is_system: bool = False  # System agents cannot be deleted/deactivated
     last_active_at: str | None = None
     id: str | None = None  # Convex _id (populated on read)
 

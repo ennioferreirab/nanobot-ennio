@@ -30,6 +30,34 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 AGENTS_DIR = Path.home() / ".nanobot" / "agents"
+GENERAL_AGENT_NAME = "general-agent"
+_GENERAL_AGENT_CONFIG = """\
+name: general-agent
+role: General-Purpose Assistant
+is_system: true
+prompt: |
+  You are the General Agent, a versatile assistant capable of handling any task
+  that doesn't require a specialist agent.
+
+  You serve as the system fallback — when no specialist agent matches a task's
+  requirements, you step in to provide a capable, thoughtful response.
+
+  **Your strengths:**
+  - Broad knowledge across many domains
+  - Clear, structured communication
+  - Ability to break down complex problems
+  - Research, analysis, and synthesis
+  - Writing, editing, and summarization
+  - General problem-solving and reasoning
+
+  **How you work:**
+  - Approach each task methodically
+  - Ask clarifying questions when the task is ambiguous
+  - Provide structured, actionable responses
+  - Be transparent about the limits of your knowledge
+  - When a task would benefit from a specialist, note that in your response
+skills: []
+"""
 
 
 def _config_default_model() -> str:
@@ -293,6 +321,25 @@ def _write_back_convex_agents(bridge: ConvexBridge, agents_dir: Path) -> None:
                 logger.exception("Failed to restore archive for agent '%s'", name)
 
 
+def ensure_general_agent(agents_dir: Path) -> None:
+    """Ensure the General Agent YAML definition exists on disk.
+
+    Creates the directory and config.yaml if missing. Idempotent:
+    does nothing if the file already exists (preserves user edits).
+    """
+    agent_dir = agents_dir / GENERAL_AGENT_NAME
+    config_path = agent_dir / "config.yaml"
+
+    if config_path.is_file():
+        return
+
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    (agent_dir / "memory").mkdir(exist_ok=True)
+    (agent_dir / "skills").mkdir(exist_ok=True)
+    config_path.write_text(_GENERAL_AGENT_CONFIG, encoding="utf-8")
+    logger.info("Created General Agent definition at %s", config_path)
+
+
 def sync_agent_registry(
     bridge: ConvexBridge,
     agents_dir: Path,
@@ -306,6 +353,9 @@ def sync_agent_registry(
     Returns (synced_agents, errors_by_filename).
     """
     resolved_default = default_model or _config_default_model()
+
+    # Step 0: Ensure system agents exist on disk
+    ensure_general_agent(agents_dir)
 
     # Step 0a: Cleanup — archive and remove local folders for soft-deleted agents
     _cleanup_deleted_agents(bridge, agents_dir)
@@ -587,7 +637,11 @@ async def run_gateway(bridge: ConvexBridge) -> None:
         sees it as a new user turn, then resets status to 'assigned' so the
         executor picks it up again. Skips if the task is already active.
         """
-        from nanobot.mc.types import AuthorType, MessageType
+        from nanobot.mc.types import (
+            AuthorType,
+            MessageType,
+            is_lead_agent,
+        )
 
         try:
             task = await asyncio.to_thread(b.query, "tasks:getById", {"task_id": task_id})
@@ -609,7 +663,15 @@ async def run_gateway(bridge: ConvexBridge) -> None:
             )
             return
 
-        agent_name = task.get("assigned_agent") or "lead-agent"
+        agent_name = task.get("assigned_agent") or GENERAL_AGENT_NAME
+        if is_lead_agent(agent_name):
+            logger.warning(
+                "[gateway] Cron task %s had lead-agent assignment; using %s "
+                "(pure orchestrator invariant)",
+                task_id,
+                GENERAL_AGENT_NAME,
+            )
+            agent_name = GENERAL_AGENT_NAME
 
         # Inject cron trigger as a new user message so it appears in the thread
         await asyncio.to_thread(

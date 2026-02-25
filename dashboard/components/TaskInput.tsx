@@ -34,6 +34,7 @@ export function TaskInput() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState("");
   const [trustLevel, setTrustLevel] = useState<string>("autonomous");
+  const [supervisionMode, setSupervisionMode] = useState<string>("autonomous");
   const [isManual, setIsManual] = useState(false);
   const [selectedReviewers, setSelectedReviewers] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -58,6 +59,7 @@ export function TaskInput() {
       tags?: string[];
       assignedAgent?: string;
       trustLevel?: string;
+      supervisionMode?: string;
       reviewers?: string[];
       isManual?: boolean;
       boardId?: Id<"boards">;
@@ -69,7 +71,9 @@ export function TaskInput() {
     };
     if (isManual) {
       args.isManual = true;
+      args.supervisionMode = "autonomous";
     } else {
+      args.supervisionMode = supervisionMode;
       if (selectedAgent && selectedAgent !== "auto") {
         args.assignedAgent = selectedAgent;
       }
@@ -99,6 +103,7 @@ export function TaskInput() {
       setIsManual(false);
       setSelectedAgent("");
       setTrustLevel("autonomous");
+      setSupervisionMode("autonomous");
       setSelectedReviewers([]);
       setSelectedTags([]);
       setIsExpanded(false);
@@ -184,6 +189,7 @@ export function TaskInput() {
               // Switching to manual: reset agent options and tags
               setSelectedAgent("");
               setTrustLevel("autonomous");
+              setSupervisionMode("autonomous");
               setSelectedReviewers([]);
               setSelectedTags([]);
               setIsExpanded(false);
@@ -312,6 +318,19 @@ export function TaskInput() {
                   <SelectItem value="autonomous">Autonomous</SelectItem>
                   <SelectItem value="agent_reviewed">Agent Reviewed</SelectItem>
                   <SelectItem value="human_approved">Human Approved</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground font-medium">Supervision Mode</label>
+              <Select value={supervisionMode} onValueChange={setSupervisionMode}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="autonomous">Autonomous</SelectItem>
+                  <SelectItem value="supervised">Supervised</SelectItem>
                 </SelectContent>
               </Select>
             </div>

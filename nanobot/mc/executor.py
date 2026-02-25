@@ -17,12 +17,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nanobot.mc.gateway import AgentGateway
+from nanobot.mc.planner import TaskPlanner
 from nanobot.mc.types import (
     ActivityEventType,
     AuthorType,
+    AgentData,
+    GENERAL_AGENT_NAME,
+    LEAD_AGENT_NAME,
+    LeadAgentExecutionError,
     MessageType,
     TaskStatus,
     TrustLevel,
+    is_lead_agent,
 )
 
 if TYPE_CHECKING:
@@ -100,6 +106,12 @@ async def _run_agent_on_task(
     The task title + description become the message input.
     When board_name is provided, uses board-scoped session key and memory_workspace.
     """
+    if is_lead_agent(agent_name):
+        raise LeadAgentExecutionError(
+            "INVARIANT VIOLATION: Lead Agent must never be passed to "
+            "_run_agent_on_task(). Execution structurally blocked."
+        )
+
     from nanobot.agent.loop import AgentLoop
     from nanobot.bus.queue import MessageBus
 
@@ -258,40 +270,124 @@ class TaskExecutor:
         task_id = task_data["id"]
         title = task_data.get("title", "Untitled")
         description = task_data.get("description")
-        agent_name = task_data.get("assigned_agent", "lead-agent")
+        agent_name = task_data.get("assigned_agent") or GENERAL_AGENT_NAME
         trust_level = task_data.get("trust_level", TrustLevel.AUTONOMOUS)
+        try:
+            if is_lead_agent(agent_name):
+                await self._handle_lead_agent_task(task_data)
+                return
 
-        # Transition to in_progress.
-        # Activity event (task_started) is written by the Convex
-        # tasks:updateStatus mutation — no duplicate create_activity here.
+            # Transition to in_progress.
+            # Activity event (task_started) is written by the Convex
+            # tasks:updateStatus mutation — no duplicate create_activity here.
+            await asyncio.to_thread(
+                self._bridge.update_task_status,
+                task_id,
+                TaskStatus.IN_PROGRESS,
+                agent_name,
+                f"Agent {agent_name} started work on '{title}'",
+            )
+
+            # Write system message to task thread (messages are separate from activities)
+            await asyncio.to_thread(
+                self._bridge.send_message,
+                task_id,
+                "System",
+                AuthorType.SYSTEM,
+                f"Agent {agent_name} has started work on this task.",
+                MessageType.SYSTEM_EVENT,
+            )
+
+            logger.info(
+                "[executor] Task '%s' picked up by '%s' — now in_progress",
+                title, agent_name,
+            )
+
+            await self._execute_task(
+                task_id, title, description, agent_name, trust_level, task_data
+            )
+        finally:
+            self._known_assigned_ids.discard(task_id)
+
+    async def _handle_lead_agent_task(self, task_data: dict[str, Any]) -> None:
+        """Re-route lead-agent tasks through the planner."""
+        from nanobot.mc.gateway import filter_agent_fields
+
+        task_id = task_data["id"]
+        title = task_data.get("title", "Untitled")
+        description = task_data.get("description")
+
+        logger.warning(
+            "[executor] Lead Agent dispatch intercepted for task '%s'. "
+            "Pure orchestrator invariant enforced; rerouting via planner.",
+            title,
+        )
+
+        try:
+            agents_data = await asyncio.to_thread(self._bridge.list_agents)
+            agents = [AgentData(**filter_agent_fields(a)) for a in agents_data]
+            agents = [a for a in agents if a.enabled is not False]
+        except Exception:
+            logger.warning(
+                "[executor] Failed to list agents while rerouting lead-agent "
+                "task '%s'; using planner fallback",
+                title,
+                exc_info=True,
+            )
+            agents = []
+
+        planner = TaskPlanner()
+        plan = await planner.plan_task(
+            title=title,
+            description=description,
+            agents=agents,
+            files=task_data.get("files") or [],
+        )
+
+        rerouted_agent = next(
+            (
+                step.assigned_agent
+                for step in plan.steps
+                if step.assigned_agent and not is_lead_agent(step.assigned_agent)
+            ),
+            None,
+        )
+        if not rerouted_agent:
+            rerouted_agent = GENERAL_AGENT_NAME
+            logger.warning(
+                "[executor] Lead-agent reroute produced no executable assignee; "
+                "using '%s' for task '%s'",
+                rerouted_agent,
+                title,
+            )
+
+        await asyncio.to_thread(
+            self._bridge.update_execution_plan,
+            task_id,
+            plan.to_dict(),
+        )
         await asyncio.to_thread(
             self._bridge.update_task_status,
             task_id,
-            TaskStatus.IN_PROGRESS,
-            agent_name,
-            f"Agent {agent_name} started work on '{title}'",
+            TaskStatus.ASSIGNED,
+            rerouted_agent,
+            (
+                f"Lead Agent dispatch intercepted for '{title}'. "
+                f"Pure orchestrator invariant enforced; task re-routed to "
+                f"{rerouted_agent} via planner."
+            ),
         )
-
-        # Write system message to task thread (messages are separate from activities)
         await asyncio.to_thread(
             self._bridge.send_message,
             task_id,
             "System",
             AuthorType.SYSTEM,
-            f"Agent {agent_name} has started work on this task.",
+            (
+                "Lead Agent is a pure orchestrator and cannot execute tasks "
+                f"directly. Task re-routed to {rerouted_agent}."
+            ),
             MessageType.SYSTEM_EVENT,
         )
-
-        logger.info(
-            "[executor] Task '%s' picked up by '%s' — now in_progress",
-            title, agent_name,
-        )
-
-        # Execute the task — always clean up known IDs so re-queued tasks can be picked up again
-        try:
-            await self._execute_task(task_id, title, description, agent_name, trust_level, task_data)
-        finally:
-            self._known_assigned_ids.discard(task_id)
 
     def _resolve_board_workspace(self, board_name: str, agent_name: str) -> Path:
         """Resolve the board-scoped memory workspace for an agent.
@@ -469,7 +565,7 @@ class TaskExecutor:
         - orientation file does not exist
         - orientation file is empty
         """
-        if agent_name == "lead-agent":
+        if is_lead_agent(agent_name):
             return agent_prompt
 
         orientation_path = Path.home() / ".nanobot" / "mc" / "agent-orientation.md"
@@ -497,6 +593,14 @@ class TaskExecutor:
         task_data: dict[str, Any] | None = None,
     ) -> None:
         """Run the agent on the task and handle completion or crash."""
+        if is_lead_agent(agent_name):
+            raise LeadAgentExecutionError(
+                "INVARIANT VIOLATION: Lead Agent "
+                f"'{LEAD_AGENT_NAME}' must never enter the execution pipeline. "
+                "This is a bug - the _pickup_task guard should have intercepted "
+                "this dispatch."
+            )
+
         import re
 
         # Fetch fresh task data for up-to-date file manifest (NFR8)
@@ -573,7 +677,7 @@ class TaskExecutor:
         # Inject agent roster into lead-agent context so it can discover all
         # available agents without relying on list_dir (which only shows agents
         # that have already run and have a board-scoped workspace).
-        if agent_name == "lead-agent":
+        if is_lead_agent(agent_name):
             roster = self._build_agent_roster()
             if roster:
                 description = (description or "") + f"\n\n{roster}"
