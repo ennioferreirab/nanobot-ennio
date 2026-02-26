@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { SendHorizontal, RotateCcw, MessageCircle } from "lucide-react";
 import { AgentMentionAutocomplete } from "./AgentMentionAutocomplete";
+import { SYSTEM_AGENT_NAMES } from "@/lib/constants";
 
 interface ThreadInputProps {
   task: Doc<"tasks">;
@@ -84,7 +85,7 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
   const enabledAgentNames = board?.enabledAgents ?? [];
   const filteredAgents = agents?.filter((a) => {
     if (!a.enabled) return false;
-    if (a.isSystem) return true;
+    if (a.isSystem || SYSTEM_AGENT_NAMES.has(a.name)) return false;
     if (enabledAgentNames.length === 0) return true;
     return enabledAgentNames.includes(a.name);
   });
