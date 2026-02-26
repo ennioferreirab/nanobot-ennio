@@ -37,7 +37,7 @@ def _user_msg(
 
 def _agent_msg(
     content: str,
-    author: str = "general-agent",
+    author: str = "nanobot",
     timestamp: str = "2026-01-01T10:01:00Z",
 ) -> dict[str, Any]:
     return {
@@ -52,7 +52,7 @@ def _agent_msg(
 def _step_completion_msg(
     content: str,
     step_id: str = "step-1",
-    author: str = "general-agent",
+    author: str = "nanobot",
     timestamp: str = "2026-01-01T10:02:00Z",
     artifacts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:

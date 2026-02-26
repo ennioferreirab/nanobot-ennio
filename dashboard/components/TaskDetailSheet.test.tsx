@@ -12,6 +12,30 @@ vi.mock("convex/react", () => ({
   useMutation: () => mockMutationFn,
 }));
 
+// Mock ExecutionPlanTab to prevent it from calling useQuery internally
+vi.mock("./ExecutionPlanTab", () => ({
+  ExecutionPlanTab: ({
+    isEditMode,
+    taskId,
+    onLocalPlanChange,
+  }: {
+    executionPlan?: unknown;
+    liveSteps?: unknown;
+    isPlanning?: boolean;
+    isEditMode?: boolean;
+    taskId?: string;
+    onLocalPlanChange?: (plan: unknown) => void;
+  }) => (
+    <div
+      data-testid="execution-plan-tab"
+      data-edit-mode={isEditMode ? "true" : "false"}
+      data-task-id={taskId}
+    >
+      {isEditMode ? "PlanEditor (edit mode)" : "ReadOnly Plan"}
+    </div>
+  ),
+}));
+
 const baseTask = {
   _id: "task1" as never,
   _creationTime: 1000,
@@ -200,12 +224,13 @@ describe("TaskDetailSheet", () => {
     expect(mockMutationFn).toHaveBeenCalledWith({ taskId: "task1" });
   });
 
-  // --- Story 4.6: Kick-off button for reviewing_plan tasks ---
+  // --- Story 4.6: Kick-off button for review + awaitingKickoff tasks ---
 
-  it("shows Kick-off button when task status is reviewing_plan", () => {
+  it("shows Kick-off button when task status is review with awaitingKickoff", () => {
     const reviewingTask = {
       ...baseTask,
-      status: "reviewing_plan" as const,
+      status: "review" as const,
+      awaitingKickoff: true,
       supervisionMode: "supervised" as const,
     };
     mockUseQuery
@@ -247,10 +272,29 @@ describe("TaskDetailSheet", () => {
     expect(screen.queryByTestId("kick-off-button")).not.toBeInTheDocument();
   });
 
-  it("shows reviewing_plan banner when task is awaiting kick-off", () => {
+  it("does NOT show Kick-off button when task is in review without awaitingKickoff", () => {
+    const reviewTask = {
+      ...baseTask,
+      status: "review" as const,
+      trustLevel: "human_approved" as const,
+    };
+    mockUseQuery
+      .mockReturnValueOnce(reviewTask)
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    expect(screen.queryByTestId("kick-off-button")).not.toBeInTheDocument();
+  });
+
+  it("shows reviewing-plan banner when task is awaiting kick-off", () => {
     const reviewingTask = {
       ...baseTask,
-      status: "reviewing_plan" as const,
+      status: "review" as const,
+      awaitingKickoff: true,
     };
     mockUseQuery
       .mockReturnValueOnce(reviewingTask)
@@ -311,10 +355,11 @@ describe("TaskDetailSheet", () => {
       ...baseTask,
       files: [],
     };
+    // 5 useQuery calls per render (getById, listByTask, getByTask, agents.list, boards.getById).
+    // Provide values for 2 renders (initial + after tab click).
     mockUseQuery
-      .mockReturnValueOnce(taskNoFiles)
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([]);
+      .mockReturnValueOnce(taskNoFiles).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce(undefined) // render 1
+      .mockReturnValueOnce(taskNoFiles).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce(undefined); // render 2
 
     render(
       <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
@@ -340,9 +385,8 @@ describe("TaskDetailSheet", () => {
       ],
     };
     mockUseQuery
-      .mockReturnValueOnce(taskWithFiles)
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([]);
+      .mockReturnValueOnce(taskWithFiles).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce(undefined) // render 1
+      .mockReturnValueOnce(taskWithFiles).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce(undefined); // render 2
 
     render(
       <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
@@ -370,9 +414,8 @@ describe("TaskDetailSheet", () => {
       ],
     };
     mockUseQuery
-      .mockReturnValueOnce(taskWithFiles)
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([]);
+      .mockReturnValueOnce(taskWithFiles).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce(undefined) // render 1
+      .mockReturnValueOnce(taskWithFiles).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce(undefined); // render 2
 
     render(
       <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
@@ -402,9 +445,8 @@ describe("TaskDetailSheet", () => {
     const user = userEvent.setup();
     const taskNoFiles = { ...baseTask, files: [] };
     mockUseQuery
-      .mockReturnValueOnce(taskNoFiles)
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([]);
+      .mockReturnValueOnce(taskNoFiles).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce(undefined) // render 1
+      .mockReturnValueOnce(taskNoFiles).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce(undefined); // render 2
 
     render(<TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />);
 
@@ -561,9 +603,8 @@ describe("TaskDetailSheet", () => {
       ],
     };
     mockUseQuery
-      .mockReturnValueOnce(taskOutputOnly)
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([]);
+      .mockReturnValueOnce(taskOutputOnly).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce(undefined) // render 1
+      .mockReturnValueOnce(taskOutputOnly).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce([]).mockReturnValueOnce(undefined); // render 2
 
     render(<TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />);
     await user.click(screen.getByRole("tab", { name: "Files (1)" }));
@@ -615,6 +656,225 @@ describe("TaskDetailSheet", () => {
     });
 
     vi.unstubAllGlobals();
+  });
+
+  // --- Story 7.4: Pause and Resume buttons ---
+
+  it("shows Pause button for in_progress task (AC 1)", () => {
+    mockUseQuery
+      .mockReturnValueOnce(baseTask) // in_progress
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    expect(screen.getByTestId("pause-button")).toBeInTheDocument();
+    expect(screen.getByTestId("pause-button")).toHaveTextContent("Pause");
+  });
+
+  it("does NOT show Pause button for review task with awaitingKickoff (AC 8)", () => {
+    const reviewingTask = {
+      ...baseTask,
+      status: "review" as const,
+      awaitingKickoff: true,
+    };
+    mockUseQuery
+      .mockReturnValueOnce(reviewingTask)
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    expect(screen.queryByTestId("pause-button")).not.toBeInTheDocument();
+  });
+
+  it("does NOT show Pause button for done task (AC 8)", () => {
+    const doneTask = { ...baseTask, status: "done" as const };
+    mockUseQuery
+      .mockReturnValueOnce(doneTask)
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    expect(screen.queryByTestId("pause-button")).not.toBeInTheDocument();
+  });
+
+  it("shows Resume button and Paused badge for review task without awaitingKickoff (AC 4)", () => {
+    const pausedTask = {
+      ...baseTask,
+      status: "review" as const,
+      // awaitingKickoff is absent — this is the paused state
+    };
+    mockUseQuery
+      .mockReturnValueOnce(pausedTask)
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    expect(screen.getByTestId("resume-button")).toBeInTheDocument();
+    expect(screen.getByTestId("resume-button")).toHaveTextContent("Resume");
+    expect(screen.getByTestId("paused-badge")).toBeInTheDocument();
+    // Kick-off button must NOT appear (it's a paused task, not pre-kickoff)
+    expect(screen.queryByTestId("kick-off-button")).not.toBeInTheDocument();
+  });
+
+  it("does NOT show Resume button for in_progress task (AC 4)", () => {
+    mockUseQuery
+      .mockReturnValueOnce(baseTask) // in_progress
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    expect(screen.queryByTestId("resume-button")).not.toBeInTheDocument();
+  });
+
+  it("does NOT show Resume button for done task (AC 4)", () => {
+    const doneTask = { ...baseTask, status: "done" as const };
+    mockUseQuery
+      .mockReturnValueOnce(doneTask)
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    expect(screen.queryByTestId("resume-button")).not.toBeInTheDocument();
+  });
+
+  it("calls pauseTask mutation when Pause is clicked (AC 2)", async () => {
+    mockUseQuery
+      .mockReturnValueOnce(baseTask) // in_progress
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByTestId("pause-button"));
+
+    await vi.waitFor(() => {
+      expect(mockMutationFn).toHaveBeenCalledWith({ taskId: "task1" });
+    });
+  });
+
+  it("calls resumeTask mutation when Resume is clicked (AC 5)", async () => {
+    const pausedTask = {
+      ...baseTask,
+      status: "review" as const,
+    };
+    mockUseQuery
+      .mockReturnValueOnce(pausedTask)
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByTestId("resume-button"));
+
+    await vi.waitFor(() => {
+      expect(mockMutationFn).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: "task1" })
+      );
+    });
+  });
+
+  // --- Story 7.1: Auto-switch to Execution Plan tab when awaitingKickoff (AC: 1, Task 7) ---
+
+  it("passes isEditMode=true to ExecutionPlanTab when task is review+awaitingKickoff", () => {
+    const reviewingTask = {
+      ...baseTask,
+      status: "review" as const,
+      awaitingKickoff: true,
+    };
+    mockUseQuery
+      .mockReturnValueOnce(reviewingTask)
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    const planTab = screen.getByTestId("execution-plan-tab");
+    expect(planTab).toBeInTheDocument();
+    // The ExecutionPlanTab mock renders with data-edit-mode="true" when isEditMode is true
+    expect(planTab.getAttribute("data-edit-mode")).toBe("true");
+  });
+
+  it("does not auto-switch to plan tab for non-awaitingKickoff tasks (thread tab is active by default)", () => {
+    mockUseQuery
+      .mockReturnValueOnce(baseTask) // in_progress, no awaitingKickoff
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    // Thread tab should be active (default for non-awaitingKickoff tasks),
+    // meaning the thread content (empty placeholder) is visible.
+    expect(
+      screen.getByText("No messages yet. Agent activity will appear here."),
+    ).toBeInTheDocument();
+    // Kick-off button is absent since this is not a review+awaitingKickoff task
+    expect(screen.queryByTestId("kick-off-button")).not.toBeInTheDocument();
+  });
+
+  // --- Story 7.1: Kick-off calls approveAndKickOff with executionPlan (AC: 2) ---
+
+  it("calls approveAndKickOff with executionPlan when Kick-off button is clicked", async () => {
+    const executionPlan = {
+      steps: [
+        {
+          tempId: "step_1",
+          title: "Step One",
+          description: "Do something",
+          assignedAgent: "nanobot",
+          blockedBy: [],
+          parallelGroup: 0,
+          order: 0,
+        },
+      ],
+      generatedAt: "2026-02-25T00:00:00Z",
+      generatedBy: "lead-agent" as const,
+    };
+    const reviewingTask = {
+      ...baseTask,
+      status: "review" as const,
+      awaitingKickoff: true,
+      executionPlan,
+    };
+    mockMutationFn.mockResolvedValue(undefined);
+    mockUseQuery
+      .mockReturnValueOnce(reviewingTask)
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([]);
+
+    render(
+      <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
+    );
+
+    const kickOffBtn = screen.getByTestId("kick-off-button");
+    expect(kickOffBtn).toBeInTheDocument();
+    kickOffBtn.click();
+
+    await vi.waitFor(() => {
+      expect(mockMutationFn).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: "task1" })
+      );
+    });
   });
 });
 
@@ -737,7 +997,7 @@ describe("ThreadMessage", () => {
     expect(screen.getByText("Plan")).toBeInTheDocument();
   });
 
-  it("renders lead_agent_chat message with bg-indigo-50 and Chat label", () => {
+  it("renders lead_agent_chat message with bg-indigo-50 and Lead Agent label", () => {
     const chatMsg = {
       ...baseMessage,
       type: "lead_agent_chat" as const,
@@ -746,7 +1006,7 @@ describe("ThreadMessage", () => {
     const { container } = render(<ThreadMessage message={chatMsg} />);
     const wrapper = container.firstChild as HTMLElement;
     expect(wrapper.className).toContain("bg-indigo-50");
-    expect(screen.getByText("Chat")).toBeInTheDocument();
+    expect(screen.getByText("Lead Agent")).toBeInTheDocument();
   });
 
   it("renders user_message type with bg-blue-50", () => {

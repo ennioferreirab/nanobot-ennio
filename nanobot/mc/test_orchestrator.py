@@ -76,8 +76,8 @@ class TestProcessPlanningTask:
         bridge = _make_bridge()
         bridge.list_agents.return_value = [
             {
-                "name": "general-agent",
-                "display_name": "General Agent",
+                "name": "nanobot",
+                "display_name": "Owl",
                 "role": "Generalist",
                 "skills": ["general"],
                 "enabled": True,
@@ -95,7 +95,7 @@ class TestProcessPlanningTask:
                     temp_id="step_1",
                     title="Analyze request",
                     description="Analyze scope and constraints",
-                    assigned_agent="general-agent",
+                    assigned_agent="nanobot",
                     blocked_by=[],
                     parallel_group=1,
                     order=1,
@@ -147,7 +147,7 @@ class TestProcessPlanningTask:
                     temp_id="step_1",
                     title="Draft",
                     description="Draft response",
-                    assigned_agent="general-agent",
+                    assigned_agent="nanobot",
                     blocked_by=[],
                     parallel_group=1,
                     order=1,
@@ -211,8 +211,8 @@ class TestProcessPlanningTask:
         bridge = _make_bridge()
         bridge.list_agents.return_value = [
             {
-                "name": "general-agent",
-                "display_name": "General Agent",
+                "name": "nanobot",
+                "display_name": "Owl",
                 "role": "Generalist",
                 "skills": ["general"],
                 "enabled": True,
@@ -235,7 +235,7 @@ class TestProcessPlanningTask:
                     temp_id="step_1",
                     title="Process files",
                     description="Process the attached files",
-                    assigned_agent="general-agent",
+                    assigned_agent="nanobot",
                     blocked_by=[],
                     parallel_group=1,
                     order=1,
@@ -267,3 +267,62 @@ class TestProcessPlanningTask:
         call_kwargs = planner.plan_task.call_args[1]
         assert "files" in call_kwargs
         assert call_kwargs["files"] == files
+
+
+class TestHandleReviewTransitionPausedTask:
+    """Story 7.4: _handle_review_transition must NOT auto-complete paused tasks (C1 fix)."""
+
+    @pytest.mark.asyncio
+    async def test_paused_task_with_steps_is_not_auto_completed(self) -> None:
+        """C1 fix: An autonomous task that enters review with materialized steps (paused)
+        must NOT be auto-completed to done.
+
+        Without the fix, _handle_review_transition would see:
+            trust_level=autonomous, no reviewers → auto-complete to done.
+        With the fix, it detects existing steps and skips processing.
+        """
+        bridge = _make_bridge()
+        # Simulate a paused task: has materialized steps
+        bridge.get_steps_by_task.return_value = [
+            {"id": "step-1", "status": "completed"},
+            {"id": "step-2", "status": "assigned"},
+        ]
+        orchestrator = TaskOrchestrator(bridge)
+
+        paused_task = {
+            "id": "task-1",
+            "title": "Paused Task",
+            "trust_level": "autonomous",
+            "supervision_mode": "autonomous",
+            "reviewers": [],
+            "awaiting_kickoff": None,
+        }
+
+        with patch("nanobot.mc.orchestrator.asyncio.to_thread", new=_sync_to_thread):
+            await orchestrator._handle_review_transition("task-1", paused_task)
+
+        # Task must NOT be auto-completed to done
+        bridge.update_task_status.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_review_task_without_steps_is_auto_completed(self) -> None:
+        """Regression: autonomous tasks without steps (normal review completion) still auto-complete."""
+        bridge = _make_bridge()
+        # No materialized steps — this is a normal review completion
+        bridge.get_steps_by_task.return_value = []
+        orchestrator = TaskOrchestrator(bridge)
+
+        review_task = {
+            "id": "task-1",
+            "title": "Completed Task",
+            "trust_level": "autonomous",
+            "supervision_mode": "autonomous",
+            "reviewers": [],
+            "awaiting_kickoff": None,
+        }
+
+        with patch("nanobot.mc.orchestrator.asyncio.to_thread", new=_sync_to_thread):
+            await orchestrator._handle_review_transition("task-1", review_task)
+
+        # Task SHOULD be auto-completed (no steps = normal autonomous review)
+        bridge.update_task_status.assert_called_once_with("task-1", TaskStatus.DONE)

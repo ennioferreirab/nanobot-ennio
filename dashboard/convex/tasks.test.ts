@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { create, kickOff } from "./tasks";
+import { create, kickOff, pauseTask, resumeTask } from "./tasks";
 
 type InsertCall = {
   table: string;
@@ -33,6 +33,18 @@ function getHandler() {
 function getKickOffHandler() {
   return (kickOff as unknown as {
     _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<void>;
+  })._handler;
+}
+
+function getPauseTaskHandler() {
+  return (pauseTask as unknown as {
+    _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
+  })._handler;
+}
+
+function getResumeTaskHandler() {
+  return (resumeTask as unknown as {
+    _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
   })._handler;
 }
 
@@ -126,7 +138,7 @@ describe("tasks.kickOff", () => {
     const insert = vi.fn(async () => "activity-1");
     const get = vi.fn(async () => ({
       _id: "task-1",
-      status: "review",
+      status: "done",
       title: "Invalid",
       executionPlan: { steps: [] },
     }));
@@ -136,5 +148,155 @@ describe("tasks.kickOff", () => {
     ).rejects.toThrow(/Cannot kick off task in status/);
     expect(patch).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("tasks.pauseTask", () => {
+  it("transitions in_progress task to review without awaitingKickoff (happy path, AC 2)", async () => {
+    const handler = getPauseTaskHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "in_progress",
+      title: "Running Task",
+    }));
+
+    const taskId = await handler({ db: { get, patch, insert } }, { taskId: "task-1" });
+
+    expect(taskId).toBe("task-1");
+    expect(patch).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({ status: "review" })
+    );
+    // awaitingKickoff must NOT be set (paused state has no awaitingKickoff)
+    const patchArg = (patch as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(patchArg.awaitingKickoff).toBeUndefined();
+    expect(insert).toHaveBeenCalledWith(
+      "activities",
+      expect.objectContaining({
+        taskId: "task-1",
+        eventType: "review_requested",
+        description: "User paused task execution",
+      })
+    );
+  });
+
+  it("throws ConvexError when task is not in_progress (error path, AC 2)", async () => {
+    const handler = getPauseTaskHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "review",
+      title: "Already Paused",
+    }));
+
+    await expect(
+      handler({ db: { get, patch, insert } }, { taskId: "task-1" })
+    ).rejects.toThrow(/Cannot pause task in status/);
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("throws ConvexError when task is done (error path)", async () => {
+    const handler = getPauseTaskHandler();
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "done",
+      title: "Done Task",
+    }));
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+
+    await expect(
+      handler({ db: { get, patch, insert } }, { taskId: "task-1" })
+    ).rejects.toThrow(/Cannot pause task in status/);
+  });
+});
+
+describe("tasks.resumeTask", () => {
+  it("transitions paused task (review without awaitingKickoff) back to in_progress (happy path, AC 5)", async () => {
+    const handler = getResumeTaskHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "review",
+      title: "Paused Task",
+      // awaitingKickoff is NOT set — this is the paused state
+    }));
+
+    const taskId = await handler({ db: { get, patch, insert } }, { taskId: "task-1" });
+
+    expect(taskId).toBe("task-1");
+    expect(patch).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({ status: "in_progress" })
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "activities",
+      expect.objectContaining({
+        taskId: "task-1",
+        eventType: "task_started",
+        description: "User resumed task execution",
+      })
+    );
+  });
+
+  it("throws ConvexError when task has awaitingKickoff: true (pre-kickoff tasks, AC 5)", async () => {
+    const handler = getResumeTaskHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "review",
+      title: "Pre-Kickoff Task",
+      awaitingKickoff: true,
+    }));
+
+    await expect(
+      handler({ db: { get, patch, insert } }, { taskId: "task-1" })
+    ).rejects.toThrow(/Cannot use resumeTask on a pre-kickoff task/);
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("throws ConvexError when task is not in review status (error path)", async () => {
+    const handler = getResumeTaskHandler();
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "in_progress",
+      title: "Running Task",
+    }));
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+
+    await expect(
+      handler({ db: { get, patch, insert } }, { taskId: "task-1" })
+    ).rejects.toThrow(/Cannot resume task in status/);
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("saves executionPlan when provided on resume (AC 10)", async () => {
+    const handler = getResumeTaskHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "review",
+      title: "Paused Task",
+    }));
+
+    const updatedPlan = { steps: [{ tempId: "s1", title: "Step A" }] };
+    await handler({ db: { get, patch, insert } }, { taskId: "task-1", executionPlan: updatedPlan });
+
+    expect(patch).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({
+        status: "in_progress",
+        executionPlan: updatedPlan,
+      })
+    );
   });
 });

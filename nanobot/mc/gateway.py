@@ -30,32 +30,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 AGENTS_DIR = Path.home() / ".nanobot" / "agents"
-GENERAL_AGENT_NAME = "general-agent"
-_GENERAL_AGENT_CONFIG = """\
-name: general-agent
-role: General-Purpose Assistant
+NANOBOT_AGENT_NAME = "nanobot"  # Re-exported for backward compat; canonical in types.py
+_NANOBOT_AGENT_CONFIG = """\
+name: nanobot
+role: "{role}"
+display_name: "{display_name}"
 is_system: true
 prompt: |
-  You are the General Agent, a versatile assistant capable of handling any task
-  that doesn't require a specialist agent.
+  You are the fallback agent for Mission Control task delegation.
+  When the Lead Agent cannot find a specialist agent for a task,
+  it is routed to you.
 
-  You serve as the system fallback — when no specialist agent matches a task's
-  requirements, you step in to provide a capable, thoughtful response.
+  Your identity, personality, and memory come from your SOUL.md and
+  workspace files — do NOT invent a new persona.
 
-  **Your strengths:**
-  - Broad knowledge across many domains
-  - Clear, structured communication
-  - Ability to break down complex problems
-  - Research, analysis, and synthesis
-  - Writing, editing, and summarization
-  - General problem-solving and reasoning
-
-  **How you work:**
-  - Approach each task methodically
-  - Ask clarifying questions when the task is ambiguous
-  - Provide structured, actionable responses
-  - Be transparent about the limits of your knowledge
-  - When a task would benefit from a specialist, note that in your response
+  Focus on completing the delegated task using your tools and knowledge.
 skills: []
 """
 
@@ -321,25 +310,101 @@ def _write_back_convex_agents(bridge: ConvexBridge, agents_dir: Path) -> None:
                 logger.exception("Failed to restore archive for agent '%s'", name)
 
 
-def ensure_general_agent(agents_dir: Path) -> None:
-    """Ensure the General Agent YAML definition exists on disk.
+def _fetch_bot_identity() -> dict[str, str]:
+    """Fetch the Telegram bot identity (name + role).
 
-    Creates the directory and config.yaml if missing. Idempotent:
-    does nothing if the file already exists (preserves user edits).
+    Raises RuntimeError if Telegram is not configured or the API call fails.
+    The nanobot agent MUST mirror the Telegram bot — no silent fallback.
     """
-    agent_dir = agents_dir / GENERAL_AGENT_NAME
+    from nanobot.config.loader import load_config
+    import httpx
+
+    config = load_config()
+    if not config.channels.telegram.enabled or not config.channels.telegram.token:
+        raise RuntimeError(
+            "Telegram channel is not enabled or token is missing in ~/.nanobot/config.json. "
+            "The nanobot agent requires a configured Telegram bot to mirror its identity."
+        )
+
+    token = config.channels.telegram.token
+    proxy = config.channels.telegram.proxy
+
+    kwargs: dict[str, Any] = {"timeout": 5.0}
+    if proxy:
+        kwargs["proxy"] = proxy
+
+    try:
+        with httpx.Client(**kwargs) as client:
+            resp = client.get(f"https://api.telegram.org/bot{token}/getMe")
+            resp.raise_for_status()
+            data = resp.json()
+            if not data.get("ok") or "result" not in data:
+                raise RuntimeError(f"Telegram getMe returned unexpected response: {data}")
+            first_name = data["result"].get("first_name")
+            if not first_name:
+                raise RuntimeError("Telegram bot has no first_name set")
+            return {
+                "name": first_name,
+                "role": "Personal Assistant and Task Delegation Fallback",
+            }
+    except httpx.HTTPError as e:
+        raise RuntimeError(f"Failed to fetch Telegram bot identity: {e}") from e
+
+def ensure_nanobot_agent(agents_dir: Path) -> None:
+    """Ensure the nanobot agent YAML definition exists on disk and links to the global workspace.
+
+    Creates the directory and config.yaml if missing. Links SOUL.md, memory, and skills
+    to the global workspace so the Mission Control agent shares the same persona and context
+    as the Telegram bot.
+
+    Raises RuntimeError if the Telegram bot identity cannot be fetched.
+    """
+    agent_dir = agents_dir / NANOBOT_AGENT_NAME
     config_path = agent_dir / "config.yaml"
 
-    if config_path.is_file():
-        return
+    workspace = Path.home() / ".nanobot" / "workspace"
 
-    agent_dir.mkdir(parents=True, exist_ok=True)
-    (agent_dir / "memory").mkdir(exist_ok=True)
-    (agent_dir / "skills").mkdir(exist_ok=True)
-    config_path.write_text(_GENERAL_AGENT_CONFIG, encoding="utf-8")
-    logger.info("Created General Agent definition at %s", config_path)
+    # Fetch identity from Telegram — raises RuntimeError on failure (no fallback)
+    identity = _fetch_bot_identity()
+    bot_name = identity["name"]
+    bot_role = identity["role"]
 
+    if not config_path.is_file():
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        config_content = _NANOBOT_AGENT_CONFIG.format(
+            role=bot_role,
+            display_name=bot_name,
+        )
+        config_path.write_text(config_content, encoding="utf-8")
+        logger.info("Created nanobot agent definition at %s (Identity: %s)", config_path, bot_name)
 
+    # Always try to fix up symlinks (for upgrades/retrofits)
+    for item in ["memory", "skills", "SOUL.md"]:
+        agent_path = agent_dir / item
+        global_path = workspace / item
+
+        # Global paths MUST already exist — they are created by 'nanobot onboard'.
+        # memory/ and skills/ dirs are safe to create if missing, but SOUL.md must exist.
+        if not global_path.exists():
+            if item == "SOUL.md":
+                raise RuntimeError(
+                    f"Global workspace SOUL.md not found at {global_path}. "
+                    "Run 'nanobot onboard' first to initialize the workspace."
+                )
+            else:
+                global_path.mkdir(parents=True, exist_ok=True)
+
+        # If the local item is an empty directory (from older versions), remove it
+        if agent_path.is_dir() and not agent_path.is_symlink() and not any(agent_path.iterdir()):
+            shutil.rmtree(agent_path)
+
+        # Create symlink if missing
+        if not agent_path.exists():
+            try:
+                os.symlink(global_path, agent_path)
+                logger.info("Symlinked %s to global workspace for %s", item, bot_name)
+            except Exception as e:
+                logger.warning("Failed to symlink %s for nanobot agent: %s", item, e)
 def sync_agent_registry(
     bridge: ConvexBridge,
     agents_dir: Path,
@@ -355,7 +420,7 @@ def sync_agent_registry(
     resolved_default = default_model or _config_default_model()
 
     # Step 0: Ensure system agents exist on disk
-    ensure_general_agent(agents_dir)
+    ensure_nanobot_agent(agents_dir)
 
     # Step 0a: Cleanup — archive and remove local folders for soft-deleted agents
     _cleanup_deleted_agents(bridge, agents_dir)
@@ -609,6 +674,103 @@ class AgentGateway:
         return self._retry_counts.get(task_id, 0)
 
 
+async def _run_plan_negotiation_manager(bridge: "ConvexBridge") -> None:
+    """Manage per-task plan negotiation loops.
+
+    Subscribes to tasks in both "review" (awaitingKickoff) and "in_progress"
+    statuses. For each task that enters a negotiable state, spawns a
+    start_plan_negotiation_loop coroutine. Prevents duplicate loops for the
+    same task_id.
+
+    The per-task loops are self-terminating — they exit when the task leaves
+    a negotiable status. This manager only needs to spawn new ones.
+
+    Story 7.3 — Task 4.3 / 4.4.
+    """
+    from nanobot.mc.plan_negotiator import start_plan_negotiation_loop
+
+    logger.info("[gateway] Plan negotiation manager started")
+
+    # Track active negotiation loops to prevent duplicates
+    active_negotiation_ids: set[str] = set()
+
+    async def _spawn_loop_if_needed(task_id: str) -> None:
+        """Spawn a plan negotiation loop for task_id if not already active."""
+        if task_id in active_negotiation_ids:
+            return
+        active_negotiation_ids.add(task_id)
+        logger.info("[gateway] Spawning plan negotiation loop for task %s", task_id)
+
+        async def _run_and_cleanup() -> None:
+            try:
+                await start_plan_negotiation_loop(bridge, task_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "[gateway] Plan negotiation loop for task %s crashed", task_id
+                )
+            finally:
+                active_negotiation_ids.discard(task_id)
+                logger.info(
+                    "[gateway] Plan negotiation loop for task %s ended", task_id
+                )
+
+        asyncio.create_task(_run_and_cleanup())
+
+    # Subscribe to both review and in_progress task lists
+    review_queue = bridge.async_subscribe(
+        "tasks:listByStatus", {"status": "review"}
+    )
+    in_progress_queue = bridge.async_subscribe(
+        "tasks:listByStatus", {"status": "in_progress"}
+    )
+
+    async def _process_batch(tasks_batch: object) -> None:
+        """Process a batch of tasks from either subscription queue."""
+        if not tasks_batch or isinstance(tasks_batch, dict):
+            return
+        for task_data in tasks_batch:  # type: ignore[union-attr]
+            task_id = task_data.get("id")
+            if not task_id:
+                continue
+
+            task_status = task_data.get("status", "")
+            awaiting_kickoff = task_data.get("awaiting_kickoff", False)
+
+            # Only spawn for supervised tasks in review (awaitingKickoff) or in_progress
+            if task_status == "in_progress" or (
+                task_status == "review" and awaiting_kickoff
+            ):
+                await _spawn_loop_if_needed(task_id)
+
+    # Drain both queues by creating persistent reader tasks so no queue.get()
+    # coroutine is ever abandoned (avoids leaked asyncio tasks from asyncio.wait).
+    async def _drain_queue(queue: asyncio.Queue) -> None:  # type: ignore[type-arg]
+        while True:
+            try:
+                batch = await queue.get()
+                await _process_batch(batch)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning(
+                    "[gateway] Plan negotiation manager: error reading queue",
+                    exc_info=True,
+                )
+
+    reader_tasks = [
+        asyncio.create_task(_drain_queue(review_queue)),
+        asyncio.create_task(_drain_queue(in_progress_queue)),
+    ]
+    try:
+        # Wait until cancelled (gateway shutdown)
+        await asyncio.gather(*reader_tasks)
+    finally:
+        for t in reader_tasks:
+            t.cancel()
+
+
 async def run_gateway(bridge: ConvexBridge) -> None:
     """Gateway main loop — starts orchestrator, executor, timeout checker, and cron service.
 
@@ -663,15 +825,15 @@ async def run_gateway(bridge: ConvexBridge) -> None:
             )
             return
 
-        agent_name = task.get("assigned_agent") or GENERAL_AGENT_NAME
+        agent_name = task.get("assigned_agent") or NANOBOT_AGENT_NAME
         if is_lead_agent(agent_name):
             logger.warning(
                 "[gateway] Cron task %s had lead-agent assignment; using %s "
                 "(pure orchestrator invariant)",
                 task_id,
-                GENERAL_AGENT_NAME,
+                NANOBOT_AGENT_NAME,
             )
-            agent_name = GENERAL_AGENT_NAME
+            agent_name = NANOBOT_AGENT_NAME
 
         # Inject cron trigger as a new user message so it appears in the thread
         await asyncio.to_thread(
@@ -728,6 +890,11 @@ async def run_gateway(bridge: ConvexBridge) -> None:
     timeout_checker = TimeoutChecker(bridge)
     timeout_task = asyncio.create_task(timeout_checker.start())
 
+    # Plan negotiation manager — spawns per-task loops for review/in_progress tasks
+    plan_negotiation_task = asyncio.create_task(
+        _run_plan_negotiation_manager(bridge)
+    )
+
     # Wait for shutdown signal
     await stop_event.wait()
     logger.info("[gateway] Agent Gateway stopping...")
@@ -740,7 +907,15 @@ async def run_gateway(bridge: ConvexBridge) -> None:
     kickoff_task.cancel()
     execution_task.cancel()
     timeout_task.cancel()
-    for task in (routing_task, review_task, kickoff_task, execution_task, timeout_task):
+    plan_negotiation_task.cancel()
+    for task in (
+        routing_task,
+        review_task,
+        kickoff_task,
+        execution_task,
+        timeout_task,
+        plan_negotiation_task,
+    ):
         try:
             await task
         except asyncio.CancelledError:

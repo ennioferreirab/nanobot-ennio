@@ -10,6 +10,7 @@ const STEP_STATUSES = [
   "completed",
   "crashed",
   "blocked",
+  "waiting_human",
 ] as const;
 
 type StepStatus = (typeof STEP_STATUSES)[number];
@@ -26,11 +27,12 @@ type BatchStepInput = {
 type StepWithDependencies = Pick<Doc<"steps">, "_id" | "status" | "blockedBy">;
 const STEP_TRANSITIONS: Record<StepStatus, StepStatus[]> = {
   planned: ["assigned", "blocked"],
-  assigned: ["running", "completed", "crashed", "blocked"],
+  assigned: ["running", "completed", "crashed", "blocked", "waiting_human"],
   running: ["completed", "crashed"],
   completed: [],
   crashed: ["assigned"],
   blocked: ["assigned", "crashed"],
+  waiting_human: ["completed", "crashed"],
 };
 
 type ActivityLoggerCtx = {
@@ -397,6 +399,91 @@ export const updateStatus = mutation({
       assignedAgent: step.assignedAgent,
       timestamp,
     });
+  },
+});
+
+export const acceptHumanStep = mutation({
+  args: {
+    stepId: v.id("steps"),
+  },
+  handler: async (ctx, args) => {
+    const step = await ctx.db.get(args.stepId);
+    if (!step) {
+      throw new ConvexError("Step not found");
+    }
+    if (step.status !== "waiting_human") {
+      throw new ConvexError(
+        `Step is not in waiting_human status (current: ${step.status})`
+      );
+    }
+
+    const timestamp = new Date().toISOString();
+
+    await ctx.db.patch(args.stepId, {
+      status: "completed",
+      completedAt: timestamp,
+    });
+
+    await logStepStatusChange(ctx, {
+      taskId: step.taskId,
+      stepTitle: step.title,
+      previousStatus: step.status,
+      nextStatus: "completed",
+      assignedAgent: step.assignedAgent,
+      timestamp,
+    });
+
+    await ctx.db.insert("activities", {
+      taskId: step.taskId,
+      eventType: "step_completed",
+      description: `Human completed step: "${step.title}"`,
+      timestamp,
+    });
+
+    // Unblock dependent steps that were waiting on this human step.
+    // The Python dispatch loop has already exited (no assigned steps remained
+    // while this step was in waiting_human). We must unblock here so that
+    // dependent steps become assigned and are picked up by the orchestrator.
+    const allTaskSteps = await ctx.db
+      .query("steps")
+      .withIndex("by_taskId", (q) => q.eq("taskId", step.taskId))
+      .collect();
+
+    const unblockedIds = findBlockedStepsReadyToUnblock(allTaskSteps);
+    const stepsById = new Map(
+      allTaskSteps.map((s) => [s._id, s] as const)
+    );
+
+    for (const unblockedStepId of unblockedIds) {
+      const blockedStep = stepsById.get(unblockedStepId);
+      if (!blockedStep) {
+        continue;
+      }
+
+      await ctx.db.patch(unblockedStepId, {
+        status: "assigned",
+        errorMessage: undefined,
+      });
+
+      await logStepStatusChange(ctx, {
+        taskId: blockedStep.taskId,
+        stepTitle: blockedStep.title,
+        previousStatus: blockedStep.status,
+        nextStatus: "assigned",
+        assignedAgent: blockedStep.assignedAgent,
+        timestamp,
+      });
+
+      await ctx.db.insert("activities", {
+        taskId: blockedStep.taskId,
+        agentName: blockedStep.assignedAgent,
+        eventType: "step_unblocked",
+        description: `Step unblocked and assigned: "${blockedStep.title}"`,
+        timestamp,
+      });
+    }
+
+    return step.taskId;
   },
 });
 

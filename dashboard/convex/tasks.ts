@@ -5,14 +5,13 @@ import { v, ConvexError } from "convex/values";
 
 // Valid transition map: current_status -> [allowed_next_statuses]
 const VALID_TRANSITIONS: Record<string, string[]> = {
-  planning: ["failed", "reviewing_plan", "ready", "in_progress"],
-  reviewing_plan: ["in_progress", "planning", "failed"],
+  planning: ["failed", "review", "ready", "in_progress"],
   ready: ["in_progress", "planning", "failed"],
   failed: ["planning"],
   inbox: ["assigned"],
   assigned: ["in_progress"],
   in_progress: ["review", "done"],
-  review: ["done", "inbox", "assigned"],
+  review: ["done", "inbox", "assigned", "in_progress", "planning"],
   done: ["assigned"],
   retrying: ["in_progress", "crashed"],
   crashed: ["inbox", "assigned"],
@@ -24,11 +23,8 @@ const UNIVERSAL_TARGETS = ["retrying", "crashed", "deleted"];
 // Map transitions to activity event types
 const TRANSITION_EVENT_MAP: Record<string, string> = {
   "planning->failed": "task_failed",
-  "planning->reviewing_plan": "task_planning",
+  "planning->review": "task_planning",
   "planning->in_progress": "task_started",
-  "reviewing_plan->in_progress": "task_started",
-  "reviewing_plan->planning": "task_planning",
-  "reviewing_plan->failed": "task_failed",
   "planning->ready": "task_planning",
   "ready->in_progress": "task_started",
   "ready->planning": "task_planning",
@@ -40,6 +36,8 @@ const TRANSITION_EVENT_MAP: Record<string, string> = {
   "in_progress->done": "task_completed",
   "review->done": "task_completed",
   "review->inbox": "task_retrying",
+  "review->in_progress": "task_started",
+  "review->planning": "task_planning",
   "retrying->in_progress": "task_retrying",
   "retrying->crashed": "task_crashed",
   "crashed->inbox": "task_retrying",
@@ -51,7 +49,6 @@ const TRANSITION_EVENT_MAP: Record<string, string> = {
 // Restore target map: previousStatus -> target status (n-1)
 const RESTORE_TARGET_MAP: Record<string, string> = {
   planning: "planning",
-  reviewing_plan: "planning",
   ready: "planning",
   failed: "planning",
   inbox: "inbox",
@@ -286,7 +283,6 @@ export const listByStatus = query({
   args: {
     status: v.union(
       v.literal("planning"),
-      v.literal("reviewing_plan"),
       v.literal("ready"),
       v.literal("failed"),
       v.literal("inbox"),
@@ -362,7 +358,7 @@ export const kickOff = mutation({
 
     const allowedStatuses = [
       "planning",
-      "reviewing_plan",
+      "review",
       "ready",
       "inbox",
       "assigned",
@@ -393,9 +389,100 @@ export const kickOff = mutation({
 });
 
 /**
+ * Pause an in-progress task.
+ * Transitions from in_progress to review (WITHOUT awaitingKickoff).
+ * Running steps are NOT cancelled — they finish naturally.
+ * The step dispatcher checks task status before dispatching new steps,
+ * so no new dispatches happen while the task is in review (paused) state.
+ */
+export const pauseTask = mutation({
+  args: {
+    taskId: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new ConvexError("Task not found");
+    }
+    if (task.status !== "in_progress") {
+      throw new ConvexError(
+        `Cannot pause task in status '${task.status}'. Expected: in_progress`
+      );
+    }
+
+    const now = new Date().toISOString();
+
+    await ctx.db.patch(args.taskId, {
+      status: "review",
+      // Explicitly do NOT set awaitingKickoff — paused state has no awaitingKickoff
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("activities", {
+      taskId: args.taskId,
+      eventType: "review_requested",
+      description: "User paused task execution",
+      timestamp: now,
+    });
+
+    return args.taskId;
+  },
+});
+
+/**
+ * Resume a paused task (review WITHOUT awaitingKickoff).
+ * Transitions from review to in_progress so the orchestrator can continue
+ * dispatching pending/unblocked steps.
+ * Must NOT be used for pre-kickoff tasks (those have awaitingKickoff: true).
+ */
+export const resumeTask = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    executionPlan: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new ConvexError("Task not found");
+    }
+    if (task.status !== "review") {
+      throw new ConvexError(
+        `Cannot resume task in status '${task.status}'. Expected: review`
+      );
+    }
+    if ((task as any).awaitingKickoff === true) {
+      throw new ConvexError(
+        "Cannot use resumeTask on a pre-kickoff task. Use approveAndKickOff instead."
+      );
+    }
+
+    const now = new Date().toISOString();
+
+    const patch: Record<string, unknown> = {
+      status: "in_progress",
+      awaitingKickoff: undefined, // safety clear
+      updatedAt: now,
+    };
+    if (args.executionPlan !== undefined) {
+      patch.executionPlan = args.executionPlan;
+    }
+    await ctx.db.patch(args.taskId, patch);
+
+    await ctx.db.insert("activities", {
+      taskId: args.taskId,
+      eventType: "task_started",
+      description: "User resumed task execution",
+      timestamp: now,
+    });
+
+    return args.taskId;
+  },
+});
+
+/**
  * Approve plan and kick off a supervised task.
  * Atomically saves (optionally edited) execution plan, transitions from
- * reviewing_plan to in_progress, and creates an activity event.
+ * review (awaitingKickoff) to in_progress, and creates an activity event.
  */
 export const approveAndKickOff = mutation({
   args: {
@@ -407,17 +494,18 @@ export const approveAndKickOff = mutation({
     if (!task) {
       throw new ConvexError("Task not found");
     }
-    if (task.status !== "reviewing_plan") {
+    if (task.status !== "review" || task.awaitingKickoff !== true) {
       throw new ConvexError(
-        `Cannot kick off task in status '${task.status}'. Expected: reviewing_plan`
+        `Cannot kick off task in status '${task.status}'. Expected: review with awaitingKickoff`
       );
     }
 
     const now = new Date().toISOString();
 
-    // Save updated plan if provided (user made edits)
+    // Save updated plan if provided (user made edits); clear awaitingKickoff
     const patch: Record<string, unknown> = {
       status: "in_progress",
+      awaitingKickoff: undefined,
       updatedAt: now,
     };
     if (args.executionPlan !== undefined) {
@@ -583,6 +671,7 @@ export const updateStatus = mutation({
     taskId: v.id("tasks"),
     status: v.string(),
     agentName: v.optional(v.string()),
+    awaitingKickoff: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.taskId);
@@ -609,6 +698,9 @@ export const updateStatus = mutation({
     };
     if (newStatus === "assigned" && args.agentName) {
       patch.assignedAgent = args.agentName;
+    }
+    if (args.awaitingKickoff !== undefined) {
+      patch.awaitingKickoff = args.awaitingKickoff || undefined;
     }
     await ctx.db.patch(args.taskId, patch);
 

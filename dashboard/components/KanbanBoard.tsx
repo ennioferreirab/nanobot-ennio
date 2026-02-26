@@ -87,8 +87,14 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
     tasks.map((task) => [task._id, task._creationTime] as const)
   );
 
+  const taskStatusMap = new Map(tasks.map((task) => [task._id, task.status] as const));
+
   const stepsByTaskId = new Map<Id<"tasks">, Doc<"steps">[]>();
   for (const step of boardSteps) {
+    const taskStatus = taskStatusMap.get(step.taskId);
+    if (taskStatus === "done") {
+      continue;
+    }
     const mappedColumn = stepStatusToColumnStatus(step.status);
     if (!mappedColumn) {
       continue;
@@ -111,9 +117,8 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
             t.status === "crashed"
           );
         }
-        // reviewing_plan tasks appear in the Inbox column with a distinguishing badge
         if (col.status === "inbox") {
-          return t.status === "inbox" || t.status === "reviewing_plan";
+          return t.status === "inbox";
         }
         return t.status === col.status;
       })

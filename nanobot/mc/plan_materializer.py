@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from nanobot.mc.types import (
     ActivityEventType,
     ExecutionPlan,
-    GENERAL_AGENT_NAME,
+    NANOBOT_AGENT_NAME,
     TaskStatus,
 )
 
@@ -98,7 +98,7 @@ class PlanMaterializer:
         for index, step in enumerate(plan.steps, start=1):
             title = (step.title or step.description or f"Step {index}").strip()
             description = (step.description or title).strip()
-            assigned_agent = (step.assigned_agent or GENERAL_AGENT_NAME).strip() or GENERAL_AGENT_NAME
+            assigned_agent = (step.assigned_agent or NANOBOT_AGENT_NAME).strip() or NANOBOT_AGENT_NAME
 
             payload.append(
                 {

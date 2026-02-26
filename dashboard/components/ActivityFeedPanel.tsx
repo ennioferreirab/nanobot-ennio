@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ActivityFeed } from "@/components/ActivityFeed";
 
 export function ActivityFeedPanel() {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
 
   if (collapsed) {
     return (

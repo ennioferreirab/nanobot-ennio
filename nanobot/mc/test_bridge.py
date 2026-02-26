@@ -656,7 +656,7 @@ class TestConvenienceMethods:
             "task_id": "task-123",
             "title": "Run checks",
             "description": "Run validation checks",
-            "assigned_agent": "general-agent",
+            "assigned_agent": "nanobot",
             "blocked_by": [],
             "parallel_group": 1,
             "order": 1,
@@ -666,7 +666,7 @@ class TestConvenienceMethods:
         call_args = mock_client.mutation.call_args[0]
         assert call_args[0] == "steps:create"
         assert call_args[1]["taskId"] == "task-123"
-        assert call_args[1]["assignedAgent"] == "general-agent"
+        assert call_args[1]["assignedAgent"] == "nanobot"
         assert call_args[1]["parallelGroup"] == 1
 
     @patch("nanobot.mc.bridge.ConvexClient")
@@ -682,7 +682,7 @@ class TestConvenienceMethods:
                     "temp_id": "step_1",
                     "title": "First step",
                     "description": "Do first step",
-                    "assigned_agent": "general-agent",
+                    "assigned_agent": "nanobot",
                     "blocked_by_temp_ids": [],
                     "parallel_group": 1,
                     "order": 1,
@@ -691,7 +691,7 @@ class TestConvenienceMethods:
                     "temp_id": "step_2",
                     "title": "Second step",
                     "description": "Do second step",
-                    "assigned_agent": "general-agent",
+                    "assigned_agent": "nanobot",
                     "blocked_by_temp_ids": ["step_1"],
                     "parallel_group": 2,
                     "order": 2,
@@ -830,7 +830,7 @@ class TestPostStepCompletion:
         result = bridge.post_step_completion(
             task_id="task-abc",
             step_id="step-xyz",
-            agent_name="general-agent",
+            agent_name="nanobot",
             content="Step completed successfully.",
         )
 
@@ -838,7 +838,7 @@ class TestPostStepCompletion:
         assert call_args[0] == "messages:postStepCompletion"
         assert call_args[1]["taskId"] == "task-abc"
         assert call_args[1]["stepId"] == "step-xyz"
-        assert call_args[1]["agentName"] == "general-agent"
+        assert call_args[1]["agentName"] == "nanobot"
         assert call_args[1]["content"] == "Step completed successfully."
         assert "artifacts" not in call_args[1]
 
@@ -857,7 +857,7 @@ class TestPostStepCompletion:
         bridge.post_step_completion(
             task_id="task-abc",
             step_id="step-xyz",
-            agent_name="general-agent",
+            agent_name="nanobot",
             content="Done.",
             artifacts=artifacts,
         )

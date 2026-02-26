@@ -80,7 +80,7 @@ function makeStep(overrides: Record<string, unknown> = {}) {
     taskId: "task_1",
     title: "Test step",
     description: "Test step description",
-    assignedAgent: "general-agent",
+    assignedAgent: "nanobot",
     status: "assigned",
     blockedBy: [],
     parallelGroup: 1,

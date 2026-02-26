@@ -23,7 +23,7 @@ else:
 
 
 LEAD_AGENT_NAME = "lead-agent"
-GENERAL_AGENT_NAME = "general-agent"
+NANOBOT_AGENT_NAME = "nanobot"
 
 
 class LeadAgentExecutionError(RuntimeError):
@@ -38,7 +38,6 @@ def is_lead_agent(agent_name: str | None) -> bool:
 class TaskStatus(StrEnum):
     """Task lifecycle states. Matches Convex tasks.status union type."""
     PLANNING = "planning"
-    REVIEWING_PLAN = "reviewing_plan"
     READY = "ready"
     FAILED = "failed"
     INBOX = "inbox"
@@ -58,6 +57,7 @@ class StepStatus(StrEnum):
     COMPLETED = "completed"
     CRASHED = "crashed"
     BLOCKED = "blocked"
+    WAITING_HUMAN = "waiting_human"
 
 
 class TrustLevel(StrEnum):
@@ -148,7 +148,7 @@ class ExecutionPlanStep:
     temp_id: str
     title: str
     description: str
-    assigned_agent: str = GENERAL_AGENT_NAME
+    assigned_agent: str = NANOBOT_AGENT_NAME
     blocked_by: list[str] = field(default_factory=list)
     parallel_group: int = 1
     order: int = 1
@@ -210,7 +210,7 @@ class ExecutionPlan:
             assigned_agent = (
                 raw_step.get("assigned_agent")
                 or raw_step.get("assignedAgent")
-                or GENERAL_AGENT_NAME
+                or NANOBOT_AGENT_NAME
             )
             blocked_by = (
                 raw_step.get("blocked_by")

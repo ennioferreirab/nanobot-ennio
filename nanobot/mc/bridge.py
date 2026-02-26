@@ -180,11 +180,14 @@ class ConvexBridge:
         status: str,
         agent_name: str | None = None,
         description: str | None = None,
+        awaiting_kickoff: bool | None = None,
     ) -> Any:
         """Update a task's status with retry and logging."""
         mutation_args: dict[str, Any] = {"task_id": task_id, "status": status}
         if agent_name is not None:
             mutation_args["agent_name"] = agent_name
+        if awaiting_kickoff is not None:
+            mutation_args["awaiting_kickoff"] = awaiting_kickoff
         result = self._mutation_with_retry(
             "tasks:updateStatus",
             mutation_args,
@@ -447,8 +450,8 @@ class ConvexBridge:
         """Approve plan and kick off a supervised task.
 
         Calls the atomic Convex mutation that saves the (optionally edited)
-        execution plan, transitions reviewing_plan -> in_progress, and creates
-        an activity event.
+        execution plan, transitions review (awaitingKickoff) -> in_progress,
+        and creates an activity event.
         """
         args: dict[str, Any] = {"task_id": task_id}
         if execution_plan is not None:
@@ -456,6 +459,35 @@ class ConvexBridge:
         result = self._mutation_with_retry("tasks:approveAndKickOff", args)
         self._log_state_transition(
             "task", f"Task {task_id} approved and kicked off"
+        )
+        return result
+
+    def post_system_error(
+        self,
+        task_id: str,
+        content: str,
+        step_id: str | None = None,
+    ) -> Any:
+        """Post a system error message to the task thread.
+
+        Args:
+            task_id: Convex task _id.
+            content: Error message body.
+            step_id: Optional step _id that triggered the error.
+        """
+        args: dict[str, Any] = {
+            "task_id": task_id,
+            "author_name": "System",
+            "author_type": "system",
+            "content": content,
+            "message_type": "system_event",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if step_id is not None:
+            args["step_id"] = step_id
+        result = self._mutation_with_retry("messages:create", args)
+        self._log_state_transition(
+            "message", f"System error posted on task {task_id}"
         )
         return result
 

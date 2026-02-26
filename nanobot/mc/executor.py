@@ -22,7 +22,7 @@ from nanobot.mc.types import (
     ActivityEventType,
     AuthorType,
     AgentData,
-    GENERAL_AGENT_NAME,
+    NANOBOT_AGENT_NAME,
     LEAD_AGENT_NAME,
     LeadAgentExecutionError,
     MessageType,
@@ -304,7 +304,7 @@ class TaskExecutor:
         task_id = task_data["id"]
         title = task_data.get("title", "Untitled")
         description = task_data.get("description")
-        agent_name = task_data.get("assigned_agent") or GENERAL_AGENT_NAME
+        agent_name = task_data.get("assigned_agent") or NANOBOT_AGENT_NAME
         trust_level = task_data.get("trust_level", TrustLevel.AUTONOMOUS)
         try:
             if is_lead_agent(agent_name):
@@ -387,7 +387,7 @@ class TaskExecutor:
             None,
         )
         if not rerouted_agent:
-            rerouted_agent = GENERAL_AGENT_NAME
+            rerouted_agent = NANOBOT_AGENT_NAME
             logger.warning(
                 "[executor] Lead-agent reroute produced no executable assignee; "
                 "using '%s' for task '%s'",
@@ -703,6 +703,11 @@ class TaskExecutor:
         agent_prompt, agent_model, agent_skills = self._load_agent_config(agent_name)
         # Inject global orientation for non-lead agents
         agent_prompt = self._maybe_inject_orientation(agent_name, agent_prompt)
+
+        # System agents (nanobot) use identity from SOUL.md + ContextBuilder —
+        # skip prompt/orientation injection so MC uses the exact same prompt as Telegram.
+        if agent_name == NANOBOT_AGENT_NAME:
+            agent_prompt = None
 
         # Inject agent roster into lead-agent context so it can discover all
         # available agents without relying on list_dir (which only shows agents

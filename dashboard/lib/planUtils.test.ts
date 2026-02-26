@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { hasCycle, recalcParallelGroups, type PlanStep } from "./planUtils";
+import { hasCycle, recalcParallelGroups, recalcOrderFromDAG, type PlanStep } from "./planUtils";
 
 function makeStep(overrides: Partial<PlanStep> & { tempId: string }): PlanStep {
   return {
     title: overrides.tempId,
     description: overrides.tempId,
-    assignedAgent: "general-agent",
+    assignedAgent: "nanobot",
     blockedBy: [],
     parallelGroup: 0,
     order: 0,
@@ -164,5 +164,91 @@ describe("recalcParallelGroups", () => {
     // order, but must be finite numbers)
     expect(Number.isFinite(result[0].parallelGroup)).toBe(true);
     expect(Number.isFinite(result[1].parallelGroup)).toBe(true);
+  });
+});
+
+describe("recalcOrderFromDAG", () => {
+  it("assigns order based on topological sort of dependencies", () => {
+    const steps: PlanStep[] = [
+      makeStep({ tempId: "C", blockedBy: ["B"], order: 0 }),
+      makeStep({ tempId: "A", blockedBy: [], order: 1 }),
+      makeStep({ tempId: "B", blockedBy: ["A"], order: 2 }),
+    ];
+    const result = recalcOrderFromDAG(steps);
+    const orderA = result.find((s) => s.tempId === "A")!.order;
+    const orderB = result.find((s) => s.tempId === "B")!.order;
+    const orderC = result.find((s) => s.tempId === "C")!.order;
+    // A must come before B, B must come before C
+    expect(orderA).toBeLessThan(orderB);
+    expect(orderB).toBeLessThan(orderC);
+  });
+
+  it("assigns consecutive orders starting from 0", () => {
+    const steps: PlanStep[] = [
+      makeStep({ tempId: "A", blockedBy: [], order: 5 }),
+      makeStep({ tempId: "B", blockedBy: ["A"], order: 10 }),
+    ];
+    const result = recalcOrderFromDAG(steps);
+    expect(result.find((s) => s.tempId === "A")!.order).toBe(0);
+    expect(result.find((s) => s.tempId === "B")!.order).toBe(1);
+  });
+
+  it("preserves array order for steps at the same level", () => {
+    const steps: PlanStep[] = [
+      makeStep({ tempId: "A", blockedBy: [], order: 0 }),
+      makeStep({ tempId: "B", blockedBy: [], order: 1 }),
+      makeStep({ tempId: "C", blockedBy: [], order: 2 }),
+    ];
+    const result = recalcOrderFromDAG(steps);
+    // All are roots — should preserve original array order
+    expect(result.find((s) => s.tempId === "A")!.order).toBe(0);
+    expect(result.find((s) => s.tempId === "B")!.order).toBe(1);
+    expect(result.find((s) => s.tempId === "C")!.order).toBe(2);
+  });
+
+  it("handles diamond dependency pattern", () => {
+    const steps: PlanStep[] = [
+      makeStep({ tempId: "A", blockedBy: [], order: 0 }),
+      makeStep({ tempId: "B", blockedBy: ["A"], order: 1 }),
+      makeStep({ tempId: "C", blockedBy: ["A"], order: 2 }),
+      makeStep({ tempId: "D", blockedBy: ["B", "C"], order: 3 }),
+    ];
+    const result = recalcOrderFromDAG(steps);
+    const orderA = result.find((s) => s.tempId === "A")!.order;
+    const orderB = result.find((s) => s.tempId === "B")!.order;
+    const orderC = result.find((s) => s.tempId === "C")!.order;
+    const orderD = result.find((s) => s.tempId === "D")!.order;
+    expect(orderA).toBeLessThan(orderB);
+    expect(orderA).toBeLessThan(orderC);
+    expect(orderB).toBeLessThan(orderD);
+    expect(orderC).toBeLessThan(orderD);
+  });
+
+  it("does not mutate the original steps array", () => {
+    const steps: PlanStep[] = [
+      makeStep({ tempId: "A", blockedBy: [], order: 99 }),
+    ];
+    const result = recalcOrderFromDAG(steps);
+    expect(result[0].order).toBe(0);
+    expect(steps[0].order).toBe(99);
+  });
+
+  it("handles dangling blockedBy reference gracefully", () => {
+    const steps: PlanStep[] = [
+      makeStep({ tempId: "A", blockedBy: ["Z"], order: 0 }),
+      makeStep({ tempId: "B", blockedBy: [], order: 1 }),
+    ];
+    // Should not throw
+    expect(() => recalcOrderFromDAG(steps)).not.toThrow();
+  });
+
+  it("handles cyclic dependencies without infinite loop", () => {
+    const steps: PlanStep[] = [
+      makeStep({ tempId: "A", blockedBy: ["B"], order: 0 }),
+      makeStep({ tempId: "B", blockedBy: ["A"], order: 1 }),
+    ];
+    expect(() => recalcOrderFromDAG(steps)).not.toThrow();
+    const result = recalcOrderFromDAG(steps);
+    expect(result).toHaveLength(2);
   });
 });

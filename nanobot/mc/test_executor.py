@@ -271,7 +271,7 @@ class TestBuildThreadContextWithArtifacts:
         artifacts: list[dict] | None = None,
     ) -> dict[str, Any]:
         msg: dict[str, Any] = {
-            "author_name": "general-agent",
+            "author_name": "nanobot",
             "author_type": "agent",
             "message_type": "work",
             "type": "step_completion",
@@ -365,7 +365,7 @@ class TestBuildThreadContextWithArtifacts:
     def test_non_step_completion_message_not_labeled(self):
         messages = [
             {
-                "author_name": "general-agent",
+                "author_name": "nanobot",
                 "author_type": "agent",
                 "message_type": "work",
                 "timestamp": "2026-01-01T10:00:00Z",

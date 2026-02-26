@@ -1,7 +1,6 @@
 // Task status values
 export const TASK_STATUS = {
   PLANNING: "planning",
-  REVIEWING_PLAN: "reviewing_plan",
   READY: "ready",
   FAILED: "failed",
   INBOX: "inbox",
@@ -104,7 +103,7 @@ export const AUTHOR_TYPE = {
 } as const;
 
 // System agent names (agents that cannot be disabled, excluded from task routing)
-export const SYSTEM_AGENT_NAMES = new Set(["lead-agent", "mc-agent", "general-agent"]);
+export const SYSTEM_AGENT_NAMES = new Set(["lead-agent", "mc-agent", "nanobot"]);
 
 // Derived TypeScript types for use in function signatures and component props
 export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
@@ -132,11 +131,6 @@ export const STATUS_COLORS: Record<
     border: "border-l-teal-500",
     bg: "bg-teal-100 dark:bg-teal-950",
     text: "text-teal-700 dark:text-teal-300",
-  },
-  reviewing_plan: {
-    border: "border-l-amber-400",
-    bg: "bg-amber-50 dark:bg-amber-950",
-    text: "text-amber-600 dark:text-amber-300",
   },
   failed: {
     border: "border-l-rose-500",

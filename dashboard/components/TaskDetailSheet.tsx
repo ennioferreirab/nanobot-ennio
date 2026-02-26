@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import * as motion from "motion/react-client";
 import { useReducedMotion } from "motion/react";
 import { useQuery, useMutation } from "convex/react";
@@ -18,7 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { File, FileCode, FileText, Image, Loader2, Paperclip, Play, Trash2 } from "lucide-react";
+import { File, FileCode, FileText, Image, Loader2, Paperclip, Pause, Play, Trash2 } from "lucide-react";
+import type { ExecutionPlan } from "@/lib/types";
 import { ThreadMessage } from "./ThreadMessage";
 import { ExecutionPlanTab } from "./ExecutionPlanTab";
 import { STATUS_COLORS, type TaskStatus } from "@/lib/constants";
@@ -46,10 +47,9 @@ function FileIcon({ name }: { name: string }) {
 interface TaskDetailSheetProps {
   taskId: Id<"tasks"> | null;
   onClose: () => void;
-  onOpenPreKickoff?: (taskId: Id<"tasks">) => void;
 }
 
-export function TaskDetailSheet({ taskId, onClose, onOpenPreKickoff }: TaskDetailSheetProps) {
+export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const task = useQuery(
     api.tasks.getById,
     taskId ? { taskId } : "skip",
@@ -64,6 +64,8 @@ export function TaskDetailSheet({ taskId, onClose, onOpenPreKickoff }: TaskDetai
   );
   const approveMutation = useMutation(api.tasks.approve);
   const kickOffMutation = useMutation(api.tasks.approveAndKickOff);
+  const pauseTaskMutation = useMutation(api.tasks.pauseTask);
+  const resumeTaskMutation = useMutation(api.tasks.resumeTask);
   const retryMutation = useMutation(api.tasks.retry);
   const addTaskFiles = useMutation(api.tasks.addTaskFiles);
   const removeTaskFile = useMutation(api.tasks.removeTaskFile);
@@ -73,6 +75,10 @@ export function TaskDetailSheet({ taskId, onClose, onOpenPreKickoff }: TaskDetai
   const [showRejection, setShowRejection] = useState(false);
   const [isKickingOff, setIsKickingOff] = useState(false);
   const [kickOffError, setKickOffError] = useState("");
+  const [isPausing, setIsPausing] = useState(false);
+  const [pauseError, setPauseError] = useState("");
+  const [isResuming, setIsResuming] = useState(false);
+  const [resumeError, setResumeError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [deletingFiles, setDeletingFiles] = useState<Set<string>>(new Set());
@@ -81,6 +87,46 @@ export function TaskDetailSheet({ taskId, onClose, onOpenPreKickoff }: TaskDetai
   const threadEndRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const messageCount = messages?.length ?? 0;
+
+  // localPlan: holds user edits to the execution plan in the canvas
+  const [localPlan, setLocalPlan] = useState<ExecutionPlan | undefined>(undefined);
+
+  // Extract typed values once to avoid repeated (task as any) casts throughout the component
+  const taskAny = task as any;
+  const taskExecutionPlan: ExecutionPlan | undefined = taskAny?.executionPlan;
+  const taskGeneratedAt: string | undefined = taskExecutionPlan?.generatedAt;
+  const taskAwaitingKickoff: boolean = taskAny?.awaitingKickoff === true;
+  const taskStatus: string | undefined = taskAny?.status;
+
+  // Track Lead Agent plan updates via generatedAt — reset local edits when plan changes
+  const prevPlanGeneratedAt = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (taskGeneratedAt !== prevPlanGeneratedAt.current) {
+      prevPlanGeneratedAt.current = taskGeneratedAt;
+      setLocalPlan(undefined); // Force PlanEditor to re-sync from Convex
+    }
+  }, [taskGeneratedAt]);
+
+  // activeTab: controlled tab state for auto-switching to Execution Plan when awaitingKickoff
+  const isAwaitingKickoff = useMemo(
+    () => taskStatus === "review" && taskAwaitingKickoff,
+    [taskStatus, taskAwaitingKickoff]
+  );
+  // isPaused: task is in review but NOT awaiting kickoff — this is the paused state (AC 4)
+  const isPaused = useMemo(
+    () => taskStatus === "review" && !taskAwaitingKickoff,
+    [taskStatus, taskAwaitingKickoff]
+  );
+  const [activeTab, setActiveTab] = useState<string>(() =>
+    isAwaitingKickoff ? "plan" : "thread"
+  );
+
+  // When task opens or awaitingKickoff changes, auto-switch to plan tab
+  useEffect(() => {
+    if (isAwaitingKickoff) {
+      setActiveTab("plan");
+    }
+  }, [isAwaitingKickoff, taskId]);
 
   // Track if user is at bottom via IntersectionObserver
   useEffect(() => {
@@ -117,13 +163,43 @@ export function TaskDetailSheet({ taskId, onClose, onOpenPreKickoff }: TaskDetai
     setIsKickingOff(true);
     setKickOffError("");
     try {
-      await kickOffMutation({ taskId: task._id });
+      const planToSave = localPlan ?? taskExecutionPlan;
+      await kickOffMutation({ taskId: task._id, executionPlan: planToSave });
       onClose();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       setKickOffError(`Kick-off failed: ${message}`);
     } finally {
       setIsKickingOff(false);
+    }
+  };
+
+  const handlePause = async () => {
+    if (!task || !isTaskLoaded) return;
+    setIsPausing(true);
+    setPauseError("");
+    try {
+      await pauseTaskMutation({ taskId: task._id });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setPauseError(`Pause failed: ${message}`);
+    } finally {
+      setIsPausing(false);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!task || !isTaskLoaded) return;
+    setIsResuming(true);
+    setResumeError("");
+    try {
+      const planToSave = localPlan ?? taskExecutionPlan;
+      await resumeTaskMutation({ taskId: task._id, executionPlan: planToSave });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setResumeError(`Resume failed: ${message}`);
+    } finally {
+      setIsResuming(false);
     }
   };
 
@@ -245,40 +321,88 @@ export function TaskDetailSheet({ taskId, onClose, onOpenPreKickoff }: TaskDetai
                       Retry from Beginning
                     </Button>
                   )}
-                  {task.status === "reviewing_plan" && onOpenPreKickoff && (
+                  {task.status === "in_progress" && (
                     <Button
-                      variant="default"
+                      variant="outline"
                       size="sm"
-                      className="bg-purple-500 hover:bg-purple-600 text-white text-xs h-7 px-2"
-                      onClick={() => {
-                        onOpenPreKickoff(task._id);
-                        onClose();
-                      }}
+                      className="border-orange-400 text-orange-700 hover:bg-orange-50 text-xs h-7 px-2"
+                      onClick={handlePause}
+                      disabled={isPausing}
+                      data-testid="pause-button"
                     >
-                      Review Plan
-                    </Button>
-                  )}
-                  {task.status === "reviewing_plan" && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="bg-green-600 hover:bg-green-700 text-white text-xs h-7 px-2"
-                      onClick={handleKickOff}
-                      disabled={isKickingOff}
-                      data-testid="kick-off-button"
-                    >
-                      {isKickingOff ? (
+                      {isPausing ? (
                         <>
                           <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                          Kicking off...
+                          Pausing...
                         </>
                       ) : (
                         <>
-                          <Play className="h-3.5 w-3.5 mr-1" />
-                          Kick-off
+                          <Pause className="h-3.5 w-3.5 mr-1" />
+                          Pause
                         </>
                       )}
                     </Button>
+                  )}
+                  {isPaused && (
+                    <>
+                      <Badge
+                        variant="outline"
+                        className="text-xs bg-orange-50 text-orange-700 border-orange-200"
+                        data-testid="paused-badge"
+                      >
+                        Paused
+                      </Badge>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700 text-white text-xs h-7 px-2"
+                        onClick={handleResume}
+                        disabled={isResuming}
+                        data-testid="resume-button"
+                      >
+                        {isResuming ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                            Resuming...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="h-3.5 w-3.5 mr-1" />
+                            Resume
+                          </>
+                        )}
+                      </Button>
+                    </>
+                  )}
+                  {isAwaitingKickoff && (
+                    <>
+                      <Badge
+                        variant="outline"
+                        className="text-xs bg-amber-50 text-amber-700 border-amber-200"
+                      >
+                        Awaiting Kick-off
+                      </Badge>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700 text-white text-xs h-7 px-2"
+                        onClick={handleKickOff}
+                        disabled={isKickingOff}
+                        data-testid="kick-off-button"
+                      >
+                        {isKickingOff ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                            Kicking off...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="h-3.5 w-3.5 mr-1" />
+                            Kick-off
+                          </>
+                        )}
+                      </Button>
+                    </>
                   )}
                 </div>
               </SheetDescription>
@@ -290,7 +414,7 @@ export function TaskDetailSheet({ taskId, onClose, onOpenPreKickoff }: TaskDetai
                   />
                 </div>
               )}
-              {task.status === "reviewing_plan" && (
+              {isAwaitingKickoff && (
                 <div className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800" data-testid="reviewing-plan-banner">
                   This task is awaiting your approval. Review the execution plan and click Kick-off when ready.
                 </div>
@@ -300,11 +424,21 @@ export function TaskDetailSheet({ taskId, onClose, onOpenPreKickoff }: TaskDetai
                   {kickOffError}
                 </div>
               )}
+              {pauseError && (
+                <div className="mt-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800" data-testid="pause-error">
+                  {pauseError}
+                </div>
+              )}
+              {resumeError && (
+                <div className="mt-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800" data-testid="resume-error">
+                  {resumeError}
+                </div>
+              )}
             </SheetHeader>
 
             <Separator />
 
-            <Tabs defaultValue="thread" className="flex-1 flex flex-col min-h-0">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
               <TabsList className="mx-6 mt-4">
                 <TabsTrigger value="thread">Thread</TabsTrigger>
                 <TabsTrigger value="plan">Execution Plan</TabsTrigger>
@@ -316,7 +450,7 @@ export function TaskDetailSheet({ taskId, onClose, onOpenPreKickoff }: TaskDetai
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="thread" className="flex-1 min-h-0 m-0 flex flex-col">
+              <TabsContent value="thread" className="flex-1 min-h-0 m-0 data-[state=active]:flex flex-col">
                 <ScrollArea className="flex-1 px-6 py-4">
                   {messages === undefined ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
@@ -352,16 +486,22 @@ export function TaskDetailSheet({ taskId, onClose, onOpenPreKickoff }: TaskDetai
                 {task && <ThreadInput task={task} onMessageSent={scrollToBottom} />}
               </TabsContent>
 
-              <TabsContent value="plan" className="flex-1 min-h-0 m-0 px-6 py-4">
-                <ExecutionPlanTab
-                  executionPlan={task.executionPlan ?? null}
-                  liveSteps={liveSteps ?? undefined}
-                  isPlanning={task.status === "inbox"}
-                />
+              <TabsContent value="plan" className="flex-1 min-h-0 m-0 data-[state=active]:flex flex-col">
+                <div className="flex-1 min-h-0 px-6 py-4">
+                  <ExecutionPlanTab
+                    executionPlan={(localPlan ?? taskExecutionPlan) ?? null}
+                    liveSteps={liveSteps ?? undefined}
+                    isPlanning={task.status === "planning"}
+                    isEditMode={task.status === "review"}
+                    taskId={task._id}
+                    onLocalPlanChange={setLocalPlan}
+                  />
+                </div>
               </TabsContent>
 
-              <TabsContent value="config" className="flex-1 min-h-0 m-0 px-6 py-4">
-                <div className="space-y-4">
+              <TabsContent value="config" className="flex-1 min-h-0 m-0 data-[state=active]:flex flex-col">
+                <ScrollArea className="flex-1 px-6 py-4">
+                  <div className="space-y-4">
                   <div>
                     <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                       Trust Level
@@ -428,10 +568,11 @@ export function TaskDetailSheet({ taskId, onClose, onOpenPreKickoff }: TaskDetai
                       </div>
                     </div>
                   )}
-                </div>
+                  </div>
+                </ScrollArea>
               </TabsContent>
-              <TabsContent value="files" className="flex-1 min-h-0 m-0">
-                <ScrollArea className="h-full px-6 py-4">
+              <TabsContent value="files" className="flex-1 min-h-0 m-0 data-[state=active]:flex flex-col">
+                <ScrollArea className="flex-1 px-6 py-4">
                   <div className="flex items-center justify-between mb-4">
                     <input
                       type="file"

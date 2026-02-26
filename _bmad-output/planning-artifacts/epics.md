@@ -34,7 +34,7 @@ This document provides the complete epic and story breakdown for nanobot-ennio, 
 - FR7: Execution plan specifies: steps, assigned agents, blocking dependencies, and parallel groups
 - FR8: Lead Agent assigns agents to steps based on capability matching and task context
 - FR9: Lead Agent considers attached file metadata (types, sizes, names) when routing steps to agents
-- FR10: General Agent is always available as a system-level fallback agent for any step not matching a specialist
+- FR10: nanobot agent is always available as a system-level fallback agent for any step not matching a specialist
 
 **Pre-Kickoff Plan Review (Supervised Mode)**
 
@@ -172,7 +172,7 @@ This document provides the complete epic and story breakdown for nanobot-ennio, 
 - Subprocess model: each agent runs as separate Python subprocess via asyncio.gather() for parallel groups
 - bridge.py as sole Python-Convex boundary with snake_case ↔ camelCase field conversion
 - Lead Agent enforcement: executor checks agent identity and routes Lead Agent to planner module only (architectural invariant)
-- General Agent bootstrapped from YAML definition at gateway startup, always registered, cannot be deleted
+- nanobot agent bootstrapped from YAML definition at gateway startup, always registered, cannot be deleted
 - Activity event logging: every task/step state change MUST write a corresponding activity event
 - Python SDK retry pattern: 3x with exponential backoff for bridge calls
 - Structured completion message format: ThreadMessage type with role, type, content, artifacts array (path, action, description, diff)
@@ -217,7 +217,7 @@ This document provides the complete epic and story breakdown for nanobot-ennio, 
 | FR7 | Epic 1 | Plan specifies steps, agents, dependencies, parallel groups |
 | FR8 | Epic 1 | Lead Agent assigns agents based on capability matching |
 | FR9 | Epic 6 | Lead Agent considers file metadata when routing |
-| FR10 | Epic 1 | General Agent always available as fallback |
+|| FR10 | Epic 1 | nanobot agent always available as fallback
 | FR11 | Epic 4 | Pre-kickoff modal shows full plan in supervised mode |
 | FR12 | Epic 4 | Reassign agents in pre-kickoff modal |
 | FR13 | Epic 4 | Reorder steps in pre-kickoff modal |
@@ -313,7 +313,7 @@ This document provides the complete epic and story breakdown for nanobot-ennio, 
 User creates a task, selects supervision mode, and the Lead Agent generates a structured execution plan with steps, agent assignments, dependencies, and parallel groups — visualized as cards on the Kanban board.
 **FRs covered:** FR1, FR2, FR3, FR4, FR6, FR7, FR8, FR10, FR19, FR35, FR36
 **NFRs as AC:** NFR1 (plan < 10s), NFR10 (no silent planning failures)
-**Implementation scope:** Convex steps table, Lead Agent planner (pure orchestrator), General Agent registration, ExecutionPlan type, step materialization, Kanban step cards with task grouping, execution plan visualization.
+**Implementation scope:** Convex steps table, Lead Agent planner (pure orchestrator), nanobot agent registration, ExecutionPlan type, step materialization, Kanban step cards with task grouping, execution plan visualization.
 
 ### Epic 2: Autonomous Execution & Agent Collaboration
 In autonomous mode, the plan dispatches immediately. Agents execute steps in parallel/sequence, post structured completion messages to the unified thread, and dependent steps auto-unblock.
@@ -411,31 +411,31 @@ So that I can choose whether to review the execution plan before agents start wo
 **When** the task record is queried from Convex
 **Then** the `supervisionMode` field reflects the user's selection
 
-### Story 1.3: Register General Agent as System Fallback
+### Story 1.3: Register nanobot Agent as System Fallback
 
 As a **user**,
-I want a General Agent always available in the system,
+I want a nanobot agent always available in the system,
 So that any task step that doesn't match a specialist agent still has a capable agent to handle it.
 
 **Acceptance Criteria:**
 
 **Given** the agent definitions directory exists
 **When** the system is initialized
-**Then** a `general-agent.yaml` definition file exists with: a general-purpose system prompt, no specialized skills restrictions, and a name of "general-agent"
+**Then** a `nanobot.yaml` definition file exists with: a general-purpose system prompt, no specialized skills restrictions, and a name of "nanobot"
 
 **Given** the Agent Gateway starts up
 **When** the gateway syncs agent definitions to the Convex `agents` table
-**Then** the General Agent is present in the agents table with status "active"
-**And** if the General Agent was missing from the table, it is recreated from the YAML definition
+**Then** the nanobot agent is present in the agents table with status "active"
+**And** if the nanobot agent was missing from the table, it is recreated from the YAML definition
 
-**Given** a user or system attempts to delete the General Agent
+**Given** a user or system attempts to delete the nanobot agent
 **When** the deletion is attempted
-**Then** the deletion is rejected — the General Agent cannot be deleted or deactivated
-**And** a clear message indicates "General Agent is a system agent and cannot be removed"
+**Then** the deletion is rejected — the nanobot agent cannot be deleted or deactivated
+**And** a clear message indicates "nanobot agent is a system agent and cannot be removed"
 
 **Given** the agents sidebar in the dashboard
-**When** the General Agent is displayed
-**Then** it is visually distinguishable as a system agent (e.g., a subtle "System" badge)
+**When** the nanobot agent is displayed
+**Then** it is visually distinguishable as a system agent (e.g., a subtle "System" badge or 🦉 Owl icon)
 
 ### Story 1.4: Enforce Lead Agent as Pure Orchestrator
 
@@ -485,7 +485,7 @@ So that I can see how my goal will be broken into steps with assigned agents, de
 **Given** the Lead Agent assigns agents to steps
 **When** a step matches a specialist agent's capabilities
 **Then** that specialist is assigned to the step
-**And** when no specialist matches, the General Agent is assigned as fallback (FR10)
+**And** when no specialist matches, the nanobot agent is assigned as fallback (FR10)
 
 **Given** the Lead Agent identifies steps that can run in parallel
 **When** the plan is structured

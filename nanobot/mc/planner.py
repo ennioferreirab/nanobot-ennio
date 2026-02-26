@@ -19,7 +19,7 @@ from nanobot.mc.types import (
     AgentData,
     ExecutionPlan,
     ExecutionPlanStep,
-    GENERAL_AGENT_NAME,
+    NANOBOT_AGENT_NAME,
     is_lead_agent,
 )
 
@@ -60,7 +60,7 @@ Response format:
 Rules:
 - tempId must be "step_1", "step_2", etc.
 - assignedAgent must be one of the agent names listed below
-- If no specialist agent matches, assign "general-agent" as fallback
+- If no specialist agent matches, assign "nanobot" as fallback
 - NEVER assign "lead-agent" to any step — lead-agent only plans, it never executes
 - blockedBy is a list of tempIds that must complete before this step can start
 - Steps with no blockers that can run simultaneously share the same parallelGroup number
@@ -145,7 +145,7 @@ def _build_agent_roster(agents: list[AgentData]) -> str:
         skills_str = ", ".join(agent.skills) if agent.skills else "general"
         lines.append(f"- {agent.name} (role: {agent.role}, skills: {skills_str})")
     if not lines:
-        lines.append("- general-agent (role: generalist executor, skills: general)")
+        lines.append("- nanobot (role: generalist executor, skills: general)")
     return "\n".join(lines)
 
 
@@ -258,7 +258,7 @@ def _parse_plan_response(raw: str) -> ExecutionPlan:
         assigned_agent = (
             s.get("assigned_agent")
             or s.get("assignedAgent")
-            or GENERAL_AGENT_NAME
+            or NANOBOT_AGENT_NAME
         )
         blocked_by = _as_string_list(
             s.get("blocked_by")
@@ -359,9 +359,9 @@ class TaskPlanner:
     def _validate_agent_names(
         self, plan: ExecutionPlan, agents: list[AgentData]
     ) -> None:
-        """Replace invalid/disallowed agent names with general-agent."""
+        """Replace invalid/disallowed agent names with nanobot."""
         fallback_agent = self._fallback_agent_name(agents)
-        valid_names = {a.name for a in agents} | {GENERAL_AGENT_NAME}
+        valid_names = {a.name for a in agents} | {NANOBOT_AGENT_NAME}
         for step in plan.steps:
             if (
                 not step.assigned_agent
@@ -381,7 +381,7 @@ class TaskPlanner:
     def _override_agents(self, plan: ExecutionPlan, agent_name: str) -> None:
         """Override all step assignments with an explicit agent."""
         assigned_name = (
-            GENERAL_AGENT_NAME if is_lead_agent(agent_name) else agent_name
+            NANOBOT_AGENT_NAME if is_lead_agent(agent_name) else agent_name
         )
         if assigned_name != agent_name:
             logger.warning(
@@ -394,7 +394,7 @@ class TaskPlanner:
 
     def _fallback_agent_name(self, agents: list[AgentData]) -> str:
         """Choose a non-lead fallback agent name."""
-        return GENERAL_AGENT_NAME
+        return NANOBOT_AGENT_NAME
 
     def _prevent_lead_agent_steps(
         self, plan: ExecutionPlan, agents: list[AgentData]
@@ -425,7 +425,7 @@ class TaskPlanner:
         if explicit_agent and not is_lead_agent(explicit_agent):
             assigned_agent = explicit_agent
         elif explicit_agent and is_lead_agent(explicit_agent):
-            assigned_agent = GENERAL_AGENT_NAME
+            assigned_agent = NANOBOT_AGENT_NAME
         else:
             keywords = extract_keywords(clean_title, clean_description)
             scored = [
@@ -438,11 +438,11 @@ class TaskPlanner:
             assigned_agent = (
                 scored[0][0].name
                 if scored and scored[0][1] > 0
-                else GENERAL_AGENT_NAME
+                else NANOBOT_AGENT_NAME
             )
 
         if is_lead_agent(assigned_agent):
-            assigned_agent = GENERAL_AGENT_NAME
+            assigned_agent = NANOBOT_AGENT_NAME
 
         return ExecutionPlan(steps=[
             ExecutionPlanStep(

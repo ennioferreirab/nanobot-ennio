@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  acceptHumanStep,
   batchCreate,
   findBlockedStepsReadyToUnblock,
   isValidStepTransition,
@@ -17,6 +18,7 @@ describe("isValidStepStatus", () => {
     expect(isValidStepStatus("completed")).toBe(true);
     expect(isValidStepStatus("crashed")).toBe(true);
     expect(isValidStepStatus("blocked")).toBe(true);
+    expect(isValidStepStatus("waiting_human")).toBe(true);
   });
 
   it("rejects unsupported step statuses", () => {
@@ -49,6 +51,20 @@ describe("findBlockedStepsReadyToUnblock", () => {
       { _id: "s2", status: "running" },
       { _id: "s3", status: "blocked", blockedBy: ["s1", "s2"] },
       { _id: "s4", status: "blocked", blockedBy: ["s2"] },
+    ];
+
+    const ready = findBlockedStepsReadyToUnblock(
+      steps as Parameters<typeof findBlockedStepsReadyToUnblock>[0]
+    );
+
+    expect(ready).toEqual([]);
+  });
+
+  // Story 7.2: waiting_human blocker is NOT treated as completed (AC 6)
+  it("does NOT unblock dependents when blocker is in waiting_human status", () => {
+    const steps = [
+      { _id: "s1", status: "waiting_human" },
+      { _id: "s2", status: "blocked", blockedBy: ["s1"] },
     ];
 
     const ready = findBlockedStepsReadyToUnblock(
@@ -94,6 +110,27 @@ describe("isValidStepTransition", () => {
     expect(isValidStepTransition("assigned", "planned")).toBe(false);
     expect(isValidStepTransition("inbox", "assigned")).toBe(false);
   });
+
+  // Story 7.2: waiting_human transitions
+  it("allows assigned -> waiting_human (human step dispatch)", () => {
+    expect(isValidStepTransition("assigned", "waiting_human")).toBe(true);
+  });
+
+  it("allows waiting_human -> completed (human accept)", () => {
+    expect(isValidStepTransition("waiting_human", "completed")).toBe(true);
+  });
+
+  it("allows waiting_human -> crashed", () => {
+    expect(isValidStepTransition("waiting_human", "crashed")).toBe(true);
+  });
+
+  it("rejects waiting_human -> running (human steps do not run agents)", () => {
+    expect(isValidStepTransition("waiting_human", "running")).toBe(false);
+  });
+
+  it("rejects waiting_human -> blocked", () => {
+    expect(isValidStepTransition("waiting_human", "blocked")).toBe(false);
+  });
 });
 
 describe("resolveBlockedByIds", () => {
@@ -109,6 +146,178 @@ describe("resolveBlockedByIds", () => {
     expect(() => resolveBlockedByIds(["missing"], {} as any)).toThrow(
       /Unknown blockedByTempId dependency/
     );
+  });
+});
+
+// Story 7.2: acceptHumanStep mutation tests
+describe("acceptHumanStep", () => {
+  function getHandler() {
+    return (acceptHumanStep as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
+    })._handler;
+  }
+
+  function makeCtx(stepOverrides: Record<string, unknown> = {}) {
+    const patchedValues: Record<string, unknown> = {};
+    const insertedActivities: Record<string, unknown>[] = [];
+
+    const step = {
+      _id: "step-1",
+      taskId: "task-1",
+      title: "Review documents",
+      status: "waiting_human",
+      assignedAgent: "human",
+      ...stepOverrides,
+    };
+
+    const ctx = {
+      db: {
+        get: async (id: string) => {
+          if (id === "step-1") return step;
+          return null;
+        },
+        patch: async (_id: string, values: Record<string, unknown>) => {
+          Object.assign(patchedValues, values);
+        },
+        insert: async (_table: string, value: Record<string, unknown>) => {
+          insertedActivities.push(value);
+          return "activity-1";
+        },
+        // Query returns only the human step itself (no blocked dependents)
+        query: (_table: string) => ({
+          withIndex: (_idx: string, _fn: unknown) => ({
+            collect: async () => [step],
+          }),
+        }),
+      },
+    };
+
+    return { ctx, step, patchedValues, insertedActivities };
+  }
+
+  it("transitions waiting_human step to completed", async () => {
+    const handler = getHandler();
+    const { ctx, patchedValues } = makeCtx();
+
+    await handler(ctx, { stepId: "step-1" });
+
+    expect(patchedValues.status).toBe("completed");
+    expect(patchedValues.completedAt).toBeDefined();
+  });
+
+  it("creates activity event with 'Human completed step' description", async () => {
+    const handler = getHandler();
+    const { ctx, insertedActivities } = makeCtx();
+
+    await handler(ctx, { stepId: "step-1" });
+
+    // There may be multiple activities (step_status_changed + step_completed);
+    // we assert on the step_completed one specifically.
+    const completedActivity = insertedActivities.find(
+      (a) => (a as Record<string, unknown>).eventType === "step_completed"
+    );
+    expect(completedActivity).toBeDefined();
+    expect((completedActivity as Record<string, unknown>).description).toContain("Human completed step");
+    expect((completedActivity as Record<string, unknown>).description).toContain("Review documents");
+  });
+
+  it("returns the taskId for the caller", async () => {
+    const handler = getHandler();
+    const { ctx } = makeCtx();
+
+    const result = await handler(ctx, { stepId: "step-1" });
+
+    expect(result).toBe("task-1");
+  });
+
+  it("throws ConvexError when step is not found", async () => {
+    const handler = getHandler();
+    const ctx = {
+      db: {
+        get: async () => null,
+        patch: async () => undefined,
+        insert: async () => "activity-1",
+      },
+    };
+
+    await expect(handler(ctx, { stepId: "nonexistent" })).rejects.toThrow(
+      /Step not found/
+    );
+  });
+
+  it("throws ConvexError when step is not in waiting_human status", async () => {
+    const handler = getHandler();
+    const { ctx } = makeCtx({ status: "running" });
+
+    await expect(handler(ctx, { stepId: "step-1" })).rejects.toThrow(
+      /not in waiting_human status/
+    );
+  });
+
+  it("unblocks dependent steps directly in the mutation (dispatch loop has already exited)", async () => {
+    // acceptHumanStep must unblock blocked dependents itself because the
+    // Python dispatch loop exits when waiting_human steps are pending and
+    // there is no orchestrator subscription re-triggering dispatch on Accept.
+    const handler = getHandler();
+    const patchedByStepId: Record<string, Record<string, unknown>> = {};
+    const insertedActivities: Record<string, unknown>[] = [];
+
+    const humanStep = {
+      _id: "step-1",
+      taskId: "task-1",
+      title: "Review",
+      status: "waiting_human",
+      assignedAgent: "human",
+    };
+    const blockedDependent = {
+      _id: "step-2",
+      taskId: "task-1",
+      title: "Deploy",
+      status: "blocked",
+      assignedAgent: "nanobot",
+      blockedBy: ["step-1"],
+    };
+
+    const ctx = {
+      db: {
+        get: async (id: string) => {
+          if (id === "step-1") return humanStep;
+          return null;
+        },
+        patch: async (id: string, values: Record<string, unknown>) => {
+          patchedByStepId[id] = { ...(patchedByStepId[id] ?? {}), ...values };
+        },
+        insert: async (_table: string, value: Record<string, unknown>) => {
+          insertedActivities.push(value);
+          return "activity-id";
+        },
+        // In a real Convex transaction, the patch to step-1 (completed) is
+        // visible when the query runs later in the same mutation. Simulate this
+        // by returning the human step with the updated status.
+        query: (_table: string) => ({
+          withIndex: (_idx: string, _fn: unknown) => ({
+            collect: async () => [
+              { ...humanStep, status: "completed" },
+              blockedDependent,
+            ],
+          }),
+        }),
+      },
+    };
+
+    await handler(ctx, { stepId: "step-1" });
+
+    // The human step must become completed
+    expect(patchedByStepId["step-1"]?.status).toBe("completed");
+
+    // The dependent step must become assigned
+    expect(patchedByStepId["step-2"]?.status).toBe("assigned");
+
+    // An unblocked activity must have been created
+    const unblockedActivities = insertedActivities.filter(
+      (a) => (a as Record<string, unknown>).eventType === "step_unblocked"
+    );
+    expect(unblockedActivities.length).toBeGreaterThan(0);
   });
 });
 
@@ -156,7 +365,7 @@ describe("batchCreate", () => {
           tempId: "step_1",
           title: "First",
           description: "First step",
-          assignedAgent: "general-agent",
+          assignedAgent: "nanobot",
           blockedByTempIds: [],
           parallelGroup: 1,
           order: 1,
@@ -165,7 +374,7 @@ describe("batchCreate", () => {
           tempId: "step_2",
           title: "Second",
           description: "Second step",
-          assignedAgent: "general-agent",
+          assignedAgent: "nanobot",
           blockedByTempIds: ["step_1"],
           parallelGroup: 2,
           order: 2,
@@ -198,7 +407,7 @@ describe("batchCreate", () => {
             tempId: "step_1",
             title: "Only",
             description: "Only step",
-            assignedAgent: "general-agent",
+            assignedAgent: "nanobot",
             blockedByTempIds: ["missing"],
             parallelGroup: 1,
             order: 1,

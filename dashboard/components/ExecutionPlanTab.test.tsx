@@ -1,6 +1,48 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { ExecutionPlanTab } from "./ExecutionPlanTab";
+
+// Mock PlanEditor so we can test without React Flow and Convex dependencies
+vi.mock("./PlanEditor", () => ({
+  PlanEditor: ({ plan, taskId }: { plan: unknown; taskId: string; onPlanChange?: (p: unknown) => void }) => (
+    <div data-testid="plan-editor" data-task-id={taskId}>
+      PlanEditor: {plan ? "plan loaded" : "no plan"}
+    </div>
+  ),
+}));
+
+// Mock React Flow for read-only view
+vi.mock("@xyflow/react", () => ({
+  ReactFlow: ({ nodes }: { nodes: { id: string; data: { step: { title: string }; status?: string } }[]; [key: string]: unknown }) => (
+    <div data-testid="react-flow-readonly">
+      {nodes.map((n) => (
+        <div key={n.id} data-testid={`flow-node-${n.id}`} data-status={n.data.status ?? "planned"}>
+          {n.data.step.title || n.data.step.title === "" ? n.data.step.title : "Untitled"}
+        </div>
+      ))}
+    </div>
+  ),
+  Handle: () => null,
+  Position: { Top: "top", Bottom: "bottom" },
+}));
+
+// Mock FlowStepNode
+vi.mock("./FlowStepNode", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./FlowStepNode")>();
+  return {
+    ...actual,
+    FlowStepNode: () => null,
+  };
+});
+
+// Shared mock mutation fn captured so tests can verify calls
+const mockMutationFn = vi.fn().mockResolvedValue(undefined);
+
+// Mock convex/react
+vi.mock("convex/react", () => ({
+  useQuery: () => [],
+  useMutation: vi.fn(() => mockMutationFn),
+}));
 
 afterEach(() => {
   cleanup();
@@ -43,19 +85,19 @@ describe("ExecutionPlanTab", () => {
     expect(screen.getByText(/Direct execution/)).toBeInTheDocument();
   });
 
-  it("renders all step descriptions for a 3-step plan", () => {
+  it("renders flow nodes for a 3-step plan", () => {
     const plan = {
       steps: [
-        makeStep({ stepId: "s1", description: "Analyze requirements" }),
-        makeStep({ stepId: "s2", description: "Implement feature" }),
-        makeStep({ stepId: "s3", description: "Write tests" }),
+        makeStep({ stepId: "s1", title: "Analyze", description: "Analyze requirements" }),
+        makeStep({ stepId: "s2", title: "Implement", description: "Implement feature" }),
+        makeStep({ stepId: "s3", title: "Test", description: "Write tests" }),
       ],
       createdAt: "2026-01-01",
     };
     render(<ExecutionPlanTab executionPlan={plan} />);
-    expect(screen.getByText("Analyze requirements")).toBeInTheDocument();
-    expect(screen.getByText("Implement feature")).toBeInTheDocument();
-    expect(screen.getByText("Write tests")).toBeInTheDocument();
+    expect(screen.getByTestId("flow-node-s1")).toBeInTheDocument();
+    expect(screen.getByTestId("flow-node-s2")).toBeInTheDocument();
+    expect(screen.getByTestId("flow-node-s3")).toBeInTheDocument();
   });
 
   it("shows progress count", () => {
@@ -71,176 +113,105 @@ describe("ExecutionPlanTab", () => {
     expect(screen.getByText("1/3 steps completed")).toBeInTheDocument();
   });
 
-  it("renders correct status icon classes for completed steps", () => {
+  it("renders React Flow canvas in read-only mode", () => {
     const plan = {
       steps: [
-        makeStep({ stepId: "s1", status: "completed", description: "Done step" }),
-      ],
-      createdAt: "2026-01-01",
-    };
-    const { container } = render(<ExecutionPlanTab executionPlan={plan} />);
-    const svg = container.querySelector("svg");
-    expect(svg?.classList.contains("text-green-500")).toBe(true);
-  });
-
-  it("renders correct status icon classes for in_progress steps", () => {
-    const plan = {
-      steps: [
-        makeStep({ stepId: "s1", status: "in_progress", description: "Working" }),
-      ],
-      createdAt: "2026-01-01",
-    };
-    const { container } = render(<ExecutionPlanTab executionPlan={plan} />);
-    const svg = container.querySelector("svg");
-    expect(svg?.classList.contains("text-blue-500")).toBe(true);
-    expect(svg?.classList.contains("animate-spin")).toBe(true);
-  });
-
-  it("renders correct status icon classes for failed steps", () => {
-    const plan = {
-      steps: [
-        makeStep({ stepId: "s1", status: "failed", description: "Broken" }),
-      ],
-      createdAt: "2026-01-01",
-    };
-    const { container } = render(<ExecutionPlanTab executionPlan={plan} />);
-    const svg = container.querySelector("svg");
-    expect(svg?.classList.contains("text-red-500")).toBe(true);
-  });
-
-  it("renders correct status icon classes for pending steps", () => {
-    const plan = {
-      steps: [
-        makeStep({ stepId: "s1", status: "pending", description: "Waiting" }),
-      ],
-      createdAt: "2026-01-01",
-    };
-    const { container } = render(<ExecutionPlanTab executionPlan={plan} />);
-    const svg = container.querySelector("svg");
-    expect(svg?.classList.contains("text-muted-foreground")).toBe(true);
-  });
-
-  it("renders parallel group label for grouped steps", () => {
-    const plan = {
-      steps: [
-        makeStep({ stepId: "s1", parallelGroup: "group-a", description: "Step A1" }),
-        makeStep({ stepId: "s2", parallelGroup: "group-a", description: "Step A2" }),
+        makeStep({ stepId: "s1", title: "First", description: "Step one" }),
       ],
       createdAt: "2026-01-01",
     };
     render(<ExecutionPlanTab executionPlan={plan} />);
-    expect(screen.getByText("Parallel")).toBeInTheDocument();
+    expect(screen.getByTestId("react-flow-readonly")).toBeInTheDocument();
   });
 
-  it("renders assigned agent name", () => {
+  it("renders PlanEditor when isEditMode=true and plan is available", () => {
     const plan = {
       steps: [
-        makeStep({ stepId: "s1", assignedAgent: "code-monkey" }),
+        makeStep({ stepId: "s1", description: "Step one", title: "One" }),
+      ],
+      generatedAt: "2026-01-01T00:00:00Z",
+      generatedBy: "lead-agent",
+      createdAt: "2026-01-01",
+    };
+    render(
+      <ExecutionPlanTab
+        executionPlan={plan}
+        isEditMode={true}
+        taskId="task-abc"
+        onLocalPlanChange={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId("plan-editor")).toBeInTheDocument();
+    expect(screen.queryByText(/steps completed/)).not.toBeInTheDocument();
+  });
+
+  it("renders read-only view when isEditMode=false", () => {
+    const plan = {
+      steps: [
+        makeStep({ stepId: "s1", description: "Step one" }),
       ],
       createdAt: "2026-01-01",
     };
-    render(<ExecutionPlanTab executionPlan={plan} />);
-    expect(screen.getByText("code-monkey")).toBeInTheDocument();
+    render(
+      <ExecutionPlanTab
+        executionPlan={plan}
+        isEditMode={false}
+        taskId="task-abc"
+      />
+    );
+    expect(screen.getByText("0/1 steps completed")).toBeInTheDocument();
+    expect(screen.queryByTestId("plan-editor")).not.toBeInTheDocument();
   });
 
-  it("applies dependency indentation for steps with dependsOn", () => {
+  it("renders read-only view by default (no isEditMode prop)", () => {
     const plan = {
       steps: [
-        makeStep({ stepId: "s1", description: "First" }),
-        makeStep({ stepId: "s2", description: "Second", dependsOn: ["s1"] }),
+        makeStep({ stepId: "s1", description: "Step one" }),
       ],
       createdAt: "2026-01-01",
     };
-    const { container } = render(<ExecutionPlanTab executionPlan={plan} />);
-    const indented = container.querySelector(".border-l-2.border-border");
-    expect(indented).toBeInTheDocument();
+    render(<ExecutionPlanTab executionPlan={plan} taskId="task-abc" />);
+    expect(screen.getByText("0/1 steps completed")).toBeInTheDocument();
+    expect(screen.queryByTestId("plan-editor")).not.toBeInTheDocument();
   });
 
-  it("renders parallel steps inside a visual lane", () => {
+  it("does NOT render PlanEditor when isEditMode=true but no taskId", () => {
     const plan = {
       steps: [
-        makeStep({ stepId: "s1", parallelGroup: 1, description: "Plan" }),
-        makeStep({ stepId: "s2", parallelGroup: 1, description: "Implement" }),
-        makeStep({ stepId: "s3", description: "Review" }),
+        makeStep({ stepId: "s1", description: "Step one" }),
       ],
       createdAt: "2026-01-01",
     };
-    render(<ExecutionPlanTab executionPlan={plan} />);
-    const lane = screen.getByTestId("parallel-group-1");
-    expect(lane).toBeInTheDocument();
-    expect(lane.querySelector(".flex.flex-row")).toBeInTheDocument();
-    expect(screen.getByText("Group 1")).toBeInTheDocument();
+    render(
+      <ExecutionPlanTab
+        executionPlan={plan}
+        isEditMode={true}
+      />
+    );
+    expect(screen.getByText("0/1 steps completed")).toBeInTheDocument();
+    expect(screen.queryByTestId("plan-editor")).not.toBeInTheDocument();
   });
 
-  it("renders dependency labels using step numbers", () => {
+  it("does NOT render PlanEditor when isEditMode=true but generatedAt is absent", () => {
     const plan = {
       steps: [
-        makeStep({ stepId: "s1", description: "First" }),
-        makeStep({ stepId: "s2", description: "Second", blockedBy: ["s1"] }),
+        makeStep({ stepId: "s1", description: "Step one", title: "One" }),
       ],
       createdAt: "2026-01-01",
     };
-    render(<ExecutionPlanTab executionPlan={plan} />);
-    expect(screen.getByText("depends on: Step 1")).toBeInTheDocument();
+    render(
+      <ExecutionPlanTab
+        executionPlan={plan}
+        isEditMode={true}
+        taskId="task-abc"
+        onLocalPlanChange={vi.fn()}
+      />
+    );
+    expect(screen.getByText("0/1 steps completed")).toBeInTheDocument();
+    expect(screen.queryByTestId("plan-editor")).not.toBeInTheDocument();
   });
 
-  it("maps architecture statuses to expected icon colors", () => {
-    const plan = {
-      steps: [
-        makeStep({ stepId: "planned", status: "planned", description: "Planned" }),
-        makeStep({ stepId: "assigned", status: "assigned", description: "Assigned" }),
-        makeStep({ stepId: "blocked", status: "blocked", description: "Blocked" }),
-        makeStep({ stepId: "running", status: "running", description: "Running" }),
-        makeStep({ stepId: "completed", status: "completed", description: "Completed" }),
-        makeStep({ stepId: "crashed", status: "crashed", description: "Crashed" }),
-      ],
-      createdAt: "2026-01-01",
-    };
-    render(<ExecutionPlanTab executionPlan={plan} />);
-    expect(screen.getByTestId("step-status-icon-planned").getAttribute("class")).toContain("text-muted-foreground");
-    expect(screen.getByTestId("step-status-icon-assigned").getAttribute("class")).toContain("text-cyan-500");
-    expect(screen.getByTestId("step-status-icon-blocked").getAttribute("class")).toContain("text-amber-500");
-    expect(screen.getByTestId("step-status-icon-running").getAttribute("class")).toContain("text-blue-500");
-    expect(screen.getByTestId("step-status-icon-running").getAttribute("class")).toContain("animate-spin");
-    expect(screen.getByTestId("step-status-icon-completed").getAttribute("class")).toContain("text-green-500");
-    expect(screen.getByTestId("step-status-icon-crashed").getAttribute("class")).toContain("text-red-500");
-  });
-
-  it("renders title and description when both are provided", () => {
-    const plan = {
-      steps: [
-        makeStep({
-          stepId: "s1",
-          title: "Step title",
-          description: "Step details",
-        }),
-      ],
-      createdAt: "2026-01-01",
-    };
-    render(<ExecutionPlanTab executionPlan={plan} />);
-    expect(screen.getByText("Step title")).toBeInTheDocument();
-    expect(screen.getByText("Step details")).toBeInTheDocument();
-  });
-
-  it("defaults missing step status to planned without crashing", () => {
-    const plan = {
-      steps: [
-        makeStep({
-          stepId: "s1",
-          title: "No status",
-          description: "Status omitted",
-          status: undefined,
-        }),
-      ],
-      createdAt: "2026-01-01",
-    };
-    render(<ExecutionPlanTab executionPlan={plan} />);
-    expect(screen.getByText("No status")).toBeInTheDocument();
-    expect(screen.getByText("Planned")).toBeInTheDocument();
-    expect(screen.getByTestId("step-status-icon-s1").getAttribute("class")).toContain("text-muted-foreground");
-  });
-
-  it("prefers live step status over execution plan snapshot status", () => {
+  it("prefers live step status over plan snapshot status", () => {
     const plan = {
       steps: [
         makeStep({
@@ -269,58 +240,7 @@ describe("ExecutionPlanTab", () => {
         ]}
       />
     );
-    expect(screen.getByTestId("step-status-icon-s1").getAttribute("class")).toContain("text-blue-500");
-    expect(screen.getByTestId("step-status-icon-s1").getAttribute("class")).toContain("animate-spin");
-  });
-
-  it("maps live blockedBy ids to plan step numbers in dependency labels", () => {
-    const plan = {
-      steps: [
-        makeStep({
-          stepId: "s1",
-          title: "First",
-          description: "First step",
-          status: "planned",
-          order: 1,
-        }),
-        makeStep({
-          stepId: "s2",
-          title: "Second",
-          description: "Second step",
-          status: "planned",
-          dependsOn: [],
-          blockedBy: [],
-          order: 2,
-        }),
-      ],
-      createdAt: "2026-01-01",
-    };
-    render(
-      <ExecutionPlanTab
-        executionPlan={plan}
-        liveSteps={[
-          {
-            _id: "live-step-1",
-            title: "First",
-            description: "First step",
-            assignedAgent: "agent-a",
-            status: "completed",
-            parallelGroup: 1,
-            order: 1,
-          },
-          {
-            _id: "live-step-2",
-            title: "Second",
-            description: "Second step",
-            assignedAgent: "agent-b",
-            status: "blocked",
-            blockedBy: ["live-step-1"],
-            parallelGroup: 2,
-            order: 2,
-          },
-        ]}
-      />
-    );
-    expect(screen.getByText("depends on: Step 1")).toBeInTheDocument();
+    const node = screen.getByTestId("flow-node-s1");
+    expect(node.getAttribute("data-status")).toBe("running");
   });
 });
