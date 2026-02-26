@@ -105,7 +105,7 @@ export const AUTHOR_TYPE = {
 } as const;
 
 // System agent names (agents that cannot be disabled, excluded from task routing)
-export const SYSTEM_AGENT_NAMES = new Set(["lead-agent", "mc-agent", "nanobot"]);
+export const SYSTEM_AGENT_NAMES = new Set(["lead-agent", "mc-agent", "nanobot", "low-agent"]);
 
 // Derived TypeScript types for use in function signatures and component props
 export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
