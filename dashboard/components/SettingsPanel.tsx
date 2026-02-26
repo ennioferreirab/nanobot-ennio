@@ -14,6 +14,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Check } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ModelTierSettings } from "@/components/ModelTierSettings";
 
 const DEFAULTS: Record<string, string> = {
   task_timeout_minutes: "30",
@@ -174,6 +175,10 @@ export function SettingsPanel() {
           </SelectContent>
         </Select>
       </div>
+
+      <Separator />
+
+      <ModelTierSettings />
     </div>
   );
 }

@@ -25,6 +25,17 @@ else:
 LEAD_AGENT_NAME = "lead-agent"
 NANOBOT_AGENT_NAME = "nanobot"
 
+# Model tier system (Story 11.1)
+TIER_PREFIX = "tier:"
+VALID_TIER_NAMES: frozenset[str] = frozenset({
+    "standard-low",
+    "standard-medium",
+    "standard-high",
+    "reasoning-low",
+    "reasoning-medium",
+    "reasoning-high",
+})
+
 
 class LeadAgentExecutionError(RuntimeError):
     """Raised when lead-agent execution is attempted."""
@@ -33,6 +44,22 @@ class LeadAgentExecutionError(RuntimeError):
 def is_lead_agent(agent_name: str | None) -> bool:
     """Return True when the given name is the lead-agent."""
     return agent_name == LEAD_AGENT_NAME
+
+
+def is_tier_reference(model: str | None) -> bool:
+    """Return True if model is a tier reference (starts with 'tier:')."""
+    return model is not None and model.startswith(TIER_PREFIX)
+
+
+def extract_tier_name(model: str) -> str | None:
+    """Extract and validate the tier name from a tier reference string.
+
+    Returns the tier name (e.g. 'standard-high') if valid, else None.
+    """
+    if not model.startswith(TIER_PREFIX):
+        return None
+    name = model[len(TIER_PREFIX):]
+    return name if name in VALID_TIER_NAMES else None
 
 
 class TaskStatus(StrEnum):

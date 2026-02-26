@@ -405,6 +405,47 @@ def ensure_nanobot_agent(agents_dir: Path) -> None:
                 logger.info("Symlinked %s to global workspace for %s", item, bot_name)
             except Exception as e:
                 logger.warning("Failed to symlink %s for nanobot agent: %s", item, e)
+def _sync_model_tiers(bridge: ConvexBridge) -> None:
+    """Sync connected models list and seed default tiers on startup.
+
+    - Writes available model identifiers to ``connected_models`` setting.
+    - Seeds ``model_tiers`` with defaults if the setting does not yet exist.
+    - Idempotent: existing tier mappings are never overwritten.
+
+    Story 11.1 — AC #4.
+    """
+    import json
+
+    # Collect available models from provider config
+    from nanobot.mc.provider_factory import list_available_models
+
+    models_list = list_available_models()
+
+    bridge.mutation(
+        "settings:set",
+        {"key": "connected_models", "value": json.dumps(models_list)},
+    )
+
+    # Only seed default tiers if not already configured
+    existing = bridge.query("settings:get", {"key": "model_tiers"})
+    if existing is None:
+        default_tiers = {
+            "standard-low": "anthropic/claude-haiku-3-5",
+            "standard-medium": "anthropic/claude-sonnet-4-6",
+            "standard-high": "anthropic/claude-opus-4-6",
+            "reasoning-low": None,
+            "reasoning-medium": None,
+            "reasoning-high": None,
+        }
+        bridge.mutation(
+            "settings:set",
+            {"key": "model_tiers", "value": json.dumps(default_tiers)},
+        )
+        logger.info("[gateway] Seeded default model tiers")
+    else:
+        logger.info("[gateway] Model tiers already configured — not overwriting")
+
+
 def sync_agent_registry(
     bridge: ConvexBridge,
     agents_dir: Path,
@@ -952,6 +993,13 @@ async def main() -> None:
             logger.info("[gateway] Synced %d skill(s)", len(skill_names))
         except Exception:
             logger.exception("[gateway] Skills sync failed")
+
+        # Sync connected models and seed default tiers (Story 11.1, AC4)
+        try:
+            _sync_model_tiers(bridge)
+            logger.info("[gateway] Model tiers synced")
+        except Exception:
+            logger.exception("[gateway] Model tiers sync failed")
 
         # Ensure default board exists (AC2)
         try:

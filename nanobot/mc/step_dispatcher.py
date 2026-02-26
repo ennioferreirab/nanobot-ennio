@@ -23,6 +23,7 @@ from nanobot.mc.types import (
     StepStatus,
     TaskStatus,
     is_lead_agent,
+    is_tier_reference,
 )
 
 if TYPE_CHECKING:
@@ -333,6 +334,14 @@ class StepDispatcher:
 
         try:
             agent_prompt, agent_model, agent_skills = _load_agent_config(agent_name)
+
+            # Resolve tier references (Story 11.1, AC5)
+            if agent_model and is_tier_reference(agent_model):
+                from nanobot.mc.tier_resolver import TierResolver
+                resolver = TierResolver(self._bridge)
+                agent_model = resolver.resolve_model(agent_model)
+                logger.info("[dispatcher] Resolved tier for agent '%s': %s", agent_name, agent_model)
+
             agent_prompt = _maybe_inject_orientation(agent_name, agent_prompt)
 
             # System agents (nanobot) use identity from SOUL.md + ContextBuilder —
