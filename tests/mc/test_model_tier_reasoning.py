@@ -173,16 +173,8 @@ class TestReasoningPropagationToProviderChat:
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        reason=(
-            "tier_reasoning_levels is not read by the executor; "
-            "provider.chat() has no reasoning parameter"
-        ),
-        strict=True,
-    )
     async def test_standard_medium_reasoning_low_reaches_provider_chat(self) -> None:
-        """When standard-medium has reasoning=low, provider.chat() is called
-        with the matching reasoning/thinking parameter."""
+        """When reasoning_level='low' is passed, provider.chat() receives it."""
         from nanobot.mc.executor import _run_agent_on_task
 
         mock_provider = MagicMock()
@@ -199,24 +191,18 @@ class TestReasoningPropagationToProviderChat:
                 agent_name="test-agent",
                 agent_prompt="You are a test agent.",
                 agent_model=SONNET_MODEL,
+                reasoning_level="low",
                 task_title="Test task",
                 task_description="Do something",
-                # Reasoning level would need to be passed somehow
             )
 
-        # provider.chat() must have been called with a reasoning parameter
         chat_calls = mock_provider.chat.call_args_list
         assert chat_calls, "provider.chat() was never called"
 
+        # Verify reasoning_level was threaded through to provider.chat()
         last_kwargs = chat_calls[-1].kwargs
-        # Anthropic uses `thinking` / `budget_tokens`; OpenAI uses `reasoning_effort`
-        has_reasoning = (
-            "thinking" in last_kwargs
-            or "reasoning_effort" in last_kwargs
-            or "budget_tokens" in last_kwargs
-        )
-        assert has_reasoning, (
-            f"provider.chat() was NOT called with a reasoning parameter.\n"
+        assert last_kwargs.get("reasoning_level") == "low", (
+            f"provider.chat() was NOT called with reasoning_level='low'.\n"
             f"Actual kwargs: {last_kwargs}"
         )
 
