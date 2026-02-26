@@ -102,38 +102,38 @@ class HeartbeatService:
     
     async def _tick(self) -> None:
         """Execute a single heartbeat tick."""
-        content = self._read_heartbeat_file()
-        
-        # Skip if HEARTBEAT.md is empty or doesn't exist
-        if _is_heartbeat_empty(content):
-            logger.debug("Heartbeat: no tasks (HEARTBEAT.md empty)")
-            return
-        
+        lock = FileLock(str(self.heartbeat_file) + ".lock", timeout=10)
+
+        with lock:
+            content = self._read_heartbeat_file()
+            if _is_heartbeat_empty(content) or content is None:
+                return
+            snapshot: str = content  # content is guaranteed non-empty str here
+
         logger.info("Heartbeat: checking for tasks...")
-        
+
         if self.on_heartbeat:
             try:
                 response = await self.on_heartbeat(HEARTBEAT_PROMPT)
-                
+
                 if HEARTBEAT_OK_TOKEN.replace("_", "") in response.upper().replace("_", ""):
                     logger.info("Heartbeat: OK (no action needed)")
                 else:
                     logger.info("Heartbeat: completed task")
 
-                self._clear_heartbeat_file()
-                    
+                with lock:
+                    current = self.heartbeat_file.read_text(encoding="utf-8") if self.heartbeat_file.exists() else ""
+                    if current == snapshot:
+                        self.heartbeat_file.write_text("", encoding="utf-8")
+                    elif current.startswith(snapshot):
+                        remainder = current[len(snapshot):]
+                        self.heartbeat_file.write_text(remainder, encoding="utf-8")
+                    else:
+                        self.heartbeat_file.write_text("", encoding="utf-8")
+                    logger.debug("Heartbeat: removed consumed entries from HEARTBEAT.md")
+
             except Exception as e:
                 logger.error("Heartbeat execution failed: {}", e)
-    
-    def _clear_heartbeat_file(self) -> None:
-        """Clear HEARTBEAT.md after successful processing."""
-        lock = FileLock(str(self.heartbeat_file) + ".lock", timeout=10)
-        try:
-            with lock:
-                self.heartbeat_file.write_text("", encoding="utf-8")
-            logger.debug("Heartbeat: cleared HEARTBEAT.md after processing")
-        except Exception as e:
-            logger.warning("Heartbeat: failed to clear HEARTBEAT.md: {}", e)
 
     async def trigger_now(self) -> str | None:
         """Manually trigger a heartbeat."""

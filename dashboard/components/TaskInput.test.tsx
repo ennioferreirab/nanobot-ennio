@@ -179,14 +179,34 @@ describe("TaskInput", () => {
     expect(trustTrigger).toHaveTextContent("Autonomous");
   });
 
-  // --- Story 1.2: Supervision mode configuration ---
+  // --- Supervision mode A/S toggle ---
 
-  it("shows supervision mode selector when expanded", () => {
+  it("renders A/S toggle button in autonomous mode by default", () => {
     render(<TaskInput />);
-    fireEvent.click(screen.getByLabelText("Toggle options"));
-    expect(screen.getByText("Supervision Mode")).toBeInTheDocument();
-    const supervisionTrigger = screen.getAllByRole("combobox")[2];
-    expect(supervisionTrigger).toHaveTextContent("Autonomous");
+    const toggle = screen.getByLabelText("Autonomous mode");
+    expect(toggle).toBeInTheDocument();
+  });
+
+  it("switches A/S toggle to supervised on click", () => {
+    render(<TaskInput />);
+    const toggle = screen.getByLabelText("Autonomous mode");
+    fireEvent.click(toggle);
+    expect(screen.getByLabelText("Supervised mode")).toBeInTheDocument();
+  });
+
+  it("switches A/S toggle back to autonomous on second click", () => {
+    render(<TaskInput />);
+    fireEvent.click(screen.getByLabelText("Autonomous mode"));
+    fireEvent.click(screen.getByLabelText("Supervised mode"));
+    expect(screen.getByLabelText("Autonomous mode")).toBeInTheDocument();
+  });
+
+  it("hides A/S toggle when manual mode is active", () => {
+    render(<TaskInput />);
+    // Switch to manual
+    fireEvent.click(screen.getByLabelText("Switch to manual mode"));
+    expect(screen.queryByLabelText("Autonomous mode")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Supervised mode")).not.toBeInTheDocument();
   });
 
   it("submits with supervisionMode autonomous by default", () => {
@@ -203,16 +223,13 @@ describe("TaskInput", () => {
     });
   });
 
-  it("submits with supervisionMode supervised when selected", () => {
+  it("submits with supervisionMode supervised when toggle is set", () => {
     mockMutate.mockResolvedValue("taskId123");
     render(<TaskInput />);
     const input = screen.getByPlaceholderText("Create a new task...");
     fireEvent.change(input, { target: { value: "Supervised task" } });
-    fireEvent.click(screen.getByLabelText("Toggle options"));
-
-    const supervisionTrigger = screen.getAllByRole("combobox")[2];
-    fireEvent.click(supervisionTrigger);
-    fireEvent.click(screen.getByRole("option", { name: "Supervised" }));
+    // Click the A/S toggle to switch to supervised
+    fireEvent.click(screen.getByLabelText("Autonomous mode"));
     fireEvent.click(screen.getByText("Create"));
 
     expect(mockMutate).toHaveBeenCalledWith({
@@ -222,25 +239,21 @@ describe("TaskInput", () => {
     });
   });
 
-  it("resets supervision mode after submission", async () => {
+  it("resets supervision mode toggle after submission", async () => {
     mockMutate.mockResolvedValue("taskId123");
     render(<TaskInput />);
     const input = screen.getByPlaceholderText("Create a new task...");
     fireEvent.change(input, { target: { value: "Needs review first" } });
-    fireEvent.click(screen.getByLabelText("Toggle options"));
+    // Set to supervised
+    fireEvent.click(screen.getByLabelText("Autonomous mode"));
+    expect(screen.getByLabelText("Supervised mode")).toBeInTheDocument();
 
-    const supervisionTrigger = screen.getAllByRole("combobox")[2];
-    fireEvent.click(supervisionTrigger);
-    fireEvent.click(screen.getByRole("option", { name: "Supervised" }));
     fireEvent.click(screen.getByText("Create"));
 
     await vi.waitFor(() => {
-      expect(screen.queryByText("Agent:")).not.toBeInTheDocument();
+      // After submission, toggle should reset to autonomous
+      expect(screen.getByLabelText("Autonomous mode")).toBeInTheDocument();
     });
-
-    fireEvent.click(screen.getByLabelText("Toggle options"));
-    const resetSupervisionTrigger = screen.getAllByRole("combobox")[2];
-    expect(resetSupervisionTrigger).toHaveTextContent("Autonomous");
   });
 
   it("does not show reviewer section when trust level is autonomous", () => {

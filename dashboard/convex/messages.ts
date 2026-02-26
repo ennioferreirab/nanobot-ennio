@@ -185,33 +185,37 @@ export const postLeadAgentMessage = mutation({
 });
 
 /**
- * List plan-negotiation chat messages for a task.
- * Returns only messages with type "lead_agent_chat" or "user_message".
+ * Post a user plan-chat message to the thread of an in_progress or review task.
+ *
+ * Unlike sendThreadMessage this mutation does NOT transition the task status or
+ * clear the executionPlan. It is used when the user wants to ask the Lead Agent
+ * to modify the plan while execution is underway (Story 7.3, AC 1-2).
+ *
+ * Allowed task statuses: "in_progress", "review".
  */
-export const listPlanChat = query({
-  args: { taskId: v.id("tasks") },
-  handler: async (ctx, args) => {
-    const all = await ctx.db
-      .query("messages")
-      .withIndex("by_taskId", (q) => q.eq("taskId", args.taskId))
-      .collect();
-    return all.filter(
-      (m) => m.type === "lead_agent_chat" || m.type === "user_message"
-    );
-  },
-});
-
-/**
- * Post a user chat message for plan negotiation.
- * Creates a "user_message" typed message in the task thread.
- */
-export const postPlanChatMessage = mutation({
+export const postUserPlanMessage = mutation({
   args: {
     taskId: v.id("tasks"),
     content: v.string(),
   },
   handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new ConvexError("Task not found");
+    }
+    if (task.isManual) {
+      throw new ConvexError("Cannot send thread messages on manual tasks");
+    }
+
+    const allowedStatuses = ["in_progress", "review"];
+    if (!allowedStatuses.includes(task.status)) {
+      throw new ConvexError(
+        `postUserPlanMessage is only allowed when task is in_progress or review (current: ${task.status})`
+      );
+    }
+
     const timestamp = new Date().toISOString();
+
     const messageId = await ctx.db.insert("messages", {
       taskId: args.taskId,
       authorName: "User",
@@ -225,7 +229,7 @@ export const postPlanChatMessage = mutation({
     await ctx.db.insert("activities", {
       taskId: args.taskId,
       eventType: "thread_message_sent",
-      description: "User sent plan negotiation chat message",
+      description: "User sent plan-chat message to Lead Agent",
       timestamp,
     });
 

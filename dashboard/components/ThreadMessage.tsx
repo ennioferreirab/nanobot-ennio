@@ -52,7 +52,7 @@ function getMessageStyles(message: Doc<"messages">): MessageStyles {
       case STRUCTURED_MESSAGE_TYPE.LEAD_AGENT_PLAN:
         return { bg: "bg-indigo-50", label: "Plan", labelColor: "text-indigo-600" };
       case STRUCTURED_MESSAGE_TYPE.LEAD_AGENT_CHAT:
-        return { bg: "bg-indigo-50", label: "Chat", labelColor: "text-indigo-600" };
+        return { bg: "bg-indigo-50", label: "Lead Agent", labelColor: "text-indigo-600" };
       case STRUCTURED_MESSAGE_TYPE.USER_MESSAGE:
         return { bg: "bg-blue-50", label: null, labelColor: "" };
     }
@@ -63,8 +63,15 @@ function getMessageStyles(message: Doc<"messages">): MessageStyles {
 
 export function ThreadMessage({ message, steps }: ThreadMessageProps) {
   const styles = getMessageStyles(message);
+  // Lead Agent messages have authorType "system" but should render as Markdown
+  // (not plain italic text). Exclude lead_agent_plan and lead_agent_chat from
+  // the isSystem flag so they get MarkdownRenderer treatment.
+  const isLeadAgentMessage =
+    message.type === STRUCTURED_MESSAGE_TYPE.LEAD_AGENT_PLAN ||
+    message.type === STRUCTURED_MESSAGE_TYPE.LEAD_AGENT_CHAT;
   const isSystem =
-    message.authorType === "system" || message.messageType === "system_event";
+    !isLeadAgentMessage &&
+    (message.authorType === "system" || message.messageType === "system_event");
   const isSystemError = message.type === STRUCTURED_MESSAGE_TYPE.SYSTEM_ERROR;
   const isApproval = message.messageType === "approval";
   const isDenial = message.messageType === "denial";

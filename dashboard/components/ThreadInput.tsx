@@ -20,7 +20,10 @@ interface ThreadInputProps {
   onMessageSent?: () => void;
 }
 
-const BLOCKED_STATUSES = ["in_progress", "retrying"];
+// Statuses where the user cannot interact with the task thread at all.
+// Note: "in_progress" and "review" (awaitingKickoff) are NOT blocked — users
+// can send plan-chat messages to the Lead Agent in those states (Story 7.3).
+const BLOCKED_STATUSES = ["retrying"];
 
 export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
   const [content, setContent] = useState("");
@@ -32,6 +35,7 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
   );
 
   const sendMessage = useMutation(api.messages.sendThreadMessage);
+  const postPlanMessage = useMutation(api.messages.postUserPlanMessage);
   const restoreTask = useMutation(api.tasks.restore);
   const agents = useQuery(api.agents.list);
   const board = useQuery(
@@ -49,8 +53,16 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
   // Don't render for manual tasks
   if (task.isManual) return null;
 
+  // Plan-chat mode: task is in_progress, or review+awaitingKickoff.
+  // In this mode the user can chat with the Lead Agent to modify the plan.
+  // We use postUserPlanMessage (no status transition, no plan clear).
+  const taskAny = task as any;
+  const isPlanChatMode =
+    task.status === "in_progress" ||
+    (task.status === "review" && taskAny.awaitingKickoff === true);
+
   const isBlocked = BLOCKED_STATUSES.includes(task.status);
-  const canSend = content.trim().length > 0 && selectedAgent && !isSubmitting;
+  const canSend = content.trim().length > 0 && !isSubmitting && (isPlanChatMode || !!selectedAgent);
 
   // Filter agents by board's enabledAgents (empty = all agents eligible)
   const enabledAgentNames = board?.enabledAgents ?? [];
@@ -63,15 +75,21 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
 
   const handleSend = async () => {
     const trimmed = content.trim();
-    if (!trimmed || !selectedAgent) return;
+    if (!trimmed) return;
+    if (!isPlanChatMode && !selectedAgent) return;
     setIsSubmitting(true);
     setError("");
     try {
-      await sendMessage({
-        taskId: task._id,
-        content: trimmed,
-        agentName: selectedAgent,
-      });
+      if (isPlanChatMode) {
+        // Plan-chat: just post the message, Lead Agent subscription handles it
+        await postPlanMessage({ taskId: task._id, content: trimmed });
+      } else {
+        await sendMessage({
+          taskId: task._id,
+          content: trimmed,
+          agentName: selectedAgent,
+        });
+      }
       setContent("");
       onMessageSent?.();
     } catch (err) {
@@ -129,6 +147,39 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
         <p className="text-xs text-muted-foreground text-center">
           Agent is currently working...
         </p>
+      </div>
+    );
+  }
+
+  // Plan-chat mode: simplified input addressed to the Lead Agent
+  if (isPlanChatMode) {
+    return (
+      <div className="px-6 py-3 border-t space-y-2">
+        {error && (
+          <p className="text-xs text-red-500">{error}</p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Ask the Lead Agent to modify the plan...
+        </p>
+        <div className="flex gap-2">
+          <Textarea
+            placeholder="e.g. Add a step to write tests, or remove the deployment step..."
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="text-sm min-h-[80px] max-h-[160px] resize-none"
+            disabled={isSubmitting}
+          />
+          <Button
+            size="icon"
+            variant="default"
+            className="h-[80px] w-10 shrink-0"
+            onClick={handleSend}
+            disabled={!canSend}
+          >
+            <SendHorizontal className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     );
   }

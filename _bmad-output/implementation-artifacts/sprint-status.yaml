@@ -102,3 +102,14 @@ development_status:
   6-2-bridge-manifest-sync-for-agent-output: done
   6-3-lead-agent-file-aware-routing: done
   epic-6-retrospective: optional
+
+  # Epic 7: Supervised Plan 2.0 — Interactive Canvas Experience
+  # Redesigns the supervised plan flow: removes PreKickoffModal,
+  # replaces with editable canvas in ExecutionPlanTab, human as
+  # first-class actor, Lead Agent via thread, and Pause/Resume.
+  epic-7: done
+  7-1-execution-plan-canvas: done
+  7-2-human-as-plan-actor: done
+  7-3-lead-agent-thread-negotiation: done
+  7-4-task-pause-resume: done
+  epic-7-retrospective: optional

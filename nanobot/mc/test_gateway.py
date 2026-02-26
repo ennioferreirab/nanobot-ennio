@@ -57,8 +57,8 @@ def _make_bridge() -> MagicMock:
 class TestSyncValidAgents:
     """Tests for syncing valid agent YAML files.
 
-    NOTE: sync_agent_registry() always auto-creates general-agent (Story 1.3),
-    so all counts include it and "general-agent" always appears in active_names.
+    NOTE: sync_agent_registry() always auto-creates nanobot (Story 1.3),
+    so all counts include it and "nanobot" always appears in active_names.
     """
 
     def test_all_valid_agents_synced(self, tmp_path: Path) -> None:
@@ -82,16 +82,16 @@ class TestSyncValidAgents:
         bridge = _make_bridge()
         agents, errors = sync_agent_registry(bridge, tmp_path)
 
-        # general-agent is always auto-created, so 3 agents total
+        # nanobot is always auto-created, so 3 agents total
         assert len(agents) == 3
         assert errors == {}
-        # dev-agent, test-agent, and general-agent
+        # dev-agent, test-agent, and nanobot
         assert bridge.sync_agent.call_count == 3
         bridge.deactivate_agents_except.assert_called_once()
 
-        # Check agent names passed to deactivate — general-agent always included
+        # Check agent names passed to deactivate — nanobot always included
         deactivate_call_args = bridge.deactivate_agents_except.call_args[0][0]
-        assert set(deactivate_call_args) == {"dev-agent", "test-agent", "general-agent"}
+        assert set(deactivate_call_args) == {"dev-agent", "test-agent", "nanobot"}
 
     def test_single_agent_synced(self, tmp_path: Path) -> None:
         _write_yaml(tmp_path, "solo-agent", """\
@@ -103,13 +103,13 @@ class TestSyncValidAgents:
         bridge = _make_bridge()
         agents, errors = sync_agent_registry(bridge, tmp_path)
 
-        # general-agent is always auto-created alongside solo-agent
+        # nanobot is always auto-created alongside solo-agent
         assert len(agents) == 2
         agent_names = {a.name for a in agents}
         assert "solo-agent" in agent_names
-        assert "general-agent" in agent_names
+        assert "nanobot" in agent_names
         assert errors == {}
-        # solo-agent + general-agent
+        # solo-agent + nanobot
         assert bridge.sync_agent.call_count == 2
 
 
@@ -135,13 +135,13 @@ class TestMixedValidInvalid:
         bridge = _make_bridge()
         agents, errors = sync_agent_registry(bridge, tmp_path)
 
-        # good-agent + general-agent (auto-created); bad-agent fails validation
+        # good-agent + nanobot (auto-created); bad-agent fails validation
         assert len(agents) == 2
         agent_names = {a.name for a in agents}
         assert "good-agent" in agent_names
-        assert "general-agent" in agent_names
+        assert "nanobot" in agent_names
         assert "bad-agent" in errors
-        # good-agent + general-agent synced
+        # good-agent + nanobot synced
         assert bridge.sync_agent.call_count == 2
 
     def test_all_invalid_no_sync(self, tmp_path: Path) -> None:
@@ -158,14 +158,14 @@ class TestMixedValidInvalid:
         bridge = _make_bridge()
         agents, errors = sync_agent_registry(bridge, tmp_path)
 
-        # general-agent is always auto-created even when all user agents are invalid
+        # nanobot is always auto-created even when all user agents are invalid
         assert len(agents) == 1
-        assert agents[0].name == "general-agent"
+        assert agents[0].name == "nanobot"
         assert len(errors) == 2
-        # general-agent still synced
+        # nanobot still synced
         bridge.sync_agent.assert_called_once()
-        # deactivate_agents_except called with just general-agent
-        bridge.deactivate_agents_except.assert_called_once_with(["general-agent"])
+        # deactivate_agents_except called with just nanobot
+        bridge.deactivate_agents_except.assert_called_once_with(["nanobot"])
 
 
 # ---------------------------------------------------------------------------
@@ -259,19 +259,19 @@ class TestDeactivation:
 
         bridge.deactivate_agents_except.assert_called_once()
         active_names = bridge.deactivate_agents_except.call_args[0][0]
-        # general-agent is always auto-created and included in active names
-        assert set(active_names) == {"agent-a", "agent-b", "general-agent"}
+        # nanobot is always auto-created and included in active names
+        assert set(active_names) == {"agent-a", "agent-b", "nanobot"}
 
     def test_empty_dir_deactivates_all(self, tmp_path: Path) -> None:
         bridge = _make_bridge()
         agents, errors = sync_agent_registry(bridge, tmp_path)
 
-        # general-agent is always auto-created, so 1 agent even in empty dir
+        # nanobot is always auto-created, so 1 agent even in empty dir
         assert len(agents) == 1
-        assert agents[0].name == "general-agent"
+        assert agents[0].name == "nanobot"
         assert errors == {}
-        # deactivate_agents_except called with just general-agent
-        bridge.deactivate_agents_except.assert_called_once_with(["general-agent"])
+        # deactivate_agents_except called with just nanobot
+        bridge.deactivate_agents_except.assert_called_once_with(["nanobot"])
 
 
 # ---------------------------------------------------------------------------
@@ -282,15 +282,15 @@ class TestEdgeCases:
     """Edge case tests."""
 
     def test_nonexistent_directory(self, tmp_path: Path) -> None:
-        # When agents_dir doesn't exist, ensure_general_agent() creates it
-        # along with the general-agent subdirectory.
+        # When agents_dir doesn't exist, ensure_nanobot_agent() creates it
+        # along with the nanobot subdirectory.
         missing = tmp_path / "nonexistent"
         bridge = _make_bridge()
         agents, errors = sync_agent_registry(bridge, missing)
 
-        # general-agent is always created even when agents_dir was absent
+        # nanobot is always created even when agents_dir was absent
         assert len(agents) == 1
-        assert agents[0].name == "general-agent"
+        assert agents[0].name == "nanobot"
         assert errors == {}
 
     def test_sync_agent_failure_does_not_block_others(self, tmp_path: Path) -> None:
@@ -306,12 +306,12 @@ class TestEdgeCases:
         """)
 
         bridge = _make_bridge()
-        # Three sync calls: agent-a (fails), agent-b (succeeds), general-agent (succeeds)
+        # Three sync calls: agent-a (fails), agent-b (succeeds), nanobot (succeeds)
         bridge.sync_agent.side_effect = [Exception("network error"), None, None]
 
         agents, errors = sync_agent_registry(bridge, tmp_path)
 
-        # All three agents validated (agent-a, agent-b, general-agent)
+        # All three agents validated (agent-a, agent-b, nanobot)
         assert len(agents) == 3
         # sync_agent was called for all three
         assert bridge.sync_agent.call_count == 3

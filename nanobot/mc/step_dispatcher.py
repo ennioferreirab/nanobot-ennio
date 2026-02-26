@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from nanobot.mc.types import (
     ActivityEventType,
     AuthorType,
-    GENERAL_AGENT_NAME,
+    NANOBOT_AGENT_NAME,
     MessageType,
     StepStatus,
     TaskStatus,
@@ -180,6 +180,26 @@ class StepDispatcher:
             )
 
             while True:
+                # Pre-dispatch task status check (AC 7, Story 7.4):
+                # If task is not in_progress (e.g., paused/review), skip new dispatches.
+                task_check = await asyncio.to_thread(
+                    self._bridge.query,
+                    "tasks:getById",
+                    {"task_id": task_id},
+                )
+                current_status = (
+                    task_check.get("status", "unknown")
+                    if isinstance(task_check, dict)
+                    else "unknown"
+                )
+                if current_status != TaskStatus.IN_PROGRESS:
+                    logger.info(
+                        "[dispatcher] Task %s is not in_progress (status=%s); skipping dispatch",
+                        task_id,
+                        current_status,
+                    )
+                    break
+
                 steps = await asyncio.to_thread(self._bridge.get_steps_by_task, task_id)
                 assigned_steps = [
                     step
@@ -289,14 +309,14 @@ class StepDispatcher:
 
         step_title = (step.get("title") or "Untitled Step").strip()
         step_description = step.get("description") or ""
-        agent_name = (step.get("assigned_agent") or GENERAL_AGENT_NAME).strip()
+        agent_name = (step.get("assigned_agent") or NANOBOT_AGENT_NAME).strip()
         if is_lead_agent(agent_name):
             logger.warning(
                 "[dispatcher] Step '%s' assigned to lead-agent; rerouting to '%s'",
                 step_title,
-                GENERAL_AGENT_NAME,
+                NANOBOT_AGENT_NAME,
             )
-            agent_name = GENERAL_AGENT_NAME
+            agent_name = NANOBOT_AGENT_NAME
 
         await asyncio.to_thread(
             self._bridge.update_step_status,
@@ -314,6 +334,11 @@ class StepDispatcher:
         try:
             agent_prompt, agent_model, agent_skills = _load_agent_config(agent_name)
             agent_prompt = _maybe_inject_orientation(agent_name, agent_prompt)
+
+            # System agents (nanobot) use identity from SOUL.md + ContextBuilder —
+            # skip prompt/orientation injection so MC uses the exact same prompt as Telegram.
+            if agent_name == NANOBOT_AGENT_NAME:
+                agent_prompt = None
 
             thread_messages = await asyncio.to_thread(
                 self._bridge.get_task_messages, task_id

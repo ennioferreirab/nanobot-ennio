@@ -99,3 +99,65 @@ export function recalcParallelGroups(steps: PlanStep[]): PlanStep[] {
     parallelGroup: levels.get(s.tempId) ?? 0,
   }));
 }
+
+/**
+ * Topological sort (Kahn's algorithm) to compute `order` from the DAG.
+ * Steps with no blockers get the lowest orders; dependents come after.
+ * Within the same level, original array order is preserved.
+ *
+ * @param steps - Current plan steps
+ * @returns New steps array with updated `order` values (0-indexed)
+ */
+export function recalcOrderFromDAG(steps: PlanStep[]): PlanStep[] {
+  const stepMap = new Map(steps.map((s) => [s.tempId, s]));
+  const inDegree = new Map<string, number>();
+  const adj = new Map<string, string[]>();
+
+  for (const s of steps) {
+    inDegree.set(s.tempId, 0);
+    adj.set(s.tempId, []);
+  }
+
+  for (const s of steps) {
+    for (const blocker of s.blockedBy) {
+      if (stepMap.has(blocker)) {
+        const targets = adj.get(blocker)!;
+        targets.push(s.tempId);
+        inDegree.set(s.tempId, (inDegree.get(s.tempId) ?? 0) + 1);
+      }
+    }
+  }
+
+  // Seed queue with zero in-degree nodes, preserving original order
+  const queue: string[] = steps
+    .filter((s) => (inDegree.get(s.tempId) ?? 0) === 0)
+    .map((s) => s.tempId);
+
+  const sorted: string[] = [];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    sorted.push(current);
+    for (const neighbor of adj.get(current) ?? []) {
+      const deg = (inDegree.get(neighbor) ?? 1) - 1;
+      inDegree.set(neighbor, deg);
+      if (deg === 0) {
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  // If cycle detected (sorted.length < steps.length), append remaining
+  if (sorted.length < steps.length) {
+    for (const s of steps) {
+      if (!sorted.includes(s.tempId)) {
+        sorted.push(s.tempId);
+      }
+    }
+  }
+
+  const orderMap = new Map(sorted.map((id, i) => [id, i]));
+  return steps.map((s) => ({
+    ...s,
+    order: orderMap.get(s.tempId) ?? s.order,
+  }));
+}

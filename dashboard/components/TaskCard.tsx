@@ -145,15 +145,12 @@ export function TaskCard({ task, onClick, tagColorMap }: TaskCardProps) {
             </span>
             <span className="truncate">{task.assignedAgent ?? "Unassigned"}</span>
           </span>
-          <Badge
-            variant="secondary"
-            className={`h-5 rounded-full px-2 text-[10px] font-medium ${colors.bg} ${colors.text}`}
-          >
-            {task.status === "reviewing_plan" ? "reviewing plan" : task.status}
-          </Badge>
-          {task.status === "reviewing_plan" && (
-            <Badge className="h-5 rounded-full bg-amber-400 px-2 text-[10px] text-amber-900 font-medium">
-              Awaiting Kick-off
+          {!(task.status === "review") && (
+            <Badge
+              variant="secondary"
+              className={`h-5 rounded-full px-2 text-[10px] font-medium ${colors.bg} ${colors.text}`}
+            >
+              {task.status}
             </Badge>
           )}
           {task.trustLevel === "human_approved" && (
@@ -192,6 +189,22 @@ export function TaskCard({ task, onClick, tagColorMap }: TaskCardProps) {
             )}
           </div>
           <div className="ml-auto flex items-center gap-1">
+          {task.status === "review" && (task as any).awaitingKickoff === true && (
+            <Badge
+              className="h-5 rounded-full bg-amber-400 px-2 text-[10px] text-amber-900 font-medium"
+              data-testid="awaiting-kickoff-badge"
+            >
+              Awaiting Kick-off
+            </Badge>
+          )}
+          {task.status === "review" && !(task as any).awaitingKickoff && (
+            <Badge
+              className="h-5 rounded-full bg-orange-100 px-2 text-[10px] text-orange-700 font-medium"
+              data-testid="paused-badge"
+            >
+              Paused
+            </Badge>
+          )}
           {showHitlButtons && (
             <>
               <Button

@@ -25,7 +25,7 @@ def _step(
     parallel_group: int = 1,
     order: int = 1,
     blocked_by: list[str] | None = None,
-    assigned_agent: str = "general-agent",
+    assigned_agent: str = "nanobot",
 ) -> dict[str, Any]:
     return {
         "id": step_id,
@@ -80,7 +80,7 @@ def _make_stateful_bridge(
     bridge.update_task_status.return_value = None
     bridge.create_activity.return_value = None
     bridge.get_task_messages.return_value = []
-    bridge.query.return_value = {"title": "Main Task"}
+    bridge.query.return_value = {"title": "Main Task", "status": "in_progress"}
     bridge.get_board_by_id.return_value = None
     bridge.send_message.return_value = None
     bridge.post_step_completion.return_value = None
@@ -143,15 +143,15 @@ class TestStepDispatcher:
         )
         bridge.create_activity.assert_any_call(
             ActivityEventType.STEP_STARTED,
-            "Agent general-agent started step: Analyze",
+            "Agent nanobot started step: Analyze",
             "task-1",
-            "general-agent",
+            "nanobot",
         )
         bridge.create_activity.assert_any_call(
             ActivityEventType.STEP_COMPLETED,
-            "Agent general-agent completed step: Analyze",
+            "Agent nanobot completed step: Analyze",
             "task-1",
-            "general-agent",
+            "nanobot",
         )
         bridge.create_activity.assert_any_call(
             ActivityEventType.TASK_COMPLETED,
@@ -279,7 +279,7 @@ class TestStepDispatcher:
             "task-1",
             "System",
             AuthorType.SYSTEM,
-            'Step "Crash" crashed:\n```\nRuntimeError: boom\n```\nAgent: general-agent',
+            'Step "Crash" crashed:\n```\nRuntimeError: boom\n```\nAgent: nanobot',
             MessageType.SYSTEM_EVENT,
         )
 
@@ -395,7 +395,7 @@ class TestStepDispatcher:
         call_args = bridge.post_step_completion.call_args
         assert call_args[0][0] == "task-1"        # task_id
         assert call_args[0][1] == "step-1"        # step_id
-        assert call_args[0][2] == "general-agent" # agent_name
+        assert call_args[0][2] == "nanobot" # agent_name
         assert call_args[0][3] == "Report written." # content
 
     @pytest.mark.asyncio
@@ -491,6 +491,7 @@ class TestTaskFileManifestInjection:
         bridge, state = _make_stateful_bridge([_step("step-1", "Analyze", order=1)])
         bridge.query.return_value = {
             "title": "Main Task",
+            "status": "in_progress",
             "files": [
                 {
                     "name": "report.pdf",
@@ -547,7 +548,7 @@ class TestTaskFileManifestInjection:
     async def test_step_without_task_files_does_not_include_manifest(self) -> None:
         """When a task has no files, no file manifest section appears in the description."""
         bridge, state = _make_stateful_bridge([_step("step-1", "Compute", order=1)])
-        bridge.query.return_value = {"title": "Main Task", "files": []}
+        bridge.query.return_value = {"title": "Main Task", "status": "in_progress", "files": []}
         dispatcher = StepDispatcher(bridge)
 
         captured_description: list[str] = []
@@ -619,6 +620,7 @@ class TestTaskFileManifestInjection:
         bridge, state = _make_stateful_bridge([_step("step-1", "Analyze", order=1)])
         bridge.query.return_value = {
             "title": "Main Task",
+            "status": "in_progress",
             "files": [
                 {
                     "name": "tiny.txt",
@@ -680,6 +682,7 @@ class TestTaskFileManifestInjection:
         bridge, state = _make_stateful_bridge([_step("step-1", "Process", order=1)])
         bridge.query.return_value = {
             "title": "Main Task",
+            "status": "in_progress",
             "files": [
                 {
                     "name": "report.pdf",
@@ -757,7 +760,7 @@ class TestStepOutputFileSync:
         call_args = bridge.sync_task_output_files.call_args
         assert call_args[0][0] == "task-1"           # task_id
         assert isinstance(call_args[0][1], dict)     # task_data is a dict
-        assert call_args[0][2] == "general-agent"    # agent_name
+        assert call_args[0][2] == "nanobot"    # agent_name
 
         # Step must still be completed
         assert state["step-1"]["status"] == StepStatus.COMPLETED
@@ -895,8 +898,8 @@ class TestSupervisedModeSkipsDispatch:
         bridge = MagicMock()
         bridge.list_agents.return_value = [
             {
-                "name": "general-agent",
-                "display_name": "General Agent",
+                "name": "nanobot",
+                "display_name": "Owl",
                 "role": "general",
                 "status": "active",
                 "model": "test",
@@ -918,7 +921,7 @@ class TestSupervisedModeSkipsDispatch:
             steps=[
                 ExecutionPlanStep(
                     temp_id="s1", title="Step", description="d",
-                    assigned_agent="general-agent", blocked_by=[],
+                    assigned_agent="nanobot", blocked_by=[],
                     parallel_group=1, order=1,
                 )
             ]
@@ -940,6 +943,54 @@ class TestSupervisedModeSkipsDispatch:
         mock_create_task.assert_not_called()
 
 
+class TestPausedTaskDispatch:
+    """Story 7.4: Dispatcher respects paused task state (AC 7)."""
+
+    @pytest.mark.asyncio
+    async def test_dispatcher_skips_dispatch_when_task_is_paused(self) -> None:
+        """AC 7: dispatcher skips new step dispatch when task status is 'review' (paused).
+
+        Story 7.4: When a task is paused (status=review, no awaitingKickoff), the
+        pre-dispatch check must see status != in_progress and skip the dispatch.
+        The step must remain in 'assigned' status (not dispatched).
+        """
+        bridge, state = _make_stateful_bridge([_step("step-1", "Analyze", order=1)])
+        # Simulate a paused task: bridge.query returns status=review
+        bridge.query.return_value = {"title": "Main Task", "status": "review"}
+        dispatcher = StepDispatcher(bridge)
+
+        run_agent_called = False
+
+        async def _should_not_run(*args: Any, **kwargs: Any) -> str:
+            nonlocal run_agent_called
+            run_agent_called = True
+            return "should not be reached"
+
+        snap_patch, collect_patch = _patch_executor_helpers()
+        with (
+            patch("nanobot.mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
+            patch(
+                "nanobot.mc.step_dispatcher._load_agent_config",
+                return_value=(None, None, None),
+            ),
+            patch(
+                "nanobot.mc.step_dispatcher._maybe_inject_orientation",
+                side_effect=lambda agent_name, prompt: prompt,
+            ),
+            patch("nanobot.mc.step_dispatcher._run_step_agent", side_effect=_should_not_run),
+            snap_patch,
+            collect_patch,
+        ):
+            await dispatcher.dispatch_steps("task-1", ["step-1"])
+
+        # The step agent must NOT have been called — dispatch was skipped
+        assert not run_agent_called, "Step agent was called despite task being paused (review status)"
+        # Step must remain in 'assigned' status (not completed or crashed)
+        assert state["step-1"]["status"] == StepStatus.ASSIGNED
+        # Task must NOT be marked done
+        bridge.update_task_status.assert_not_called()
+
+
 class TestTaskLevelFileSummaryInDelegationContext:
     """Story 6.3: Task-level file summary (using _build_file_summary) in delegation context.
 
@@ -956,6 +1007,7 @@ class TestTaskLevelFileSummaryInDelegationContext:
         bridge, state = _make_stateful_bridge([_step("step-1", "Analyze", order=1)])
         bridge.query.return_value = {
             "title": "Main Task",
+            "status": "in_progress",
             "files": [
                 {
                     "name": "invoice.pdf",
@@ -1016,7 +1068,7 @@ class TestTaskLevelFileSummaryInDelegationContext:
     ) -> None:
         """AC #3: no file summary noise when task has no file attachments."""
         bridge, state = _make_stateful_bridge([_step("step-1", "Compute", order=1)])
-        bridge.query.return_value = {"title": "Main Task", "files": []}
+        bridge.query.return_value = {"title": "Main Task", "status": "in_progress", "files": []}
         dispatcher = StepDispatcher(bridge)
 
         captured_description: list[str] = []

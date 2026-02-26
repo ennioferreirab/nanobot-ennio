@@ -20,7 +20,6 @@ export default defineSchema({
     description: v.optional(v.string()),
     status: v.union(
       v.literal("planning"),
-      v.literal("reviewing_plan"),
       v.literal("ready"),
       v.literal("failed"),
       v.literal("inbox"),
@@ -49,6 +48,7 @@ export default defineSchema({
     )),
     stalledAt: v.optional(v.string()),
     isManual: v.optional(v.boolean()),
+    awaitingKickoff: v.optional(v.boolean()),
     deletedAt: v.optional(v.string()),
     previousStatus: v.optional(v.string()),
     boardId: v.optional(v.id("boards")),
@@ -78,6 +78,7 @@ export default defineSchema({
       v.literal("completed"),
       v.literal("crashed"),
       v.literal("blocked"),
+      v.literal("waiting_human"),
     ),
     blockedBy: v.optional(v.array(v.id("steps"))),
     parallelGroup: v.number(),

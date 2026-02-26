@@ -1,11 +1,14 @@
 """Plan Negotiation Handler — allows users to chat with the Lead Agent to modify
-an execution plan before kick-off.
+an execution plan before kick-off or during execution.
 
-Implements Story 4.5 AC4 and AC10:
-- Subscribes to lead_agent_chat messages on reviewing_plan tasks.
+Implements Story 4.5 AC4 and AC10 (pre-kickoff plan chat) and Story 7.3 (thread-based
+negotiation during both review and in_progress phases):
+- Subscribes to user thread messages on review (awaitingKickoff) and in_progress tasks.
 - Dispatches each user message to the LLM.
 - Either updates the execution plan and explains the change, or responds
   with a clarification/acknowledgment message.
+- During execution: only allows modifications to pending/blocked steps; locked steps
+  (assigned, running, completed) cannot be changed.
 """
 
 from __future__ import annotations
@@ -97,6 +100,21 @@ User request: {user_message}
 Please respond with a JSON object as described in the system prompt.
 """
 
+EXECUTION_CONTEXT_PROMPT = """\
+
+Current execution state:
+- Steps that CAN be modified (planned or blocked): {modifiable_steps}
+- Steps that are LOCKED (assigned, running, completed, waiting_human, or crashed — cannot be modified): {locked_steps}
+
+If the user asks to modify a locked step, respond with action=clarify and explain \
+that the step is already in progress or completed and cannot be changed.
+"""
+
+# Step statuses that are "in flight" or done — cannot be modified mid-execution
+LOCKED_STEP_STATUSES = {"assigned", "running", "completed", "waiting_human", "crashed"}
+# Step statuses that can still be modified
+MODIFIABLE_STEP_STATUSES = {"planned", "blocked"}
+
 
 def _parse_negotiation_response(raw: str) -> dict[str, Any]:
     """Parse LLM response JSON, handling markdown code fences."""
@@ -120,6 +138,8 @@ async def handle_plan_negotiation(
     task_id: str,
     user_message: str,
     current_plan: dict[str, Any],
+    task_status: str = "review",
+    current_steps: list[dict[str, Any]] | None = None,
 ) -> None:
     """Handle a single user plan negotiation message.
 
@@ -130,15 +150,22 @@ async def handle_plan_negotiation(
     - If the LLM asks for clarification / acknowledges: posts only the chat
       message, leaving the plan unchanged.
 
+    During execution (task_status == "in_progress"), the LLM prompt is augmented
+    with the current step execution states so the LLM knows which steps are locked.
+
     Args:
         bridge: ConvexBridge instance for Convex mutations.
         task_id: Convex task _id.
         user_message: The user's plan-change request (raw text).
         current_plan: Current execution plan as a dict (camelCase keys).
+        task_status: Current task status ("review" or "in_progress"). Defaults to "review".
+        current_steps: Current materialized steps from Convex (used for in_progress context).
+                       If None and task is in_progress, steps will be fetched from bridge.
     """
     logger.info(
-        "[plan_negotiator] Processing plan negotiation for task %s: %r",
+        "[plan_negotiator] Processing plan negotiation for task %s (status=%s): %r",
         task_id,
+        task_status,
         user_message[:100],
     )
 
@@ -151,13 +178,50 @@ async def handle_plan_negotiation(
             user_message=user_message,
         )
 
+        # Build execution context for in_progress tasks
+        # Also build a set of locked step titles for post-LLM enforcement
+        locked_step_titles: set[str] = set()
+        system_prompt = NEGOTIATION_SYSTEM_PROMPT
+        if task_status == "in_progress":
+            # Fetch steps if not provided
+            steps = current_steps
+            if steps is None:
+                steps = await asyncio.to_thread(bridge.get_steps_by_task, task_id)
+            if steps:
+                modifiable = [
+                    s.get("title", s.get("id", "?"))
+                    for s in steps
+                    if s.get("status", "") in MODIFIABLE_STEP_STATUSES
+                ]
+                locked = [
+                    s.get("title", s.get("id", "?"))
+                    for s in steps
+                    if s.get("status", "") in LOCKED_STEP_STATUSES
+                ]
+                locked_step_titles = {
+                    s.get("title", "")
+                    for s in steps
+                    if s.get("status", "") in LOCKED_STEP_STATUSES and s.get("title")
+                }
+                execution_context = EXECUTION_CONTEXT_PROMPT.format(
+                    modifiable_steps=", ".join(modifiable) if modifiable else "none",
+                    locked_steps=", ".join(locked) if locked else "none",
+                )
+                system_prompt = NEGOTIATION_SYSTEM_PROMPT + execution_context
+                logger.debug(
+                    "[plan_negotiator] Added execution context for task %s: "
+                    "%d modifiable, %d locked steps",
+                    task_id,
+                    len(modifiable),
+                    len(locked),
+                )
+
         provider, model = create_provider()
-        raw_response = await asyncio.wait_for(
-            asyncio.to_thread(
-                provider.chat,
+        llm_response = await asyncio.wait_for(
+            provider.chat(
                 model=model,
                 messages=[
-                    {"role": "system", "content": NEGOTIATION_SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.3,
@@ -165,6 +229,7 @@ async def handle_plan_negotiation(
             ),
             timeout=LLM_TIMEOUT_SECONDS,
         )
+        raw_response = llm_response.content or ""
 
         response_data = _parse_negotiation_response(raw_response)
         action = response_data.get("action", "clarify")
@@ -176,6 +241,35 @@ async def handle_plan_negotiation(
             )
 
             if updated_plan_dict and isinstance(updated_plan_dict, dict):
+                # Enforcement: when task is in_progress, veto update_plan responses
+                # that touch steps already in flight (assigned/running/completed).
+                # This prevents the LLM from modifying locked steps even if it
+                # ignores the system-prompt instruction to respond with clarify.
+                if task_status == "in_progress" and locked_step_titles:
+                    proposed_titles = {
+                        step.get("title", "")
+                        for step in updated_plan_dict.get("steps", [])
+                        if step.get("title")
+                    }
+                    touched_locked = proposed_titles & locked_step_titles
+                    if touched_locked:
+                        locked_list = ", ".join(sorted(touched_locked))
+                        logger.info(
+                            "[plan_negotiator] Vetoed update_plan for task %s: "
+                            "proposed plan touches locked steps: %s",
+                            task_id,
+                            locked_list,
+                        )
+                        await asyncio.to_thread(
+                            bridge.post_lead_agent_message,
+                            task_id,
+                            f"I cannot modify the following steps because they are already "
+                            f"in progress or completed: {locked_list}. Only steps that "
+                            f"have not started yet can be changed.",
+                            ThreadMessageType.LEAD_AGENT_CHAT,
+                        )
+                        return
+
                 # Validate and normalize the plan via ExecutionPlan dataclass
                 try:
                     new_plan = ExecutionPlan.from_dict(updated_plan_dict)
@@ -276,15 +370,36 @@ async def handle_plan_negotiation(
         )
 
 
+def _is_negotiable_status(task: dict[str, Any]) -> bool:
+    """Return True if the task is in a status where plan negotiation is active.
+
+    Active statuses:
+    - "review" with awaitingKickoff=True (pre-kickoff plan review)
+    - "in_progress" (during execution — only pending/blocked steps can change)
+    """
+    status = task.get("status", "")
+    if status == "in_progress":
+        return True
+    if status == "review" and task.get("awaiting_kickoff"):
+        return True
+    return False
+
+
 async def start_plan_negotiation_loop(
     bridge: "ConvexBridge",
     task_id: str,
     poll_interval: float = 2.0,
 ) -> None:
-    """Subscribe to lead_agent_chat messages for a task in reviewing_plan status
+    """Subscribe to main thread messages for a task in review or in_progress status
     and dispatch each new user message to the plan negotiation handler.
 
-    Runs until the task leaves reviewing_plan status or the task is no longer found.
+    Subscribes to messages:listByTask (the full task thread) and filters for
+    user messages only. Runs until the task leaves a negotiable status or is
+    no longer found.
+
+    Story 7.3: Replaces the old messages:listPlanChat subscription with
+    messages:listByTask so that the Lead Agent responds to messages in the
+    main thread — both during pre-kickoff review and during execution.
 
     Args:
         bridge: ConvexBridge instance.
@@ -297,12 +412,16 @@ async def start_plan_negotiation_loop(
     )
 
     queue = bridge.async_subscribe(
-        "messages:listPlanChat",
+        "messages:listByTask",
         {"task_id": task_id},
         poll_interval=poll_interval,
     )
 
     seen_message_ids: set[str] = set()
+    # Cap on seen IDs to prevent unbounded growth in long-running tasks.
+    # When the cap is exceeded the oldest IDs are trimmed by rebuilding the set
+    # from the current subscription batch (all current IDs become "seen").
+    _SEEN_IDS_MAX = 1000
 
     while True:
         messages = await queue.get()
@@ -319,7 +438,7 @@ async def start_plan_negotiation_loop(
         if not messages:
             continue
 
-        # Check that the task is still in reviewing_plan status
+        # Check that the task is still in a negotiable status
         try:
             task = await asyncio.to_thread(
                 bridge.query, "tasks:getById", {"task_id": task_id}
@@ -336,19 +455,23 @@ async def start_plan_negotiation_loop(
             )
             break
 
-        task_status = task.get("status", "")
-        if task_status != "reviewing_plan":
+        if not _is_negotiable_status(task):
+            task_status = task.get("status", "")
             logger.info(
-                "[plan_negotiator] Task %s is now '%s'; stopping loop",
+                "[plan_negotiator] Task %s is now '%s'; stopping negotiation loop",
                 task_id,
                 task_status,
             )
             break
 
+        task_status = task.get("status", "")
+
         # Get current plan from task
         current_plan = task.get("execution_plan") or task.get("executionPlan") or {}
 
-        # Process only new user messages (not ones we've already seen)
+        # Process only new user messages (not ones we've already seen).
+        # Pruning happens AFTER processing so that new messages in the current
+        # batch are never incorrectly marked as seen before they are dispatched.
         for msg in messages:
             msg_id = msg.get("_id") or msg.get("id") or ""
             author_type = msg.get("author_type") or msg.get("authorType") or ""
@@ -357,7 +480,8 @@ async def start_plan_negotiation_loop(
                 continue
             seen_message_ids.add(msg_id)
 
-            # Only process user messages (the Lead Agent's own responses are skipped)
+            # Only process user messages (skip agent completions, system events,
+            # and the Lead Agent's own responses to avoid an infinite loop)
             if author_type != "user":
                 continue
 
@@ -366,13 +490,36 @@ async def start_plan_negotiation_loop(
                 continue
 
             logger.info(
-                "[plan_negotiator] New user message on task %s: %r",
+                "[plan_negotiator] New user message on task %s (status=%s): %r",
                 task_id,
+                task_status,
                 content[:80],
             )
 
             # Dispatch to handler as a background task with error logging
-            task = asyncio.create_task(
-                handle_plan_negotiation(bridge, task_id, content, current_plan)
+            bg_task = asyncio.create_task(
+                handle_plan_negotiation(
+                    bridge,
+                    task_id,
+                    content,
+                    current_plan,
+                    task_status=task_status,
+                )
             )
-            task.add_done_callback(_log_task_exception)
+            bg_task.add_done_callback(_log_task_exception)
+
+        # Prune seen_message_ids if it grows too large. Done after processing
+        # so that new messages in the current batch are never skipped.
+        # Since the subscription returns the full current message list each time,
+        # we rebuild the set from the current batch (all returned IDs become "seen").
+        if len(seen_message_ids) > _SEEN_IDS_MAX:
+            seen_message_ids = {
+                m.get("_id") or m.get("id") or ""
+                for m in messages
+                if m.get("_id") or m.get("id")
+            }
+            logger.debug(
+                "[plan_negotiator] Pruned seen_message_ids for task %s (now %d)",
+                task_id,
+                len(seen_message_ids),
+            )

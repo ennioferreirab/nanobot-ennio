@@ -1,0 +1,176 @@
+"use client";
+
+import { memo } from "react";
+import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import {
+  CheckCircle,
+  CheckCircle2,
+  Circle,
+  CircleDot,
+  Loader2,
+  Lock,
+  User,
+  XCircle,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { STATUS_COLORS } from "@/lib/constants";
+import type { PlanStep } from "@/lib/types";
+
+/* ── Status helpers (shared with ExecutionPlanTab) ── */
+
+interface StepStatusMeta {
+  badgeText: string;
+  iconColorClass: string;
+  badgeClass: string;
+  runningPulse?: boolean;
+  icon: "completed" | "running" | "failed" | "blocked" | "assigned" | "pending" | "waiting_human";
+}
+
+export function normalizeStatus(status: string | null | undefined): string {
+  if (typeof status !== "string") return "planned";
+  return status.trim().toLowerCase() || "planned";
+}
+
+export function getStatusMeta(status: string): StepStatusMeta {
+  const normalized = normalizeStatus(status);
+  switch (normalized) {
+    case "assigned":
+      return { badgeText: "Assigned", iconColorClass: "text-cyan-500", badgeClass: `${STATUS_COLORS.assigned.bg} ${STATUS_COLORS.assigned.text}`, icon: "assigned" };
+    case "blocked":
+      return { badgeText: "Blocked", iconColorClass: "text-amber-500", badgeClass: `${STATUS_COLORS.review.bg} ${STATUS_COLORS.review.text}`, icon: "blocked" };
+    case "waiting_human":
+      return { badgeText: "Awaiting Human", iconColorClass: "text-amber-500", badgeClass: "bg-amber-50 text-amber-700", icon: "waiting_human" };
+    case "running":
+      return { badgeText: "Running", iconColorClass: "text-blue-500", badgeClass: `${STATUS_COLORS.in_progress.bg} ${STATUS_COLORS.in_progress.text}`, runningPulse: true, icon: "running" };
+    case "in_progress":
+      return { badgeText: "In Progress", iconColorClass: "text-blue-500", badgeClass: `${STATUS_COLORS.in_progress.bg} ${STATUS_COLORS.in_progress.text}`, runningPulse: true, icon: "running" };
+    case "completed":
+      return { badgeText: "Done", iconColorClass: "text-green-500", badgeClass: `${STATUS_COLORS.done.bg} ${STATUS_COLORS.done.text}`, icon: "completed" };
+    case "crashed":
+      return { badgeText: "Crashed", iconColorClass: "text-red-500", badgeClass: `${STATUS_COLORS.crashed.bg} ${STATUS_COLORS.crashed.text}`, icon: "failed" };
+    case "failed":
+      return { badgeText: "Failed", iconColorClass: "text-red-500", badgeClass: `${STATUS_COLORS.crashed.bg} ${STATUS_COLORS.crashed.text}`, icon: "failed" };
+    case "planned":
+      return { badgeText: "Planned", iconColorClass: "text-muted-foreground", badgeClass: "bg-muted text-muted-foreground", icon: "pending" };
+    default:
+      return { badgeText: "Pending", iconColorClass: "text-muted-foreground", badgeClass: "bg-muted text-muted-foreground", icon: "pending" };
+  }
+}
+
+function StepStatusIcon({ meta }: { meta: StepStatusMeta }) {
+  const cls = cn("h-3.5 w-3.5", meta.iconColorClass, meta.icon === "running" && "animate-spin");
+  switch (meta.icon) {
+    case "completed": return <CheckCircle2 className={cls} />;
+    case "running": return <Loader2 className={cls} />;
+    case "failed": return <XCircle className={cls} />;
+    case "blocked": return <Lock className={cls} />;
+    case "assigned": return <CircleDot className={cls} />;
+    case "waiting_human": return <User className={cls} />;
+    default: return <Circle className={cls} />;
+  }
+}
+
+/* ── Node data type ── */
+
+export type FlowStepNodeData = {
+  step: PlanStep;
+  status?: string;
+  isEditMode?: boolean;
+  onAccept?: (stepId: string) => void;
+  isAccepting?: boolean;
+  acceptError?: string;
+};
+
+export type FlowStepNodeType = Node<FlowStepNodeData, "flowStep">;
+
+/* ── Component ── */
+
+function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) {
+  const { step, status, isEditMode, onAccept, isAccepting, acceptError } = data;
+  const resolvedStatus = status ?? "planned";
+  const meta = getStatusMeta(resolvedStatus);
+  const isWaitingHuman = normalizeStatus(resolvedStatus) === "waiting_human";
+  const agentDisplay = step.assignedAgent === "human" ? null : step.assignedAgent;
+
+  return (
+    <div
+      data-testid={`flow-step-node-${step.tempId}`}
+      className={cn(
+        "rounded-lg border bg-background px-3 py-2 shadow-sm w-[220px]",
+        selected ? "border-blue-500 ring-1 ring-blue-500/30" : "border-border",
+        meta.runningPulse && "motion-safe:animate-pulse"
+      )}
+    >
+      {/* Handles for edge connections */}
+      <Handle
+        type="target"
+        position={Position.Top}
+        className={cn(
+          "!w-2 !h-2 !bg-muted-foreground/50 !border-background",
+          !isEditMode && "!opacity-0 !pointer-events-none"
+        )}
+      />
+
+      {/* Header: status icon + title */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <StepStatusIcon meta={meta} />
+        <span className="text-xs font-medium truncate flex-1">
+          {step.title || "Untitled"}
+        </span>
+        <Badge
+          variant="secondary"
+          className={cn("text-[9px] font-medium shrink-0 px-1.5 py-0", meta.badgeClass)}
+        >
+          {meta.badgeText}
+        </Badge>
+      </div>
+
+      {/* Agent badge */}
+      {agentDisplay && (
+        <p className="text-[10px] text-muted-foreground mt-1 truncate">{agentDisplay}</p>
+      )}
+
+      {/* Accept button for waiting_human in read-only mode */}
+      {isWaitingHuman && !isEditMode && onAccept && (
+        <div className="mt-1.5">
+          <button
+            type="button"
+            data-testid={`accept-step-${step.tempId}`}
+            disabled={isAccepting}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAccept(step.tempId);
+            }}
+            className={cn(
+              "inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium",
+              "bg-green-600 text-white hover:bg-green-700 transition-colors",
+              "disabled:opacity-60 disabled:cursor-not-allowed"
+            )}
+          >
+            {isAccepting ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <CheckCircle className="h-3 w-3" />
+            )}
+            Accept
+          </button>
+          {acceptError && (
+            <p className="mt-0.5 text-[10px] text-red-600">{acceptError}</p>
+          )}
+        </div>
+      )}
+
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className={cn(
+          "!w-2 !h-2 !bg-muted-foreground/50 !border-background",
+          !isEditMode && "!opacity-0 !pointer-events-none"
+        )}
+      />
+    </div>
+  );
+}
+
+export const FlowStepNode = memo(FlowStepNodeComponent);

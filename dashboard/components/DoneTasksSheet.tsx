@@ -12,7 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CheckCircle2, Undo2 } from "lucide-react";
+import { CheckCircle2, Trash2, Undo2 } from "lucide-react";
 
 interface DoneTasksSheetProps {
   open: boolean;
@@ -31,6 +31,7 @@ function formatDate(isoString: string): string {
 export function DoneTasksSheet({ open, onClose }: DoneTasksSheetProps) {
   const doneHistory = useQuery(api.tasks.listDoneHistory);
   const restoreMutation = useMutation(api.tasks.restore);
+  const softDeleteMutation = useMutation(api.tasks.softDelete);
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
@@ -103,8 +104,8 @@ export function DoneTasksSheet({ open, onClose }: DoneTasksSheetProps) {
                           </span>
                         )}
                       </div>
-                      {isCleared && (
-                        <div className="flex gap-2">
+                      <div className="flex gap-2">
+                        {isCleared ? (
                           <Button
                             size="sm"
                             variant="outline"
@@ -120,8 +121,19 @@ export function DoneTasksSheet({ open, onClose }: DoneTasksSheetProps) {
                             <Undo2 className="h-3.5 w-3.5 mr-1" />
                             Restore
                           </Button>
-                        </div>
-                      )}
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-xs h-7 px-2 text-muted-foreground hover:text-red-500"
+                            title="Delete task"
+                            onClick={() => softDeleteMutation({ taskId: task._id })}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-1" />
+                            Delete
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

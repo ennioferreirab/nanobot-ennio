@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Bot, ChevronDown, Paperclip, User, X } from "lucide-react";
+import { Bot, ChevronDown, Paperclip, User, X, Eye, Zap } from "lucide-react";
 import { TAG_COLORS } from "@/lib/constants";
 import { useBoard } from "@/components/BoardContext";
 
@@ -203,6 +203,29 @@ export function TaskInput() {
           )}
         </Button>
         {!isManual && (
+          <button
+            type="button"
+            aria-label={supervisionMode === "autonomous" ? "Autonomous mode" : "Supervised mode"}
+            title={supervisionMode === "autonomous" ? "Autonomous mode" : "Supervised mode"}
+            onClick={() =>
+              setSupervisionMode((prev) =>
+                prev === "autonomous" ? "supervised" : "autonomous"
+              )
+            }
+            className={`inline-flex items-center justify-center rounded-md text-xs font-bold h-9 w-9 transition-colors ${
+              supervisionMode === "supervised"
+                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            }`}
+          >
+            {supervisionMode === "supervised" ? (
+              <Eye className="h-4 w-4" />
+            ) : (
+              <Zap className="h-4 w-4" />
+            )}
+          </button>
+        )}
+        {!isManual && (
           <CollapsibleTrigger asChild>
             <Button variant="ghost" size="icon" aria-label="Toggle options">
               <ChevronDown
@@ -318,19 +341,6 @@ export function TaskInput() {
                   <SelectItem value="autonomous">Autonomous</SelectItem>
                   <SelectItem value="agent_reviewed">Agent Reviewed</SelectItem>
                   <SelectItem value="human_approved">Human Approved</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground font-medium">Supervision Mode</label>
-              <Select value={supervisionMode} onValueChange={(val) => setSupervisionMode(val as "autonomous" | "supervised")}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="autonomous">Autonomous</SelectItem>
-                  <SelectItem value="supervised">Supervised</SelectItem>
                 </SelectContent>
               </Select>
             </div>

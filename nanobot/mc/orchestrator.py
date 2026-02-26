@@ -198,13 +198,14 @@ class TaskOrchestrator:
 
         supervision_mode = task_data.get("supervision_mode", "autonomous")
         if supervision_mode != "autonomous":
-            # Transition to reviewing_plan so the dashboard can show the kick-off UI
+            # Transition to review with awaitingKickoff so the dashboard shows the kick-off UI
             await asyncio.to_thread(
                 self._bridge.update_task_status,
                 task_id,
-                TaskStatus.REVIEWING_PLAN,
+                TaskStatus.REVIEW,
                 None,
                 f"Plan ready for review: '{title}'",
+                True,  # awaiting_kickoff
             )
             await asyncio.to_thread(
                 self._bridge.create_activity,
@@ -214,7 +215,7 @@ class TaskOrchestrator:
                 self._lead_agent_name,
             )
             logger.info(
-                "[orchestrator] Task '%s' transitioned to reviewing_plan; "
+                "[orchestrator] Task '%s' transitioned to review (awaitingKickoff); "
                 "awaiting user kick-off.",
                 title,
             )
@@ -284,6 +285,10 @@ class TaskOrchestrator:
             tasks = await queue.get()
             if tasks is None:
                 continue
+            # Prune IDs no longer in review so tasks can re-enter and be
+            # re-processed (e.g., after step execution completes → review).
+            current_ids = {t.get("id") for t in tasks if t.get("id")}
+            self._known_review_task_ids &= current_ids
             for task_data in tasks:
                 task_id = task_data.get("id")
                 if not task_id or task_id in self._known_review_task_ids:
@@ -292,11 +297,13 @@ class TaskOrchestrator:
                 await self._handle_review_transition(task_id, task_data)
 
     async def start_kickoff_watch_loop(self) -> None:
-        """Watch for kicked-off tasks that need materialization.
+        """Watch for kicked-off or resumed tasks that need step dispatch.
 
-        Subscribes to in_progress tasks. When a new in_progress task appears
-        that has an execution plan but no materialized steps, it was just
-        kicked off via approveAndKickOff -- materialize and dispatch.
+        Subscribes to in_progress tasks. Handles two cases:
+        1. New kick-off (approveAndKickOff): task has a plan but NO materialized steps
+           → materialize and dispatch.
+        2. Resume (resumeTask): task has existing steps in assigned/blocked status
+           (already materialized). → dispatch_steps to continue execution (AC 5, Task 8).
         """
         logger.info("[orchestrator] Starting kickoff watch loop")
 
@@ -319,17 +326,59 @@ class TaskOrchestrator:
                     continue
                 self._known_kickoff_ids.add(task_id)
 
-                # Only process tasks with a plan but no materialized steps
+                # Only process tasks with an execution plan
                 if not task_data.get("execution_plan"):
                     continue
 
                 steps = await asyncio.to_thread(
                     self._bridge.get_steps_by_task, task_id
                 )
-                if steps:
-                    continue  # Already materialized
 
                 title = task_data.get("title", task_id)
+
+                if steps:
+                    # Task has materialized steps — this is a resumed task (Task 8.2).
+                    # Find assigned OR unblocked-pending steps to dispatch (do NOT re-materialize).
+                    # "assigned" steps are ready to run immediately.
+                    # "pending" steps whose all blockers are "completed" are also dispatchable —
+                    # they were waiting for a dependency that completed before the pause.
+                    from nanobot.mc.types import StepStatus as _StepStatus
+                    completed_step_ids = {
+                        str(step.get("id"))
+                        for step in steps
+                        if step.get("status") == _StepStatus.COMPLETED and step.get("id")
+                    }
+                    dispatchable_step_ids = []
+                    for step in steps:
+                        step_id_str = str(step.get("id")) if step.get("id") else None
+                        if not step_id_str:
+                            continue
+                        status = step.get("status")
+                        if status == _StepStatus.ASSIGNED:
+                            dispatchable_step_ids.append(step_id_str)
+                        elif status == _StepStatus.PENDING:
+                            # Dispatch if all blockers are already completed
+                            blocked_by = step.get("blocked_by") or []
+                            if all(str(b) in completed_step_ids for b in blocked_by):
+                                dispatchable_step_ids.append(step_id_str)
+                    if dispatchable_step_ids:
+                        logger.info(
+                            "[orchestrator] Detected resumed task '%s'; dispatching %d step(s) (assigned + unblocked pending)",
+                            title,
+                            len(dispatchable_step_ids),
+                        )
+                        asyncio.create_task(
+                            self._step_dispatcher.dispatch_steps(
+                                task_id, dispatchable_step_ids
+                            )
+                        )
+                    else:
+                        logger.info(
+                            "[orchestrator] Resumed task '%s' has no dispatchable steps (may still have running steps)",
+                            title,
+                        )
+                    continue  # Do NOT re-materialize
+
                 logger.info(
                     "[orchestrator] Detected kicked-off task '%s'; materializing...",
                     title,
@@ -386,6 +435,39 @@ class TaskOrchestrator:
         self, task_id: str, task: dict[str, Any]
     ) -> None:
         """Handle a task entering review state (FR27)."""
+        title = task.get("title", "Untitled")
+        logger.info(
+            "[orchestrator] _handle_review_transition called for task '%s' (%s) — "
+            "awaiting_kickoff=%s, supervision_mode=%s, trust_level=%s",
+            title,
+            task_id,
+            task.get("awaiting_kickoff"),
+            task.get("supervision_mode"),
+            task.get("trust_level"),
+        )
+
+        # Skip tasks awaiting kick-off — those are supervised plan-review tasks
+        # managed by the PreKickoffModal + kickoff_watch_loop, not work reviews.
+        if task.get("awaiting_kickoff"):
+            logger.info(
+                "[orchestrator] Task '%s' is awaiting kick-off; skipping review routing.",
+                title,
+            )
+            return
+
+        # Skip tasks that were paused mid-execution (Story 7.4):
+        # A paused task enters review WITHOUT awaiting_kickoff but WITH materialized steps.
+        # Auto-completing such a task to "done" would discard all pending/running steps.
+        steps = await asyncio.to_thread(self._bridge.get_steps_by_task, task_id)
+        if steps:
+            logger.info(
+                "[orchestrator] Task '%s' entered review with %d materialized steps — "
+                "treating as paused task; skipping auto-completion.",
+                title,
+                len(steps),
+            )
+            return
+
         reviewers: list[str] = task.get("reviewers") or []
         trust_level = task.get("trust_level", TrustLevel.AUTONOMOUS)
         title = task.get("title", "Untitled")

@@ -177,6 +177,79 @@ describe("TaskCard", () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  // --- Story 7.1: Awaiting Kick-off badge (AC: 6.2) ---
+
+  it("shows Awaiting Kick-off badge when task is in review with awaitingKickoff=true", () => {
+    render(
+      <TaskCard
+        task={{ ...baseTask, status: "review", awaitingKickoff: true } as never}
+      />
+    );
+    expect(screen.getByTestId("awaiting-kickoff-badge")).toBeInTheDocument();
+    expect(screen.getByText("Awaiting Kick-off")).toBeInTheDocument();
+  });
+
+  it("does not show Awaiting Kick-off badge for review tasks without awaitingKickoff", () => {
+    render(
+      <TaskCard task={{ ...baseTask, status: "review" }} />
+    );
+    expect(screen.queryByTestId("awaiting-kickoff-badge")).not.toBeInTheDocument();
+  });
+
+  it("does not show regular status badge when awaitingKickoff=true (badge is suppressed)", () => {
+    render(
+      <TaskCard
+        task={{ ...baseTask, status: "review", awaitingKickoff: true } as never}
+      />
+    );
+    // The regular review status badge is hidden when awaitingKickoff=true
+    const badges = screen.queryAllByText("review");
+    expect(badges).toHaveLength(0);
+  });
+
+  // --- Story 7.4: Paused badge ---
+
+  it("shows Paused badge when task is in review without awaitingKickoff (AC 6)", () => {
+    render(
+      <TaskCard task={{ ...baseTask, status: "review" }} />
+    );
+    expect(screen.getByTestId("paused-badge")).toBeInTheDocument();
+    expect(screen.getByText("Paused")).toBeInTheDocument();
+  });
+
+  it("does NOT show Paused badge when task has awaitingKickoff=true (AC 6)", () => {
+    render(
+      <TaskCard
+        task={{ ...baseTask, status: "review", awaitingKickoff: true } as never}
+      />
+    );
+    expect(screen.queryByTestId("paused-badge")).not.toBeInTheDocument();
+  });
+
+  it("does NOT show Paused badge for non-review tasks (AC 6)", () => {
+    render(<TaskCard task={{ ...baseTask, status: "in_progress" }} />);
+    expect(screen.queryByTestId("paused-badge")).not.toBeInTheDocument();
+  });
+
+  it("suppresses regular status badge for all review tasks (AC 6)", () => {
+    render(
+      <TaskCard task={{ ...baseTask, status: "review" }} />
+    );
+    // The regular status badge showing "review" text must not appear
+    const reviewBadges = screen.queryAllByText("review");
+    expect(reviewBadges).toHaveLength(0);
+  });
+
+  it("suppresses regular status badge for review+awaitingKickoff tasks (AC 6)", () => {
+    render(
+      <TaskCard
+        task={{ ...baseTask, status: "review", awaitingKickoff: true } as never}
+      />
+    );
+    const reviewBadges = screen.queryAllByText("review");
+    expect(reviewBadges).toHaveLength(0);
+  });
+
   // --- Story 5.5: File indicator ---
 
   it("shows paperclip icon and file count when files present", () => {

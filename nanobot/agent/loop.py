@@ -123,6 +123,13 @@ class AgentLoop:
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
 
+        # Register MC delegation tool if Convex is available
+        try:
+            from nanobot.agent.tools.mc_delegate import McDelegateTool
+            self.tools.register(McDelegateTool())
+        except Exception:
+            pass  # MC not configured — tool not available
+
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
         if self._mcp_connected or self._mcp_connecting or not self._mcp_servers:

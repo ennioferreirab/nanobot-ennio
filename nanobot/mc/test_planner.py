@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from nanobot.mc.planner import TaskPlanner, _build_file_summary, _parse_plan_response
-from nanobot.mc.types import AgentData, ExecutionPlan, ExecutionPlanStep, GENERAL_AGENT_NAME, LEAD_AGENT_NAME
+from nanobot.mc.types import AgentData, ExecutionPlan, ExecutionPlanStep, NANOBOT_AGENT_NAME, LEAD_AGENT_NAME
 
 
 def _agent(name: str, skills: list[str] | None = None) -> AgentData:
@@ -37,7 +37,7 @@ def test_parse_plan_response_new_execution_plan_fields() -> None:
                     "tempId": "step_2",
                     "title": "Generate report",
                     "description": "Build summary report",
-                    "assignedAgent": "general-agent",
+                    "assignedAgent": "nanobot",
                     "blockedBy": ["step_1"],
                     "parallelGroup": 2,
                     "order": 2,
@@ -66,14 +66,14 @@ def test_blocked_by_references_are_validated_against_temp_ids() -> None:
                     "tempId": "step_1",
                     "title": "A",
                     "description": "A",
-                    "assignedAgent": "general-agent",
+                    "assignedAgent": "nanobot",
                     "blockedBy": [],
                 },
                 {
                     "tempId": "step_2",
                     "title": "B",
                     "description": "B",
-                    "assignedAgent": "general-agent",
+                    "assignedAgent": "nanobot",
                     "blockedBy": ["step_1", "step_99", "step_2"],
                 },
             ]
@@ -93,7 +93,7 @@ def test_parallel_group_normalization_for_independent_and_dependent_steps() -> N
                     "tempId": "step_1",
                     "title": "A",
                     "description": "A",
-                    "assignedAgent": "general-agent",
+                    "assignedAgent": "nanobot",
                     "blockedBy": [],
                     "parallelGroup": 3,
                 },
@@ -101,7 +101,7 @@ def test_parallel_group_normalization_for_independent_and_dependent_steps() -> N
                     "tempId": "step_2",
                     "title": "B",
                     "description": "B",
-                    "assignedAgent": "general-agent",
+                    "assignedAgent": "nanobot",
                     "blockedBy": [],
                     "parallelGroup": 9,
                 },
@@ -109,7 +109,7 @@ def test_parallel_group_normalization_for_independent_and_dependent_steps() -> N
                     "tempId": "step_3",
                     "title": "C",
                     "description": "C",
-                    "assignedAgent": "general-agent",
+                    "assignedAgent": "nanobot",
                     "blockedBy": ["step_1", "step_2"],
                     "parallelGroup": 1,
                 },
@@ -131,13 +131,13 @@ def test_missing_order_is_auto_assigned_sequentially() -> None:
                     "tempId": "step_1",
                     "title": "A",
                     "description": "A",
-                    "assignedAgent": "general-agent",
+                    "assignedAgent": "nanobot",
                 },
                 {
                     "tempId": "step_2",
                     "title": "B",
                     "description": "B",
-                    "assignedAgent": "general-agent",
+                    "assignedAgent": "nanobot",
                 },
             ]
         }
@@ -147,7 +147,7 @@ def test_missing_order_is_auto_assigned_sequentially() -> None:
     assert [s.order for s in plan.steps] == [1, 2]
 
 
-def test_invalid_agent_names_fall_back_to_general_agent() -> None:
+def test_invalid_agent_names_fall_back_to_nanobot() -> None:
     planner = TaskPlanner()
     plan = ExecutionPlan(
         steps=[
@@ -162,7 +162,7 @@ def test_invalid_agent_names_fall_back_to_general_agent() -> None:
 
     planner._validate_agent_names(plan, [_agent("finance-agent", ["finance"])])
 
-    assert plan.steps[0].assigned_agent == GENERAL_AGENT_NAME
+    assert plan.steps[0].assigned_agent == NANOBOT_AGENT_NAME
 
 
 def test_lead_agent_is_never_assigned_as_step_executor() -> None:
@@ -180,7 +180,7 @@ def test_lead_agent_is_never_assigned_as_step_executor() -> None:
 
     planner._validate_agent_names(plan, [_agent(LEAD_AGENT_NAME, ["planning"])])
 
-    assert plan.steps[0].assigned_agent == GENERAL_AGENT_NAME
+    assert plan.steps[0].assigned_agent == NANOBOT_AGENT_NAME
 
 
 def test_single_step_task_produces_valid_fallback_execution_plan() -> None:
@@ -193,7 +193,7 @@ def test_single_step_task_produces_valid_fallback_execution_plan() -> None:
     assert len(plan.steps) == 1
     assert plan.steps[0].temp_id == "step_1"
     assert plan.steps[0].title == "remind me to call the dentist"
-    assert plan.steps[0].assigned_agent == GENERAL_AGENT_NAME
+    assert plan.steps[0].assigned_agent == NANOBOT_AGENT_NAME
     assert plan.steps[0].parallel_group == 1
     assert plan.steps[0].order == 1
     assert plan.generated_by == LEAD_AGENT_NAME
@@ -215,7 +215,7 @@ def test_execution_plan_to_dict_uses_camel_case_generated_fields() -> None:
                 temp_id="step_2",
                 title="Generate report",
                 description="Build summary report",
-                assigned_agent=GENERAL_AGENT_NAME,
+                assigned_agent=NANOBOT_AGENT_NAME,
                 blocked_by=["step_1"],
                 parallel_group=2,
                 order=2,
@@ -321,7 +321,7 @@ def test_build_file_summary_missing_type_defaults_to_octet_stream() -> None:
 async def test_llm_plan_includes_file_summary_in_prompt_when_files_present() -> None:
     """_llm_plan appends file summary to the user prompt when files are provided."""
     planner = TaskPlanner()
-    agents = [_agent("general-agent", ["general"])]
+    agents = [_agent("nanobot", ["general"])]
     files = [
         {"name": "invoice.pdf", "type": "application/pdf", "size": 867328},
     ]
@@ -336,7 +336,7 @@ async def test_llm_plan_includes_file_summary_in_prompt_when_files_present() -> 
                     "tempId": "step_1",
                     "title": "Process invoice",
                     "description": "Process the invoice",
-                    "assignedAgent": "general-agent",
+                    "assignedAgent": "nanobot",
                     "blockedBy": [],
                     "parallelGroup": 1,
                     "order": 1,
@@ -360,7 +360,7 @@ async def test_llm_plan_includes_file_summary_in_prompt_when_files_present() -> 
 async def test_llm_plan_excludes_file_summary_when_no_files() -> None:
     """_llm_plan does NOT append file summary when files is empty or None (AC #3)."""
     planner = TaskPlanner()
-    agents = [_agent("general-agent", ["general"])]
+    agents = [_agent("nanobot", ["general"])]
 
     captured_messages: list[list[dict]] = []
 
@@ -372,7 +372,7 @@ async def test_llm_plan_excludes_file_summary_when_no_files() -> None:
                     "tempId": "step_1",
                     "title": "Write report",
                     "description": "Write the report",
-                    "assignedAgent": "general-agent",
+                    "assignedAgent": "nanobot",
                     "blockedBy": [],
                     "parallelGroup": 1,
                     "order": 1,
