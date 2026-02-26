@@ -58,13 +58,13 @@ export function ActivityFeedPanel() {
         </div>
         <TabsContent
           value="activity"
-          className="flex-1 min-h-0 overflow-hidden flex flex-col m-0"
+          className="flex-1 min-h-0 overflow-hidden data-[state=active]:flex flex-col m-0"
         >
           <ActivityFeed />
         </TabsContent>
         <TabsContent
           value="chats"
-          className="flex-1 min-h-0 overflow-hidden flex flex-col m-0"
+          className="flex-1 min-h-0 overflow-hidden data-[state=active]:flex flex-col m-0"
         >
           <Suspense
             fallback={

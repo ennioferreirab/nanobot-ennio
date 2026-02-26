@@ -176,7 +176,7 @@ export function ChatPanel() {
   // No agent selected: prompt state
   if (!selectedAgent) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center p-4 gap-3">
+      <div className="flex flex-1 flex-col justify-end p-4 gap-3">
         <p className="text-xs text-muted-foreground text-center">
           Type @ to select an agent and start a conversation
         </p>
