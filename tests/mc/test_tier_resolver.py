@@ -206,8 +206,8 @@ class TestTierResolverCache:
         # Second call should use cache — query NOT called again
         resolver.resolve_model("tier:standard-medium")
 
-        # settings:get should only be called once
-        assert bridge.query.call_count == 1
+        # settings:get should only be called twice (model_tiers + tier_reasoning_levels)
+        assert bridge.query.call_count == 2
 
     def test_cache_expires_after_ttl(self) -> None:
         from nanobot.mc.tier_resolver import TierResolver
@@ -215,16 +215,16 @@ class TestTierResolverCache:
         bridge = _make_bridge(DEFAULT_TIERS)
         resolver = TierResolver(bridge)
 
-        # First call
+        # First call populates cache (2 queries)
         resolver.resolve_model("tier:standard-high")
-        assert bridge.query.call_count == 1
+        assert bridge.query.call_count == 2
 
         # Simulate cache expiry by backdating _cache_time
         resolver._cache_time = time.monotonic() - 61.0
 
-        # Next call should refresh
+        # Next call should refresh (2 more queries)
         resolver.resolve_model("tier:standard-high")
-        assert bridge.query.call_count == 2
+        assert bridge.query.call_count == 4
 
     def test_invalidate_cache_forces_refresh(self) -> None:
         from nanobot.mc.tier_resolver import TierResolver
@@ -233,9 +233,9 @@ class TestTierResolverCache:
         resolver = TierResolver(bridge)
 
         resolver.resolve_model("tier:standard-high")
-        assert bridge.query.call_count == 1
+        assert bridge.query.call_count == 2
 
         resolver.invalidate_cache()
 
         resolver.resolve_model("tier:standard-high")
-        assert bridge.query.call_count == 2
+        assert bridge.query.call_count == 4

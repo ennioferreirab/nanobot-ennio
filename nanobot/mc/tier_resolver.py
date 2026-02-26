@@ -34,26 +34,40 @@ class TierResolver:
     def __init__(self, bridge: ConvexBridge) -> None:
         self._bridge = bridge
         self._cache: dict[str, str | None] = {}
+        self._reasoning_cache: dict[str, str] = {}
         self._cache_time: float = 0.0
 
     def _refresh_cache(self) -> None:
-        """Fetch model_tiers from Convex and update the local cache."""
-        raw = self._bridge.query("settings:get", {"key": "model_tiers"})
-        if raw is None:
+        """Fetch model_tiers and tier_reasoning_levels from Convex."""
+        raw_tiers = self._bridge.query("settings:get", {"key": "model_tiers"})
+        if raw_tiers is None:
             self._cache = {}
-            self._cache_time = time.monotonic()
-            return
-
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, dict):
-                self._cache = parsed
-            else:
-                logger.warning("[tier_resolver] model_tiers is not a dict: %s", type(parsed))
+        else:
+            try:
+                parsed = json.loads(raw_tiers)
+                if isinstance(parsed, dict):
+                    self._cache = parsed
+                else:
+                    logger.warning("[tier_resolver] model_tiers is not a dict: %s", type(parsed))
+                    self._cache = {}
+            except (json.JSONDecodeError, TypeError) as exc:
+                logger.warning("[tier_resolver] Failed to parse model_tiers: %s", exc)
                 self._cache = {}
-        except (json.JSONDecodeError, TypeError) as exc:
-            logger.warning("[tier_resolver] Failed to parse model_tiers: %s", exc)
-            self._cache = {}
+
+        raw_reasoning = self._bridge.query("settings:get", {"key": "tier_reasoning_levels"})
+        if raw_reasoning is None:
+            self._reasoning_cache = {}
+        else:
+            try:
+                parsed_r = json.loads(raw_reasoning)
+                if isinstance(parsed_r, dict):
+                    self._reasoning_cache = parsed_r
+                else:
+                    logger.warning("[tier_resolver] tier_reasoning_levels is not a dict: %s", type(parsed_r))
+                    self._reasoning_cache = {}
+            except (json.JSONDecodeError, TypeError) as exc:
+                logger.warning("[tier_resolver] Failed to parse tier_reasoning_levels: %s", exc)
+                self._reasoning_cache = {}
 
         self._cache_time = time.monotonic()
 
@@ -96,6 +110,26 @@ class TierResolver:
             )
 
         return resolved
+
+    def resolve_reasoning_level(self, model: str | None) -> str | None:
+        """Resolve the reasoning level for a tier reference.
+
+        Returns "low", "medium", "max", or None (off / not configured).
+        Non-tier model strings and unconfigured tiers both return None.
+        Never raises — missing config is treated as reasoning off.
+        """
+        if not model or not is_tier_reference(model):
+            return None
+
+        tier_name = extract_tier_name(model)
+        if tier_name is None:
+            return None
+
+        if time.monotonic() - self._cache_time > self.CACHE_TTL:
+            self._refresh_cache()
+
+        level = self._reasoning_cache.get(tier_name)
+        return level if level else None  # empty string → None (off)
 
     def invalidate_cache(self) -> None:
         """Force a refresh on the next resolve_model() call."""
