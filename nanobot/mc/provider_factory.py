@@ -13,6 +13,38 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def list_available_models() -> list[str]:
+    """Return a list of model identifiers available from configured providers.
+
+    Reads the user's nanobot config and returns the default model plus a
+    curated list of well-known Anthropic models. The dashboard UI allows
+    further customization via the connected_models setting.
+
+    Story 11.1 — AC #4.
+    """
+    from nanobot.config.loader import load_config
+
+    config = load_config()
+    default_model = config.agents.defaults.model
+
+    # Well-known models — always included so tiers have options
+    well_known = [
+        "anthropic/claude-opus-4-6",
+        "anthropic/claude-sonnet-4-6",
+        "anthropic/claude-haiku-3-5",
+    ]
+
+    # Start with default, then add well-known (dedup, preserve order)
+    seen: set[str] = set()
+    models: list[str] = []
+    for m in [default_model] + well_known:
+        if m and m not in seen:
+            seen.add(m)
+            models.append(m)
+
+    return models
+
+
 class ProviderError(Exception):
     """Raised when provider creation fails with an actionable message."""
 

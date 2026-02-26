@@ -29,6 +29,7 @@ from nanobot.mc.types import (
     TaskStatus,
     TrustLevel,
     is_lead_agent,
+    is_tier_reference,
 )
 
 if TYPE_CHECKING:
@@ -265,6 +266,59 @@ class TaskExecutor:
         self._agent_gateway = AgentGateway(bridge)
         self._known_assigned_ids: set[str] = set()
         self._cron_service = cron_service
+        self._tier_resolver: Any | None = None
+
+    def _get_tier_resolver(self) -> Any:
+        """Lazily create and return a TierResolver instance."""
+        if self._tier_resolver is None:
+            from nanobot.mc.tier_resolver import TierResolver
+            self._tier_resolver = TierResolver(self._bridge)
+        return self._tier_resolver
+
+    async def _handle_tier_error(
+        self,
+        task_id: str,
+        title: str,
+        agent_name: str,
+        exc: Exception,
+    ) -> None:
+        """Surface tier resolution errors in the task thread and crash the task."""
+        error_msg = f"Model tier resolution failed: {exc}"
+        logger.error("[executor] %s (task '%s', agent '%s')", error_msg, title, agent_name)
+
+        try:
+            await asyncio.to_thread(
+                self._bridge.send_message,
+                task_id,
+                "System",
+                AuthorType.SYSTEM,
+                error_msg,
+                MessageType.SYSTEM_EVENT,
+            )
+        except Exception:
+            logger.exception("[executor] Failed to write tier error message")
+
+        try:
+            await asyncio.to_thread(
+                self._bridge.create_activity,
+                ActivityEventType.SYSTEM_ERROR,
+                f"Tier resolution failed for '{title}': {exc}",
+                task_id,
+                agent_name,
+            )
+        except Exception:
+            logger.exception("[executor] Failed to create tier error activity")
+
+        try:
+            await asyncio.to_thread(
+                self._bridge.update_task_status,
+                task_id,
+                TaskStatus.CRASHED,
+                agent_name,
+                f"Tier resolution failed: {exc}",
+            )
+        except Exception:
+            logger.exception("[executor] Failed to crash task after tier error")
 
     async def start_execution_loop(self) -> None:
         """Subscribe to assigned tasks and execute them as they arrive.
@@ -701,6 +755,16 @@ class TaskExecutor:
 
         # Load agent prompt, model, and skills from YAML config
         agent_prompt, agent_model, agent_skills = self._load_agent_config(agent_name)
+
+        # Resolve tier references (Story 11.1, AC5)
+        if agent_model and is_tier_reference(agent_model):
+            try:
+                agent_model = self._get_tier_resolver().resolve_model(agent_model)
+                logger.info("[executor] Resolved tier for agent '%s': %s", agent_name, agent_model)
+            except ValueError as exc:
+                await self._handle_tier_error(task_id, title, agent_name, exc)
+                return
+
         # Inject global orientation for non-lead agents
         agent_prompt = self._maybe_inject_orientation(agent_name, agent_prompt)
 
