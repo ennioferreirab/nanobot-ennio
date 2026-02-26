@@ -57,10 +57,8 @@ export function KanbanBoard({ onTaskClick }: KanbanBoardProps) {
   const tasks = activeBoardId ? boardTasksResult : allTasksResult;
   const allStepsResult = useQuery(api.steps.listAll);
 
-  const favorites = useQuery(api.tasks.listFavorites);
-  const boardFavorites = activeBoardId
-    ? (favorites ?? []).filter((t) => t.boardId === activeBoardId || (!t.boardId && isDefaultBoard))
-    : (favorites ?? []);
+  // Derive favorites from already-fetched tasks (no separate query needed)
+  const boardFavorites = (tasks ?? []).filter((t) => t.isFavorite === true);
   const hitlCount = useQuery(api.tasks.countHitlPending) ?? 0;
   const deletedTasks = useQuery(api.tasks.listDeleted);
   const deletedCount = deletedTasks?.length ?? 0;

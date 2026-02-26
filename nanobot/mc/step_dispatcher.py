@@ -162,6 +162,14 @@ class StepDispatcher:
 
     def __init__(self, bridge: ConvexBridge) -> None:
         self._bridge = bridge
+        self._tier_resolver: Any | None = None
+
+    def _get_tier_resolver(self) -> Any:
+        """Lazily create and return a TierResolver instance (shared across steps)."""
+        if self._tier_resolver is None:
+            from nanobot.mc.tier_resolver import TierResolver
+            self._tier_resolver = TierResolver(self._bridge)
+        return self._tier_resolver
 
     async def dispatch_steps(self, task_id: str, step_ids: list[str]) -> None:
         """Dispatch assigned steps for a task until no runnable work remains."""
@@ -337,10 +345,21 @@ class StepDispatcher:
 
             # Resolve tier references (Story 11.1, AC5)
             if agent_model and is_tier_reference(agent_model):
-                from nanobot.mc.tier_resolver import TierResolver
-                resolver = TierResolver(self._bridge)
-                agent_model = resolver.resolve_model(agent_model)
-                logger.info("[dispatcher] Resolved tier for agent '%s': %s", agent_name, agent_model)
+                try:
+                    agent_model = self._get_tier_resolver().resolve_model(agent_model)
+                    logger.info("[dispatcher] Resolved tier for agent '%s': %s", agent_name, agent_model)
+                except ValueError as exc:
+                    error_msg = f"Model tier resolution failed for agent '{agent_name}': {exc}"
+                    logger.error("[dispatcher] %s", error_msg)
+                    await asyncio.to_thread(
+                        self._bridge.send_message,
+                        task_id,
+                        "System",
+                        AuthorType.SYSTEM,
+                        f'Step "{step_title}" failed: {error_msg}',
+                        MessageType.SYSTEM_EVENT,
+                    )
+                    raise
 
             agent_prompt = _maybe_inject_orientation(agent_name, agent_prompt)
 
