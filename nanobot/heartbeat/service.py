@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
+from filelock import FileLock
 from loguru import logger
 
 # Default interval: 30 minutes
@@ -114,15 +115,26 @@ class HeartbeatService:
             try:
                 response = await self.on_heartbeat(HEARTBEAT_PROMPT)
                 
-                # Check if agent said "nothing to do"
                 if HEARTBEAT_OK_TOKEN.replace("_", "") in response.upper().replace("_", ""):
                     logger.info("Heartbeat: OK (no action needed)")
                 else:
                     logger.info("Heartbeat: completed task")
+
+                self._clear_heartbeat_file()
                     
             except Exception as e:
                 logger.error("Heartbeat execution failed: {}", e)
     
+    def _clear_heartbeat_file(self) -> None:
+        """Clear HEARTBEAT.md after successful processing."""
+        lock = FileLock(str(self.heartbeat_file) + ".lock", timeout=10)
+        try:
+            with lock:
+                self.heartbeat_file.write_text("", encoding="utf-8")
+            logger.debug("Heartbeat: cleared HEARTBEAT.md after processing")
+        except Exception as e:
+            logger.warning("Heartbeat: failed to clear HEARTBEAT.md: {}", e)
+
     async def trigger_now(self) -> str | None:
         """Manually trigger a heartbeat."""
         if self.on_heartbeat:
