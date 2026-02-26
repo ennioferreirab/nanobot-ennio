@@ -7,27 +7,16 @@ from typing import Any, TYPE_CHECKING
 from loguru import logger
 
 from nanobot.agent.tools.base import Tool
-from nanobot.bus.events import InboundMessage
 
 if TYPE_CHECKING:
-    from nanobot.bus.queue import MessageBus
     from nanobot.mc.bridge import ConvexBridge
 
 
 class McDelegateTool(Tool):
-    """
-    Tool to delegate a task to the Mission Control board.
+    """Tool to delegate a task to the Mission Control board."""
 
-    The task runs asynchronously on the MC backend, and the result is
-    announced back to the main agent when complete.
-    """
-
-    def __init__(self, bus: "MessageBus"):
-        self._bus = bus
-        self._origin_channel = "cli"
-        self._origin_chat_id = "direct"
+    def __init__(self) -> None:
         self._bridge: "ConvexBridge | None" = None
-
         self._init_bridge()
 
     def _init_bridge(self) -> None:
@@ -41,11 +30,6 @@ class McDelegateTool(Tool):
                 self._bridge = ConvexBridge(url, admin_key)
         except Exception as e:
             logger.debug("Failed to initialize ConvexBridge for McDelegateTool: {}", e)
-
-    def set_context(self, channel: str, chat_id: str) -> None:
-        """Set the origin context for announcements."""
-        self._origin_channel = channel
-        self._origin_chat_id = chat_id
 
     @property
     def name(self) -> str:

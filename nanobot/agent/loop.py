@@ -121,7 +121,7 @@ class AgentLoop:
         self.tools.register(WebFetchTool())
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
         self.tools.register(SpawnTool(manager=self.subagents))
-        self.tools.register(McDelegateTool(bus=self.bus))
+        self.tools.register(McDelegateTool())
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
 
@@ -156,11 +156,7 @@ class AgentLoop:
         if spawn_tool := self.tools.get("spawn"):
             if isinstance(spawn_tool, SpawnTool):
                 spawn_tool.set_context(channel, chat_id)
-                
-        if delegate_tool := self.tools.get("delegate_task"):
-            from nanobot.agent.tools.mc_delegate import McDelegateTool
-            if isinstance(delegate_tool, McDelegateTool):
-                delegate_tool.set_context(channel, chat_id)
+
         if cron_tool := self.tools.get("cron"):
             if isinstance(cron_tool, CronTool):
                 cron_tool.set_context(channel, chat_id, task_id=self._current_task_id)
