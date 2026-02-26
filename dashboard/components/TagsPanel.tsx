@@ -6,7 +6,8 @@ import { api } from "../convex/_generated/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { X } from "lucide-react";
+import { X, Plus } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ConvexError } from "convex/values";
 import { TAG_COLORS } from "@/lib/constants";
 
@@ -30,6 +31,9 @@ export function TagsPanel() {
   const attributes = useQuery(api.tagAttributes.list);
   const createAttribute = useMutation(api.tagAttributes.create);
   const removeAttribute = useMutation(api.tagAttributes.remove);
+  const updateTagAttributeIds = useMutation(api.taskTags.updateAttributeIds);
+  const [openTagId, setOpenTagId] = useState<string | null>(null);
+  const [attrPickerSearch, setAttrPickerSearch] = useState("");
 
   const [name, setName] = useState("");
   const [selectedColor, setSelectedColor] = useState<string>("blue");
@@ -112,25 +116,73 @@ export function TagsPanel() {
             No tags yet. Add your first tag below.
           </p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {tags.map((tag) => {
               const color = TAG_COLORS[tag.color];
+              const assignedIds = tag.attributeIds ?? [];
+              const assignedAttrs = (attributes ?? []).filter((a) => assignedIds.includes(a._id));
+              const filteredCatalog = (attributes ?? []).filter((a) =>
+                a.name.toLowerCase().includes(attrPickerSearch.toLowerCase())
+              );
+
+              const handleAddAttr = (attrId: string) => {
+                if (assignedIds.includes(attrId as never)) return;
+                updateTagAttributeIds({ tagId: tag._id, attributeIds: [...assignedIds, attrId] as never[] });
+              };
+
+              const handleRemoveAttr = (attrId: string) => {
+                updateTagAttributeIds({
+                  tagId: tag._id,
+                  attributeIds: assignedIds.filter((id) => id !== attrId) as never[],
+                });
+              };
+
               return (
-                <li
-                  key={tag._id}
-                  className="flex items-center gap-3 py-1.5"
-                >
-                  <span
-                    className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${color?.dot ?? "bg-muted"}`}
-                  />
-                  <span className="text-sm flex-1">{tag.name}</span>
-                  <button
-                    aria-label={`Delete tag ${tag.name}`}
-                    onClick={() => removeTag({ id: tag._id })}
-                    className="text-muted-foreground hover:text-red-500 transition-colors"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                <li key={tag._id} className="space-y-1.5 py-1">
+                  <div className="flex items-center gap-3">
+                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${color?.dot ?? "bg-muted"}`} />
+                    <span className="text-sm flex-1">{tag.name}</span>
+                    <button aria-label={`Delete tag ${tag.name}`} onClick={() => removeTag({ id: tag._id })} className="text-muted-foreground hover:text-red-500 transition-colors">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1 pl-5">
+                    {assignedAttrs.map((attr) => (
+                      <span key={attr._id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] bg-muted text-muted-foreground border border-border">
+                        {attr.name}
+                        <button aria-label={`Remove attribute ${attr.name} from tag ${tag.name}`} onClick={() => handleRemoveAttr(attr._id)} className="hover:text-red-500 transition-colors">
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </span>
+                    ))}
+                    <Popover open={openTagId === tag._id} onOpenChange={(open) => { setOpenTagId(open ? tag._id : null); if (!open) setAttrPickerSearch(""); }}>
+                      <PopoverTrigger asChild>
+                        <button aria-label={`Add attribute to tag ${tag.name}`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] border border-dashed border-border text-muted-foreground hover:border-muted-foreground transition-colors">
+                          <Plus className="h-2.5 w-2.5" />attr
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 p-2 space-y-2" align="start">
+                        <input autoFocus placeholder="Search attributes..." value={attrPickerSearch} onChange={(e) => setAttrPickerSearch(e.target.value)} className="w-full rounded-md border border-input bg-transparent px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
+                        {filteredCatalog.length === 0 ? (
+                          <p className="text-xs text-muted-foreground text-center py-2">No attributes found</p>
+                        ) : (
+                          <ul className="space-y-0.5 max-h-48 overflow-y-auto">
+                            {filteredCatalog.map((attr) => {
+                              const isAssigned = assignedIds.includes(attr._id);
+                              return (
+                                <li key={attr._id}>
+                                  <button disabled={isAssigned} onClick={() => handleAddAttr(attr._id)} className={`w-full flex items-center justify-between px-2 py-1 rounded text-sm text-left transition-colors ${isAssigned ? "opacity-40 cursor-default" : "hover:bg-accent"}`}>
+                                    <span>{attr.name}</span>
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{attr.type}</Badge>
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </li>
               );
             })}
