@@ -76,10 +76,10 @@ describe("TaskDetailSheet", () => {
   // mockReturnValueOnce chains in individual tests override as needed.
   function setupQueryMock(task: typeof baseTask, messages: unknown[] = []) {
     mockUseQuery.mockImplementation((_query: unknown, args: unknown) => {
-      // taskTags.list has no args — return empty
-      if (args === undefined) return [];
       // "skip" queries return undefined
       if (args === "skip") return undefined;
+      // taskTags.list passes {} — return empty array
+      if (typeof args === "object" && args !== null && !("taskId" in (args as Record<string, unknown>))) return [];
       return undefined;
     });
     // Override with sequential values for the conditional queries
@@ -538,7 +538,10 @@ describe("TaskDetailSheet", () => {
     // we track call count WITHIN the same args to distinguish the first (getById).
     const callsByArgs = new Map<string, number>();
     mockUseQuery.mockImplementation((_query: unknown, args: unknown) => {
-      if (args === "skip" || args === undefined) return undefined;
+      if (args === "skip") return undefined;
+      // taskTags.list passes {} — return empty array
+      if (typeof args === "object" && args !== null && !("taskId" in (args as Record<string, unknown>))) return [];
+      if (args === undefined) return undefined;
       const key = JSON.stringify(args);
       const count = (callsByArgs.get(key) ?? 0) + 1;
       callsByArgs.set(key, count);

@@ -58,10 +58,12 @@ export function AgentMentionAutocomplete({
     setFocusedIndex((prev) => (prev - 1 + filtered.length) % filtered.length);
   }, [filtered.length]);
 
-  const selectFocused = useCallback(() => {
+  const selectFocused = useCallback((): boolean => {
     if (filtered.length > 0 && focusedIndex < filtered.length) {
       onSelect(filtered[focusedIndex].name);
+      return true;
     }
+    return false;
   }, [filtered, focusedIndex, onSelect]);
 
   // Expose navigation methods via a stable ref on the DOM element
@@ -86,21 +88,24 @@ export function AgentMentionAutocomplete({
     const dropdownHeight = 200;
 
     if (spaceAbove > dropdownHeight) {
-      // Position above
-      setPosition({ top: rect.top + window.scrollY - 4, left: rect.left + window.scrollX });
+      // Position above — use getBoundingClientRect directly for fixed positioning
+      setPosition({ top: rect.top - 4, left: rect.left });
     } else {
       // Position below
-      setPosition({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX });
+      setPosition({ top: rect.bottom + 4, left: rect.left });
     }
   }, [anchorRef, query]);
 
   if (!position) return null;
 
+  // When positioned above, shift up by 100% of dropdown height; below, no transform
+  const isAbove = position.top < (anchorRef.current?.getBoundingClientRect().top ?? 0);
+
   const dropdown = (
     <div
       data-testid="mention-autocomplete"
       className="fixed bg-popover text-popover-foreground border border-border rounded-md shadow-md z-50 w-[240px] max-h-[200px] overflow-y-auto animate-in fade-in-0 zoom-in-95"
-      style={{ top: position.top, left: position.left, transform: "translateY(-100%)" }}
+      style={{ top: position.top, left: position.left, ...(isAbove ? { transform: "translateY(-100%)" } : {}) }}
       ref={listRef}
     >
       {filtered.length === 0 ? (

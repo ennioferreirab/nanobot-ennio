@@ -209,6 +209,7 @@ export const toggleFavorite = mutation({
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.taskId);
     if (!task) throw new ConvexError("Task not found");
+    if (task.status === "deleted") throw new ConvexError("Cannot favorite a deleted task");
     await ctx.db.patch(args.taskId, {
       isFavorite: task.isFavorite ? undefined : true,
       updatedAt: new Date().toISOString(),
@@ -373,8 +374,9 @@ export const updateTags = mutation({
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.taskId);
     if (!task) throw new ConvexError("Task not found");
+    const uniqueTags = [...new Set(args.tags)];
     await ctx.db.patch(args.taskId, {
-      tags: args.tags.length > 0 ? args.tags : undefined,
+      tags: uniqueTags.length > 0 ? uniqueTags : undefined,
       updatedAt: new Date().toISOString(),
     });
   },

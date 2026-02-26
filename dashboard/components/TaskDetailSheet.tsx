@@ -63,7 +63,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     api.steps.getByTask,
     taskId ? { taskId } : "skip",
   );
-  const tagsList = useQuery(api.taskTags.list);
+  const tagsList = useQuery(api.taskTags.list, taskId ? {} : "skip");
   const approveMutation = useMutation(api.tasks.approve);
   const kickOffMutation = useMutation(api.tasks.approveAndKickOff);
   const pauseTaskMutation = useMutation(api.tasks.pauseTask);

@@ -22,7 +22,11 @@ function parseMinutesField(
 
   // */N
   const stepAll = field.match(/^\*\/(\d+)$/);
-  if (stepAll) return `Every ${stepAll[1]} min`;
+  if (stepAll) {
+    const n = Number(stepAll[1]);
+    if (n === 1) return "Every min";
+    return `Every ${n} min`;
+  }
 
   // Range with step: N-M/S
   const rangeStep = field.match(/^(\d+)-(\d+)\/(\d+)$/);
@@ -47,6 +51,8 @@ function parseMinutesField(
 
   // Single number
   if (/^\d+$/.test(field)) {
+    const n = Number(field);
+    if (n < 0 || n > 59) return null;
     return `At :${field.padStart(2, "0")}`;
   }
 
@@ -58,7 +64,11 @@ function parseHoursField(field: string): string | null {
 
   // */N
   const stepAll = field.match(/^\*\/(\d+)$/);
-  if (stepAll) return `Every ${stepAll[1]} hours`;
+  if (stepAll) {
+    const n = Number(stepAll[1]);
+    if (n === 1) return "Every hour";
+    return `Every ${n} hours`;
+  }
 
   // Range with step: H1-H2/S
   const rangeStep = field.match(/^(\d+)-(\d+)\/(\d+)$/);
@@ -83,7 +93,9 @@ function parseHoursField(field: string): string | null {
 
   // Single number
   if (/^\d+$/.test(field)) {
-    return formatHour(Number(field));
+    const n = Number(field);
+    if (n < 0 || n > 23) return null;
+    return formatHour(n);
   }
 
   return null;

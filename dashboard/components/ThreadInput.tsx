@@ -37,6 +37,10 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionStartIndex, setMentionStartIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const contentRef = useRef(content);
+  const mentionStartIndexRef = useRef(mentionStartIndex);
+  const mentionQueryRef = useRef(mentionQuery);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const sendMessage = useMutation(api.messages.sendThreadMessage);
   const postPlanMessage = useMutation(api.messages.postUserPlanMessage);
@@ -46,6 +50,12 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
     api.boards.getById,
     task.boardId ? { boardId: task.boardId } : "skip"
   );
+
+  // Keep refs in sync with state for stable closures
+  useEffect(() => { contentRef.current = content; }, [content]);
+  useEffect(() => { mentionStartIndexRef.current = mentionStartIndex; }, [mentionStartIndex]);
+  useEffect(() => { mentionQueryRef.current = mentionQuery; }, [mentionQuery]);
+  useEffect(() => () => clearTimeout(blurTimeoutRef.current), []);
 
   // Sync selectedAgent when task.assignedAgent changes (H3 fix: useEffect instead of render-time setState)
   useEffect(() => {
@@ -115,11 +125,13 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
 
   const handleMentionSelect = useCallback(
     (agentName: string) => {
-      const before = content.slice(0, mentionStartIndex);
-      const after = content.slice(
-        mentionStartIndex +
-          1 +
-          (mentionQuery?.length ?? 0)
+      // Read from refs to avoid stale closure values
+      const currentContent = contentRef.current;
+      const startIdx = mentionStartIndexRef.current;
+      const mQuery = mentionQueryRef.current;
+      const before = currentContent.slice(0, startIdx);
+      const after = currentContent.slice(
+        startIdx + 1 + (mQuery?.length ?? 0)
       );
       const newContent = `${before}@${agentName} ${after}`;
       setContent(newContent);
@@ -137,7 +149,7 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
         }
       });
     },
-    [content, mentionStartIndex, mentionQuery]
+    []
   );
 
   const handleSend = async () => {
@@ -196,9 +208,12 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
           return;
         }
         if (e.key === "Enter" || e.key === "Tab") {
-          e.preventDefault();
-          e.stopPropagation();
-          nav.selectFocused();
+          // Only intercept if there are matching results to select
+          const selected = nav.selectFocused();
+          if (selected !== false) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
           return;
         }
         if (e.key === "Escape") {
@@ -320,9 +335,10 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
           value={content}
           onChange={handleTextChange}
           onKeyDown={handleKeyDown}
+          onFocus={() => clearTimeout(blurTimeoutRef.current)}
           onBlur={() => {
             // Delay close to allow click on autocomplete portal
-            setTimeout(() => setMentionQuery(null), 150);
+            blurTimeoutRef.current = setTimeout(() => setMentionQuery(null), 150);
           }}
           className="text-sm min-h-[80px] max-h-[160px] resize-none"
           disabled={isSubmitting}
