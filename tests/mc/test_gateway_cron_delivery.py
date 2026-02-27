@@ -96,6 +96,10 @@ async def _run_gateway_and_capture(captured: dict) -> None:
     mock_chat_instance = MagicMock()
     mock_chat_instance.run = AsyncMock()
 
+    # MentionWatcher mock
+    mock_mention_instance = MagicMock()
+    mock_mention_instance.run = AsyncMock()
+
     async def trigger_stop():
         await asyncio.sleep(0.05)
         os.kill(os.getpid(), signal.SIGTERM)
@@ -110,8 +114,9 @@ async def _run_gateway_and_capture(captured: dict) -> None:
          patch("nanobot.config.loader.load_config"), \
          patch("nanobot.bus.queue.MessageBus", mock_bus_cls), \
          patch("nanobot.channels.mission_control.MissionControlChannel", return_value=mock_mc_channel), \
+         patch("nanobot.mc.mention_watcher.MentionWatcher", return_value=mock_mention_instance), \
          patch("nanobot.cron.service.CronService", mock_cron_cls), \
-         patch("nanobot.mc.gateway._run_plan_negotiation_manager", new_callable=lambda: lambda *a, **kw: AsyncMock()()):
+         patch("nanobot.mc.gateway._run_plan_negotiation_manager", new=AsyncMock()):
         try:
             await run_gateway(mock_bridge)
         except SystemExit:
