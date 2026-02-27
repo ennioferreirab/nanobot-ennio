@@ -6,6 +6,8 @@ import platform
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.skills import SkillsLoader
 
@@ -36,20 +38,26 @@ class ContextBuilder:
             Complete system prompt.
         """
         parts = []
-        
+
         # Core identity
         parts.append(self._get_identity())
-        
+
         # Bootstrap files
         bootstrap = self._load_bootstrap_files()
         if bootstrap:
             parts.append(bootstrap)
-        
+
         # Memory context
         memory = self.memory.get_memory_context()
         if memory:
             parts.append(f"# Memory\n\n{memory}")
-        
+            logger.info(
+                "[context] Memory loaded (len={}): {}",
+                len(memory), repr(memory[:300]),
+            )
+        else:
+            logger.info("[context] No memory content found")
+
         # Skills - progressive loading
         # 1. Always-loaded skills: include full content
         always_skills = self.skills.get_always_skills()
@@ -57,7 +65,11 @@ class ContextBuilder:
             always_content = self.skills.load_skills_for_context(always_skills)
             if always_content:
                 parts.append(f"# Active Skills\n\n{always_content}")
-        
+                logger.info(
+                    "[context] Always-on skills loaded: {} (total len={})",
+                    always_skills, len(always_content),
+                )
+
         # 2. Available skills: only show summary (agent uses read_file to load)
         skills_summary = self.skills.build_skills_summary(allowed_names=skill_names)
         if skills_summary:
@@ -67,8 +79,14 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 Skills with available="false" need dependencies installed first - you can try installing them with apt/brew.
 
 {skills_summary}""")
-        
-        return "\n\n---\n\n".join(parts)
+            logger.info("[context] Skills summary built (len={})", len(skills_summary))
+
+        system_prompt = "\n\n---\n\n".join(parts)
+        logger.info(
+            "[context] System prompt assembled (len={}, parts={})",
+            len(system_prompt), len(parts),
+        )
+        return system_prompt
     
     def _get_identity(self) -> str:
         """Get the core identity section."""
@@ -108,13 +126,19 @@ To recall past events, grep {workspace_path}/memory/HISTORY.md"""
     def _load_bootstrap_files(self) -> str:
         """Load all bootstrap files from workspace."""
         parts = []
-        
+
         for filename in self.BOOTSTRAP_FILES:
             file_path = self.workspace / filename
             if file_path.exists():
                 content = file_path.read_text(encoding="utf-8")
                 parts.append(f"## {filename}\n\n{content}")
-        
+                logger.info(
+                    "[context] Bootstrap file loaded: {} (len={})",
+                    file_path, len(content),
+                )
+
+        if not parts:
+            logger.info("[context] No bootstrap files found in {}", self.workspace)
         return "\n\n".join(parts) if parts else ""
     
     def build_messages(
@@ -150,10 +174,29 @@ To recall past events, grep {workspace_path}/memory/HISTORY.md"""
 
         # History
         messages.extend(history)
+        logger.info(
+            "[context] build_messages: system_prompt len={}, history_messages={}, channel={}, chat_id={}",
+            len(system_prompt), len(history), channel, chat_id,
+        )
+        # Log each history message role + content size for debugging data leaks
+        for i, h in enumerate(history):
+            content = h.get("content", "")
+            content_len = len(content) if isinstance(content, str) else 0
+            content_preview = repr(content[:200]) if isinstance(content, str) else "(non-string)"
+            logger.debug(
+                "[context] history[{}]: role={}, len={}, preview={}",
+                i, h.get("role"), content_len, content_preview,
+            )
 
         # Current message (with optional image attachments)
         user_content = self._build_user_content(current_message, media)
         messages.append({"role": "user", "content": user_content})
+
+        current_len = len(current_message) if isinstance(current_message, str) else 0
+        logger.info(
+            "[context] build_messages complete: total_messages={}, current_message len={}, first 300 chars={}",
+            len(messages), current_len, repr(current_message[:300]) if isinstance(current_message, str) else "(non-string)",
+        )
 
         return messages
 

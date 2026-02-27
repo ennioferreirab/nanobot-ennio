@@ -139,9 +139,15 @@ def _build_file_summary(files: list[dict]) -> str:
 
 
 def _build_agent_roster(agents: list[AgentData]) -> str:
-    """Build the agent roster string for the LLM prompt."""
+    """Build the agent roster string for the LLM prompt.
+
+    System agents (is_system=True) are excluded — they are for internal use
+    only (e.g. auto-title) and must never be assigned to task steps.
+    """
     lines = []
     for agent in agents:
+        if getattr(agent, "is_system", False):
+            continue
         skills_str = ", ".join(agent.skills) if agent.skills else "general"
         lines.append(f"- {agent.name} (role: {agent.role}, skills: {skills_str})")
     if not lines:
@@ -361,11 +367,13 @@ class TaskPlanner:
         """Replace invalid/disallowed agent names with nanobot."""
         fallback_agent = self._fallback_agent_name(agents)
         valid_names = {a.name for a in agents} | {NANOBOT_AGENT_NAME}
+        system_names = {a.name for a in agents if getattr(a, "is_system", False)}
         for step in plan.steps:
             if (
                 not step.assigned_agent
                 or step.assigned_agent not in valid_names
                 or is_lead_agent(step.assigned_agent)
+                or step.assigned_agent in system_names
             ):
                 if step.assigned_agent:
                     logger.warning(

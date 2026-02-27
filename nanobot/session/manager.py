@@ -52,6 +52,10 @@ class Session:
                 if k in m:
                     entry[k] = m[k]
             out.append(entry)
+        logger.info(
+            "[session] get_history for '{}': returning {} of {} total messages",
+            self.key, len(out), len(self.messages),
+        )
         return out
     
     def clear(self) -> None:
@@ -127,22 +131,36 @@ class SessionManager:
                 metadata = {}
                 created_at = None
                 last_consolidated = 0
-    
+
                 with open(path, encoding="utf-8") as f:
                     for line in f:
                         line = line.strip()
                         if not line:
                             continue
-    
+
                         data = json.loads(line)
-    
+
                         if data.get("_type") == "metadata":
                             metadata = data.get("metadata", {})
                             created_at = datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None
                             last_consolidated = data.get("last_consolidated", 0)
                         else:
                             messages.append(data)
-    
+
+                logger.info(
+                    "[session] _load '{}' from {}: {} messages, last_consolidated={}",
+                    key, path, len(messages), last_consolidated,
+                )
+                # Log content preview of each loaded message for data leak debugging
+                for i, m in enumerate(messages):
+                    content = m.get("content", "")
+                    content_len = len(content) if isinstance(content, str) else 0
+                    logger.debug(
+                        "[session] _load msg[{}]: role={}, len={}, preview={}",
+                        i, m.get("role"), content_len,
+                        repr(content[:200]) if isinstance(content, str) else "(non-string)",
+                    )
+
                 return Session(
                     key=key,
                     messages=messages,

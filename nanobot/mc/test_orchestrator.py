@@ -125,11 +125,13 @@ class TestProcessPlanningTask:
         orchestrator._step_dispatcher.dispatch_steps.assert_called_once_with("task-1", ["step-1"])
         assert len(scheduled_coroutines) == 1
 
-        assert bridge.create_activity.call_count == 2
+        assert bridge.create_activity.call_count == 3
         first_activity = bridge.create_activity.call_args_list[0][0]
         second_activity = bridge.create_activity.call_args_list[1][0]
-        assert first_activity[0] == ActivityEventType.TASK_PLANNING
+        third_activity = bridge.create_activity.call_args_list[2][0]
+        assert first_activity[0] == ActivityEventType.TASK_ASSIGNED
         assert second_activity[0] == ActivityEventType.TASK_PLANNING
+        assert third_activity[0] == ActivityEventType.TASK_PLANNING
 
     @pytest.mark.asyncio
     async def test_supervised_mode_defers_materialization(self) -> None:

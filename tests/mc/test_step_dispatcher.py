@@ -44,6 +44,11 @@ def _make_bridge() -> MagicMock:
     bridge.get_task_messages = MagicMock(return_value=[])
     bridge.query = MagicMock(return_value={"title": "Test Task"})
     bridge.get_board_by_id = MagicMock(return_value=None)
+    # Default: Convex has no data for the agent (prevents pollution of crash tests)
+    bridge.get_agent_by_name = MagicMock(return_value=None)
+    bridge.post_step_completion = MagicMock(return_value=None)
+    bridge.sync_task_output_files = MagicMock(return_value=None)
+    bridge.check_and_unblock_dependents = MagicMock(return_value=[])
     return bridge
 
 
@@ -160,6 +165,92 @@ class TestExecuteStepCrashHandler:
         ):
             with pytest.raises(RuntimeError, match="boom"):
                 await dispatcher._execute_step("task-abc", step)
+
+
+# ---------------------------------------------------------------------------
+# Convex variable interpolation in step prompt (regression: step_dispatcher
+# was bypassing executor._execute_task and never interpolating variables)
+# ---------------------------------------------------------------------------
+
+
+_SUCCESS_PATCHES = (
+    "nanobot.mc.step_dispatcher._maybe_inject_orientation",
+    "nanobot.mc.step_dispatcher._build_step_thread_context",
+    "nanobot.mc.executor._snapshot_output_dir",
+    "nanobot.mc.executor._collect_output_artifacts",
+)
+
+
+class TestConvexVariableInterpolation:
+    """Convex variables must be interpolated into the prompt before agent execution."""
+
+    @pytest.mark.asyncio
+    async def test_convex_variables_are_interpolated_before_step_execution(self) -> None:
+        """{{p_channel_list}} in YAML prompt is replaced with the Convex variable value."""
+        yaml_prompt = "Monitor channels: {{p_channel_list}}"
+        channel_value = "https://youtube.com/@AIJasonZ,https://youtube.com/@QuantBrasil"
+
+        bridge = _make_bridge()
+        bridge.get_agent_by_name = MagicMock(return_value={
+            "prompt": yaml_prompt,
+            "variables": [{"name": "p_channel_list", "value": channel_value}],
+        })
+        dispatcher = StepDispatcher(bridge)
+        step = _make_step(agent="youtube-summarizer")
+
+        captured: list[str | None] = []
+
+        async def capture(**kwargs):
+            captured.append(kwargs.get("agent_prompt"))
+            return "done"
+
+        with (
+            patch("nanobot.mc.step_dispatcher._load_agent_config", return_value=(yaml_prompt, None, None)),
+            patch("nanobot.mc.step_dispatcher._run_step_agent", new=capture),
+            patch(_SUCCESS_PATCHES[0], side_effect=lambda n, p: p),
+            patch(_SUCCESS_PATCHES[1], return_value=""),
+            patch(_SUCCESS_PATCHES[2], return_value={}),
+            patch(_SUCCESS_PATCHES[3], return_value=[]),
+        ):
+            await dispatcher._execute_step("task-abc", step)
+
+        assert captured, "Agent must be called"
+        prompt = captured[0]
+        assert channel_value in prompt, f"Variable not interpolated. Got: {prompt!r}"
+        assert "{{p_channel_list}}" not in prompt, f"Placeholder still present. Got: {prompt!r}"
+
+    @pytest.mark.asyncio
+    async def test_convex_prompt_overrides_yaml_prompt(self) -> None:
+        """Convex prompt takes precedence over the YAML config (Convex as source of truth)."""
+        yaml_prompt = "Old YAML prompt"
+        convex_prompt = "Updated Convex prompt — source of truth"
+
+        bridge = _make_bridge()
+        bridge.get_agent_by_name = MagicMock(return_value={
+            "prompt": convex_prompt,
+            "variables": [],
+        })
+        dispatcher = StepDispatcher(bridge)
+        step = _make_step(agent="some-agent")
+
+        captured: list[str | None] = []
+
+        async def capture(**kwargs):
+            captured.append(kwargs.get("agent_prompt"))
+            return "done"
+
+        with (
+            patch("nanobot.mc.step_dispatcher._load_agent_config", return_value=(yaml_prompt, None, None)),
+            patch("nanobot.mc.step_dispatcher._run_step_agent", new=capture),
+            patch(_SUCCESS_PATCHES[0], side_effect=lambda n, p: p),
+            patch(_SUCCESS_PATCHES[1], return_value=""),
+            patch(_SUCCESS_PATCHES[2], return_value={}),
+            patch(_SUCCESS_PATCHES[3], return_value=[]),
+        ):
+            await dispatcher._execute_step("task-abc", step)
+
+        assert captured, "Agent must be called"
+        assert captured[0] == convex_prompt, f"Expected Convex prompt, got: {captured[0]!r}"
 
 
 # ---------------------------------------------------------------------------

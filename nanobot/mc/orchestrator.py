@@ -329,6 +329,21 @@ class TaskOrchestrator:
                 files=task_data.get("files") or [],
             )
 
+            # Prevent circular delegation: if a step would route back to the
+            # agent that delegated this task, reassign it to the default agent.
+            source_agent = task_data.get("source_agent")
+            if source_agent:
+                for step in plan.steps:
+                    if step.assigned_agent == source_agent:
+                        logger.warning(
+                            "[orchestrator] Circular delegation detected: step '%s' would "
+                            "route back to source agent '%s'; reassigning to '%s'",
+                            step.temp_id,
+                            source_agent,
+                            NANOBOT_AGENT_NAME,
+                        )
+                        step.assigned_agent = NANOBOT_AGENT_NAME
+
             logger.info(
                 "[orchestrator] Task '%s': %d-step plan created",
                 title,
@@ -540,7 +555,7 @@ class TaskOrchestrator:
                         status = step.get("status")
                         if status == _StepStatus.ASSIGNED:
                             dispatchable_step_ids.append(step_id_str)
-                        elif status == _StepStatus.PENDING:
+                        elif status == _StepStatus.PLANNED:
                             # Dispatch if all blockers are already completed
                             blocked_by = step.get("blocked_by") or []
                             if all(str(b) in completed_step_ids for b in blocked_by):

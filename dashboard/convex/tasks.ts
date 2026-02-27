@@ -103,6 +103,7 @@ export const create = mutation({
     isManual: v.optional(v.boolean()),
     boardId: v.optional(v.id("boards")),
     cronParentTaskId: v.optional(v.string()),
+    sourceAgent: v.optional(v.string()),
     autoTitle: v.optional(v.boolean()),
     supervisionMode: v.optional(
       v.union(v.literal("autonomous"), v.literal("supervised"))
@@ -160,6 +161,7 @@ export const create = mutation({
       ...(isManual ? { isManual: true } : {}),
       ...(boardId ? { boardId } : {}),
       ...(args.cronParentTaskId !== undefined ? { cronParentTaskId: args.cronParentTaskId } : {}),
+      ...(args.sourceAgent ? { sourceAgent: args.sourceAgent } : {}),
       ...(args.files ? { files: args.files } : {}),
       ...(args.autoTitle ? { autoTitle: true } : {}),
       createdAt: now,
