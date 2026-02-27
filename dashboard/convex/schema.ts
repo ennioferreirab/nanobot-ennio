@@ -59,6 +59,7 @@ export default defineSchema({
     previousStatus: v.optional(v.string()),
     boardId: v.optional(v.id("boards")),
     cronParentTaskId: v.optional(v.string()),
+    sourceAgent: v.optional(v.string()),
     files: v.optional(v.array(v.object({
       name: v.string(),
       type: v.string(),

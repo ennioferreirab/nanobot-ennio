@@ -257,7 +257,15 @@ export function KanbanBoard({ onTaskClick, search = EMPTY_SEARCH }: KanbanBoardP
           return (
             t.status === "in_progress" ||
             t.status === "retrying" ||
-            t.status === "crashed"
+            t.status === "crashed" ||
+            t.status === "failed"
+          );
+        }
+        if (col.status === "assigned") {
+          return (
+            t.status === "assigned" ||
+            t.status === "planning" ||
+            t.status === "ready"
           );
         }
         if (col.status === "inbox") {

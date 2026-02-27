@@ -15,9 +15,14 @@ if TYPE_CHECKING:
 class McDelegateTool(Tool):
     """Tool to delegate a task to the Mission Control board."""
 
-    def __init__(self) -> None:
+    def __init__(self, source_agent: str | None = None) -> None:
         self._bridge: "ConvexBridge | None" = None
+        self._source_agent = source_agent
         self._init_bridge()
+
+    def set_source_agent(self, name: str) -> None:
+        """Set the calling agent's name (used to prevent circular delegation)."""
+        self._source_agent = name
 
     def _init_bridge(self) -> None:
         try:
@@ -72,6 +77,17 @@ class McDelegateTool(Tool):
             if not self._bridge:
                 return "Error: Mission Control is not configured or reachable. Cannot delegate."
 
+        # Prevent circular self-delegation
+        if assigned_agent and self._source_agent and assigned_agent == self._source_agent:
+            logger.warning(
+                "Blocked self-delegation: agent '%s' tried to delegate to itself",
+                self._source_agent,
+            )
+            return (
+                f"Error: You ({self._source_agent}) cannot delegate a task to yourself. "
+                "Either execute the task directly using your tools, or delegate to a different agent."
+            )
+
         try:
             task_args: dict[str, Any] = {
                 "title": title,
@@ -79,7 +95,9 @@ class McDelegateTool(Tool):
             }
             if assigned_agent:
                 task_args["assignedAgent"] = assigned_agent
-                
+            if self._source_agent:
+                task_args["sourceAgent"] = self._source_agent
+
             task_id = await asyncio.to_thread(self._bridge.mutation, "tasks:create", task_args)
             if not task_id:
                 return "Error: Failed to create task in Mission Control."

@@ -69,6 +69,10 @@ class MemoryStore:
 
     def get_memory_context(self) -> str:
         long_term = self.read_long_term()
+        logger.info(
+            "[memory] get_memory_context from '{}': len={}, preview={}",
+            self.memory_file, len(long_term), repr(long_term[:300]) if long_term else "(empty)",
+        )
         return f"## Long-term Memory\n{long_term}" if long_term else ""
 
     async def consolidate(

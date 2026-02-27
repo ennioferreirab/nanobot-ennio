@@ -205,6 +205,19 @@ class AgentLoop:
         final_content = None
         tools_used: list[str] = []
 
+        # Log the initial message structure going to LLM
+        logger.info(
+            "[loop] _run_agent_loop: {} messages, model={}, max_iterations={}",
+            len(messages), self.model, self.max_iterations,
+        )
+        for i, m in enumerate(messages):
+            content = m.get("content", "")
+            content_len = len(content) if isinstance(content, str) else 0
+            logger.info(
+                "[loop] _run_agent_loop msg[{}]: role={}, len={}",
+                i, m.get("role"), content_len,
+            )
+
         while iteration < self.max_iterations:
             iteration += 1
 
@@ -402,12 +415,27 @@ class AgentLoop:
             if isinstance(message_tool, MessageTool):
                 message_tool.start_turn()
 
+        logger.info(
+            "[loop] _process_message: session_key='{}', workspace={}, memory_workspace={}, memory_window={}",
+            key, self.workspace, self.memory_workspace, self.memory_window,
+        )
+
+        history = session.get_history(max_messages=self.memory_window)
+        logger.info(
+            "[loop] _process_message: loaded {} history messages for session '{}'",
+            len(history), key,
+        )
+
         initial_messages = self.context.build_messages(
-            history=session.get_history(max_messages=self.memory_window),
+            history=history,
             current_message=msg.content,
             skill_names=self.allowed_skills,
             media=msg.media if msg.media else None,
             channel=msg.channel, chat_id=msg.chat_id,
+        )
+        logger.info(
+            "[loop] _process_message: built {} initial messages for LLM call",
+            len(initial_messages),
         )
 
         async def _bus_progress(content: str) -> None:
@@ -503,6 +531,14 @@ class AgentLoop:
     ) -> str:
         """Process a message directly (for CLI or cron usage)."""
         self._current_task_id = task_id
+        logger.info(
+            "[loop] process_direct: session_key='{}', channel='{}', chat_id='{}', task_id='{}', content len={}",
+            session_key, channel, chat_id, task_id, len(content),
+        )
+        logger.info(
+            "[loop] process_direct: content first 500 chars:\n{}",
+            repr(content[:500]),
+        )
         await self._connect_mcp()
         msg = InboundMessage(channel=channel, sender_id="user", chat_id=chat_id, content=content)
         response = await self._process_message(msg, session_key=session_key, on_progress=on_progress)

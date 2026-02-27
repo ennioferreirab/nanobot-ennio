@@ -183,6 +183,54 @@ def test_lead_agent_is_never_assigned_as_step_executor() -> None:
     assert plan.steps[0].assigned_agent == NANOBOT_AGENT_NAME
 
 
+def test_system_agent_is_never_assigned_as_step_executor() -> None:
+    """System agents (like low-agent) are for internal use only and must not execute task steps."""
+    planner = TaskPlanner()
+    system_agent = AgentData(
+        name="low-agent",
+        display_name="Low Agent",
+        role="Lightweight system utility agent",
+        skills=[],
+        is_system=True,
+    )
+    plan = ExecutionPlan(
+        steps=[
+            ExecutionPlanStep(
+                temp_id="step_1",
+                title="Configure cron job",
+                description="...",
+                assigned_agent="low-agent",
+            )
+        ]
+    )
+
+    planner._validate_agent_names(plan, [system_agent, _agent("youtube-summarizer", ["youtube"])])
+
+    assert plan.steps[0].assigned_agent == NANOBOT_AGENT_NAME
+
+
+def test_system_agents_excluded_from_planner_roster() -> None:
+    """System agents must not appear in the agent roster shown to the planner LLM."""
+    from nanobot.mc.planner import _build_agent_roster
+
+    agents = [
+        _agent("youtube-summarizer", ["youtube"]),
+        AgentData(
+            name="low-agent",
+            display_name="Low Agent",
+            role="Lightweight system utility agent",
+            skills=[],
+            is_system=True,
+        ),
+        _agent("nanobot", ["general"]),
+    ]
+
+    roster = _build_agent_roster(agents)
+    assert "low-agent" not in roster
+    assert "youtube-summarizer" in roster
+    assert "nanobot" in roster
+
+
 def test_single_step_task_produces_valid_fallback_execution_plan() -> None:
     planner = TaskPlanner()
 

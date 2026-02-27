@@ -113,6 +113,21 @@ class AskAgentTool(Tool):
         agent_model = result.model
         agent_skills = result.skills
 
+        # Resolve tier reference to actual model ID (e.g. tier:standard-medium → claude-sonnet-4-6)
+        from nanobot.mc.types import is_tier_reference
+        if agent_model and is_tier_reference(agent_model):
+            if self._bridge:
+                try:
+                    from nanobot.mc.tier_resolver import TierResolver
+                    agent_model = TierResolver(self._bridge).resolve_model(agent_model)
+                except Exception as exc:
+                    return f"Failed to resolve model tier '{agent_model}' for '{target_agent}': {exc}"
+            else:
+                return (
+                    f"Agent '{target_agent}' uses tier model '{agent_model}' "
+                    f"which cannot be resolved without an MC connection."
+                )
+
         # Create provider
         try:
             from nanobot.mc.provider_factory import create_provider

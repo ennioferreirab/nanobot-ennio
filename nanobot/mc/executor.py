@@ -145,11 +145,24 @@ async def _run_agent_on_task(
     if agent_prompt:
         message = f"[System instructions]\n{agent_prompt}\n\n[Task]\n{message}"
 
+    logger.info(
+        "[_run_agent_on_task] Agent '%s': workspace=%s, memory_workspace=%s",
+        agent_name, workspace, memory_workspace,
+    )
+    logger.info(
+        "[_run_agent_on_task] Agent '%s': final message len=%d, first 500 chars:\n%s",
+        agent_name, len(message), repr(message[:500]),
+    )
+
     # Board-scoped session key format (AC6)
     if board_name:
         session_key = f"mc:board:{board_name}:task:{agent_name}"
     else:
         session_key = f"mc:task:{agent_name}"
+    logger.info(
+        "[_run_agent_on_task] Agent '%s': session_key='%s', board_name=%s",
+        agent_name, session_key, board_name,
+    )
 
     # Create provider from user config (respects OAuth, API keys, etc.)
     provider, resolved_model = _make_provider(agent_model)
@@ -179,6 +192,10 @@ async def _run_agent_on_task(
             "Call the save_memory tool with your consolidation."
         ),
     )
+
+    # Agents running MC steps should execute tasks directly, not re-delegate.
+    # Remove delegate_task to prevent circular delegation loops.
+    loop.tools.unregister("delegate_task")
 
     # Set MC context on ask_agent tool for inter-agent conversations (Story 10.3)
     if ask_tool := loop.tools.get("ask_agent"):
@@ -842,6 +859,13 @@ class TaskExecutor:
 
         # Load agent prompt, model, and skills from YAML config
         agent_prompt, agent_model, agent_skills = self._load_agent_config(agent_name)
+        logger.info(
+            "[executor] YAML config for '%s': prompt_len=%d, model=%s, skills=%s",
+            agent_name,
+            len(agent_prompt) if agent_prompt else 0,
+            agent_model,
+            agent_skills,
+        )
 
         # Convex is the source of truth for model, prompt, and variables — override YAML
         try:
@@ -869,6 +893,12 @@ class TaskExecutor:
 
                 # Sync prompt (Convex is source of truth for dashboard edits)
                 convex_prompt = convex_agent.get("prompt")
+                logger.info(
+                    "[executor] Convex prompt for '%s': len=%d, first 300 chars: %s",
+                    agent_name,
+                    len(convex_prompt) if convex_prompt else 0,
+                    repr(convex_prompt[:300]) if convex_prompt else "(none)",
+                )
                 if convex_prompt:
                     agent_prompt = convex_prompt
 
@@ -877,10 +907,21 @@ class TaskExecutor:
                 if variables and agent_prompt:
                     for var in variables:
                         placeholder = "{{" + var["name"] + "}}"
+                        before_count = agent_prompt.count(placeholder)
                         agent_prompt = agent_prompt.replace(placeholder, var["value"])
+                        logger.info(
+                            "[executor] Variable '%s' interpolated %d time(s) for '%s': value=%r",
+                            var["name"], before_count, agent_name, var["value"][:100],
+                        )
                     logger.info(
                         "[executor] Interpolated %d variable(s) into prompt for '%s'",
                         len(variables), agent_name,
+                    )
+                # Log the final prompt for debugging sync issues
+                if agent_prompt:
+                    logger.info(
+                        "[executor] Final prompt for '%s' (len=%d, first 200 chars): %s",
+                        agent_name, len(agent_prompt), repr(agent_prompt[:200]),
                     )
         except Exception:
             logger.warning(
@@ -906,11 +947,17 @@ class TaskExecutor:
 
         # Inject global orientation for non-lead agents
         agent_prompt = self._maybe_inject_orientation(agent_name, agent_prompt)
+        if agent_prompt:
+            logger.info(
+                "[executor] Post-orientation prompt for '%s' (len=%d, first 200 chars): %s",
+                agent_name, len(agent_prompt), repr(agent_prompt[:200]),
+            )
 
         # System agents (nanobot) use identity from SOUL.md + ContextBuilder —
         # skip prompt/orientation injection so MC uses the exact same prompt as Telegram.
         if agent_name == NANOBOT_AGENT_NAME:
             agent_prompt = None
+            logger.info("[executor] Cleared prompt for nanobot (uses SOUL.md + ContextBuilder)")
 
         # Inject agent roster into lead-agent context so it can discover all
         # available agents without relying on list_dir (which only shows agents
@@ -963,6 +1010,13 @@ class TaskExecutor:
         # Snapshot the output directory before agent execution so we can detect
         # created/modified files afterwards (Story 2.5).
         pre_snapshot = await asyncio.to_thread(_snapshot_output_dir, task_id)
+
+        # Log the full task description being sent to the agent for debugging
+        if description:
+            logger.info(
+                "[executor] Task description for '%s' (len=%d, first 300 chars): %s",
+                agent_name, len(description), repr(description[:300]),
+            )
 
         try:
             result = await _run_agent_on_task(

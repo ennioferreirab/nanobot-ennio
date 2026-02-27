@@ -322,6 +322,53 @@ class StepDispatcher:
 
         try:
             agent_prompt, agent_model, agent_skills = _load_agent_config(agent_name)
+            logger.info(
+                "[dispatcher] YAML config for '%s': prompt_len=%d, model=%s, skills=%s",
+                agent_name,
+                len(agent_prompt) if agent_prompt else 0,
+                agent_model,
+                agent_skills,
+            )
+
+            # Convex is source of truth for prompt and variables — override YAML.
+            # This mirrors the logic in executor._execute_task().
+            try:
+                convex_agent = await asyncio.to_thread(
+                    self._bridge.get_agent_by_name, agent_name
+                )
+                if convex_agent:
+                    convex_prompt = convex_agent.get("prompt")
+                    logger.info(
+                        "[dispatcher] Convex prompt for '%s': len=%d, first 200 chars: %s",
+                        agent_name,
+                        len(convex_prompt) if convex_prompt else 0,
+                        repr(convex_prompt[:200]) if convex_prompt else "(none)",
+                    )
+                    if convex_prompt:
+                        agent_prompt = convex_prompt
+
+                    # Interpolate {{var_name}} placeholders from Convex variables
+                    variables = convex_agent.get("variables") or []
+                    if variables and agent_prompt:
+                        for var in variables:
+                            placeholder = "{{" + var["name"] + "}}"
+                            before_count = agent_prompt.count(placeholder)
+                            agent_prompt = agent_prompt.replace(placeholder, var["value"])
+                            logger.info(
+                                "[dispatcher] Variable '%s' interpolated %d time(s) for '%s': value=%r",
+                                var["name"], before_count, agent_name, var["value"][:100],
+                            )
+                    if agent_prompt:
+                        logger.info(
+                            "[dispatcher] Final prompt for '%s' (len=%d, first 200 chars): %s",
+                            agent_name, len(agent_prompt), repr(agent_prompt[:200]),
+                        )
+            except Exception:
+                logger.warning(
+                    "[dispatcher] Could not fetch Convex agent data for '%s', using YAML",
+                    agent_name,
+                    exc_info=True,
+                )
 
             # Resolve tier references (Story 11.1, AC5)
             if agent_model and is_tier_reference(agent_model):
