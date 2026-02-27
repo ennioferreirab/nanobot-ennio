@@ -88,6 +88,7 @@ export async function PATCH(
     }
     if ("channel" in body) job.payload.channel = body.channel ?? null;
     if ("to" in body) job.payload.to = body.to ?? null;
+    job.payload.deliver = job.payload.channel != null;
     job.updatedAtMs = Date.now();
 
     const updated = JSON.stringify(data, null, 2);

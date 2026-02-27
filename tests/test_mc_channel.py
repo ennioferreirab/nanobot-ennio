@@ -75,6 +75,7 @@ class TestMissionControlChannel:
         ch._running = True
         await ch.stop()
         assert ch._running is False
+        assert ch._stop_event.is_set()
 
     @pytest.mark.asyncio
     async def test_send_uses_to_thread(self) -> None:

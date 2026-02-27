@@ -134,6 +134,7 @@ export function CronJobsModal({ open, onClose, onTaskClick }: Props) {
   const [editChannel, setEditChannel] = useState<string>("");
   const [editTo, setEditTo] = useState<string>("");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -159,7 +160,7 @@ export function CronJobsModal({ open, onClose, onTaskClick }: Props) {
         }
       });
     fetch("/api/channels")
-      .then((res) => res.ok ? res.json() as Promise<{ channels: string[] }> : { channels: [] })
+      .then((res) => res.ok ? res.json() as Promise<{ channels: string[] }> : { channels: ["mc"] })
       .then((data) => {
         if (!cancelled) setEnabledChannels(data.channels);
       })
@@ -314,6 +315,7 @@ export function CronJobsModal({ open, onClose, onTaskClick }: Props) {
                               disabled={saving}
                               onClick={async () => {
                                 setSaving(true);
+                                setSaveError(null);
                                 try {
                                   const res = await fetch(`/api/cron/${job.id}`, {
                                     method: "PATCH",
@@ -339,6 +341,8 @@ export function CronJobsModal({ open, onClose, onTaskClick }: Props) {
                                       ),
                                     );
                                     setEditingJob(null);
+                                  } else {
+                                    setSaveError("Failed to save. Please try again.");
                                   }
                                 } finally {
                                   setSaving(false);
@@ -349,10 +353,13 @@ export function CronJobsModal({ open, onClose, onTaskClick }: Props) {
                             </button>
                             <button
                               className="text-[10px] text-muted-foreground hover:underline"
-                              onClick={() => setEditingJob(null)}
+                              onClick={() => { setEditingJob(null); setSaveError(null); }}
                             >
                               cancel
                             </button>
+                            {saveError && editingJob === job.id && (
+                              <p className="text-[10px] text-red-500 mt-0.5">{saveError}</p>
+                            )}
                           </div>
                         </div>
                       ) : (
@@ -362,6 +369,7 @@ export function CronJobsModal({ open, onClose, onTaskClick }: Props) {
                             setEditingJob(job.id);
                             setEditChannel(job.payload.channel ?? "");
                             setEditTo(job.payload.to ?? "");
+                            setSaveError(null);
                           }}
                         >
                           {job.payload.channel && job.payload.to
