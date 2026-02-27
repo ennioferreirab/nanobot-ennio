@@ -24,6 +24,7 @@ class McDelegateTool(Tool):
         """Set the calling agent's name (used to prevent circular delegation)."""
         self._source_agent = name
 
+
     def _init_bridge(self) -> None:
         try:
             from nanobot.mc.gateway import _resolve_convex_url
@@ -88,6 +89,7 @@ class McDelegateTool(Tool):
                 "Either execute the task directly using your tools, or delegate to a different agent."
             )
 
+
         try:
             task_args: dict[str, Any] = {
                 "title": title,
@@ -97,6 +99,7 @@ class McDelegateTool(Tool):
                 task_args["assignedAgent"] = assigned_agent
             if self._source_agent:
                 task_args["sourceAgent"] = self._source_agent
+
 
             task_id = await asyncio.to_thread(self._bridge.mutation, "tasks:create", task_args)
             if not task_id:
