@@ -77,6 +77,11 @@ def _maybe_inject_orientation(
     if not orientation:
         return agent_prompt
 
+    # Interpolate {agent_roster} placeholder if present
+    if "{agent_roster}" in orientation:
+        from nanobot.mc.executor import build_executor_agent_roster
+        orientation = orientation.replace("{agent_roster}", build_executor_agent_roster())
+
     if agent_prompt:
         return f"{orientation}\n\n---\n\n{agent_prompt}"
     return orientation

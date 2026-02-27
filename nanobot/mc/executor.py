@@ -61,6 +61,37 @@ def _collect_provider_error_types() -> tuple[type[Exception], ...]:
 _PROVIDER_ERRORS = _collect_provider_error_types()
 
 
+def build_executor_agent_roster() -> str:
+    """Build a roster of available agents for injection into executor orientation.
+
+    Reads ~/.nanobot/agents/*/config.yaml, excludes system agents and lead-agent.
+    Returns formatted list for agent orientation interpolation.
+    """
+    from nanobot.mc.gateway import AGENTS_DIR
+    from nanobot.mc.yaml_validator import validate_agent_file
+
+    lines: list[str] = []
+    if not AGENTS_DIR.is_dir():
+        return "(no other agents available)"
+    for agent_dir in sorted(AGENTS_DIR.iterdir()):
+        if not agent_dir.is_dir():
+            continue
+        config_path = agent_dir / "config.yaml"
+        if not config_path.exists():
+            continue
+        result = validate_agent_file(config_path)
+        if isinstance(result, list):
+            continue
+        # Skip system agents and lead-agent
+        if getattr(result, "is_system", False) or is_lead_agent(result.name):
+            continue
+        skill_str = ", ".join(result.skills) if result.skills else "general"
+        lines.append(f"- **{result.name}** — {result.role} (skills: {skill_str})")
+    if not lines:
+        return "(no other agents available)"
+    return "\n".join(lines)
+
+
 def _provider_error_action(exc: Exception) -> str:
     """Extract a user-facing action string from a provider error.
 
@@ -735,6 +766,12 @@ class TaskExecutor:
         orientation = orientation_path.read_text(encoding="utf-8").strip()
         if not orientation:
             return agent_prompt
+
+        # Interpolate {agent_roster} placeholder if present
+        if "{agent_roster}" in orientation:
+            orientation = orientation.replace(
+                "{agent_roster}", build_executor_agent_roster()
+            )
 
         logger.info(
             "[executor] Global orientation injected for agent '%s'", agent_name
