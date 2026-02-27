@@ -27,15 +27,16 @@ class MissionControlChannel(BaseChannel):
     def __init__(self, config: Any, bus: "MessageBus", bridge: Any | None = None):
         super().__init__(config, bus)
         self._bridge = bridge
+        self._stop_event = asyncio.Event()
 
     async def start(self) -> None:
-        """MC channel has no inbound listener — keep alive until stopped."""
+        """MC channel has no inbound listener — wait until stopped."""
         self._running = True
-        while self._running:
-            await asyncio.sleep(1)
+        await self._stop_event.wait()
 
     async def stop(self) -> None:
         self._running = False
+        self._stop_event.set()
 
     async def send(self, msg: OutboundMessage) -> None:
         """Send an outbound message to Convex."""
@@ -49,8 +50,8 @@ class MissionControlChannel(BaseChannel):
                 self._bridge.query, "tasks:getById", {"task_id": task_id}
             )
         except Exception:
-            logger.warning("[mc-channel] Failed to query task %s", task_id)
-            task = None
+            logger.warning("[mc-channel] Failed to query task %s — dropping message", task_id)
+            return
 
         if task:
             try:
