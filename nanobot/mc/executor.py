@@ -145,7 +145,7 @@ async def _run_agent_on_task(
     cron_service: Any | None = None,
     task_id: str | None = None,
     bridge: "ConvexBridge | None" = None,
-) -> str:
+) -> tuple[str, str, "AgentLoop"]:
     """Run the nanobot agent loop on a task and return the result.
 
     Uses AgentLoop.process_direct() with the agent's system prompt and model.
@@ -185,11 +185,11 @@ async def _run_agent_on_task(
         agent_name, len(message), repr(message[:500]),
     )
 
-    # Board-scoped session key format (AC6)
+    # Board-scoped session key format (AC6); include task_id for per-task isolation
     if board_name:
-        session_key = f"mc:board:{board_name}:task:{agent_name}"
+        session_key = f"mc:board:{board_name}:task:{agent_name}:{task_id}" if task_id else f"mc:board:{board_name}:task:{agent_name}"
     else:
-        session_key = f"mc:task:{agent_name}"
+        session_key = f"mc:task:{agent_name}:{task_id}" if task_id else f"mc:task:{agent_name}"
     logger.info(
         "[_run_agent_on_task] Agent '%s': session_key='%s', board_name=%s",
         agent_name, session_key, board_name,
@@ -246,10 +246,7 @@ async def _run_agent_on_task(
         chat_id=agent_name,
         task_id=task_id,
     )
-    # TODO: revisit task-based consolidation — may be better than message-count
-    # Consolidate memory and clear session (mirrors /new behavior)
-    # await loop.end_task_session(session_key)
-    return result
+    return result, session_key, loop
 
 
 def _human_size(b: int) -> str:
@@ -1056,7 +1053,7 @@ class TaskExecutor:
             )
 
         try:
-            result = await _run_agent_on_task(
+            result, session_key, loop = await _run_agent_on_task(
                 agent_name=agent_name,
                 agent_prompt=agent_prompt,
                 agent_model=agent_model,
@@ -1147,6 +1144,20 @@ class TaskExecutor:
                 "[executor] Task '%s' completed by '%s' → %s",
                 title, agent_name, final_status,
             )
+
+            # Fire-and-forget memory consolidation after task status is updated.
+            # Runs async so user sees completion immediately.
+            async def _post_task_consolidate():
+                try:
+                    await loop.end_task_session(session_key)
+                    logger.info("[executor] Post-task memory consolidation done for '%s'", title)
+                except Exception:
+                    logger.warning(
+                        "[executor] Post-task memory consolidation failed for '%s'",
+                        title, exc_info=True,
+                    )
+
+            asyncio.create_task(_post_task_consolidate())
 
             # Write completion to global HEARTBEAT.md for the main agent (Owl) to pick up
             try:
