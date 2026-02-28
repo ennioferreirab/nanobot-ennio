@@ -893,7 +893,7 @@ async def run_gateway(bridge: ConvexBridge) -> None:
     cron_store_path = Path.home() / ".nanobot" / "cron" / "jobs.json"
     cron = CronService(cron_store_path)
 
-    async def _requeue_cron_task(b: "ConvexBridge", task_id: str, message: str) -> None:
+    async def _requeue_cron_task(b: "ConvexBridge", task_id: str, message: str, agent: str | None = None) -> None:
         """Re-queue an existing task for cron execution.
 
         Injects the cron trigger message into the task's thread so the agent
@@ -910,12 +910,18 @@ async def run_gateway(bridge: ConvexBridge) -> None:
             task = await asyncio.to_thread(b.query, "tasks:getById", {"task_id": task_id})
         except Exception:
             logger.warning("[gateway] Could not fetch cron origin task %s — creating new task instead", task_id)
-            await asyncio.to_thread(b.mutation, "tasks:create", {"title": message})
+            create_args: dict = {"title": message}
+            if agent:
+                create_args["assigned_agent"] = agent
+            await asyncio.to_thread(b.mutation, "tasks:create", create_args)
             return
 
         if not task:
             logger.warning("[gateway] Cron origin task %s not found — creating new task", task_id)
-            await asyncio.to_thread(b.mutation, "tasks:create", {"title": message})
+            create_args = {"title": message}
+            if agent:
+                create_args["assigned_agent"] = agent
+            await asyncio.to_thread(b.mutation, "tasks:create", create_args)
             return
 
         current_status = task.get("status", "")
@@ -962,13 +968,16 @@ async def run_gateway(bridge: ConvexBridge) -> None:
         try:
             if job.payload.task_id:
                 # Re-queue the original task so history accumulates in one place
-                await _requeue_cron_task(bridge, job.payload.task_id, job.payload.message)
+                await _requeue_cron_task(bridge, job.payload.task_id, job.payload.message, agent=job.payload.agent)
             else:
                 # No linked task — create a new task (classic cron behavior)
+                create_args: dict = {"title": job.payload.message}
+                if job.payload.agent:
+                    create_args["assigned_agent"] = job.payload.agent
                 await asyncio.to_thread(
                     bridge.mutation,
                     "tasks:create",
-                    {"title": job.payload.message},
+                    create_args,
                 )
         except Exception:
             logger.exception("[gateway] Failed to handle cron job '%s'", job.name)
