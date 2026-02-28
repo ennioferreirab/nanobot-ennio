@@ -18,10 +18,15 @@ export function TerminalPanel() {
     }
   }, [session?.output]);
 
+  const [error, setError] = useState<string | null>(null);
+
   const handleSend = () => {
     const trimmed = input.trim();
     if (!trimmed) return;
-    sendInput({ sessionId: "poc-bridge-001", input: trimmed });
+    setError(null);
+    sendInput({ sessionId: "poc-bridge-001", input: trimmed }).catch((e) => {
+      setError(e instanceof Error ? e.message : "Failed to send input");
+    });
     setInput("");
   };
 
@@ -33,7 +38,7 @@ export function TerminalPanel() {
 
   if (session === undefined) {
     dotColor = "bg-zinc-500";
-    statusText = "Disconnected";
+    statusText = "Loading...";
   } else if (session === null) {
     dotColor = "bg-zinc-500";
     statusText = "Disconnected";
@@ -58,9 +63,10 @@ export function TerminalPanel() {
 
       {/* Output display */}
       <div className="flex-1 overflow-y-auto bg-zinc-950 p-3">
-        <pre className="whitespace-pre-wrap break-words font-mono text-xs text-green-400">
-          {session?.output || "Waiting for bridge connection..."}
-        </pre>
+        <pre className="whitespace-pre-wrap break-words font-mono text-xs text-green-400">{session?.output || "Waiting for bridge connection..."}</pre>
+        {error && (
+          <p className="mt-2 text-xs text-red-400">{error}</p>
+        )}
         <div ref={outputEndRef} />
       </div>
 
