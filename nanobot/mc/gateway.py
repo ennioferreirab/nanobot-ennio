@@ -848,21 +848,17 @@ async def _run_plan_negotiation_manager(bridge: "ConvexBridge") -> None:
             if task_status == "in_progress" or (
                 task_status == "review" and awaiting_kickoff
             ):
-                # Skip plan negotiation for re-entered tasks where all steps
-                # are already completed (e.g. cron requeue of a "done" task).
-                if task_data.get("execution_plan"):
-                    steps = await asyncio.to_thread(
-                        bridge.get_steps_by_task, task_id
+                # Skip plan negotiation for cron-requeued tasks (they
+                # re-enter in_progress but don't need lead-agent interaction).
+                # Manual reassignments are NOT in this set and proceed normally.
+                if task_id in _cron_requeued_ids:
+                    _cron_requeued_ids.discard(task_id)
+                    logger.info(
+                        "[gateway] Skipping plan negotiation for task %s "
+                        "(cron requeue)",
+                        task_id,
                     )
-                    if steps and all(
-                        s.get("status") == "completed" for s in steps
-                    ):
-                        logger.info(
-                            "[gateway] Skipping plan negotiation for task %s "
-                            "(all steps already completed)",
-                            task_id,
-                        )
-                        continue
+                    continue
                 await _spawn_loop_if_needed(task_id)
 
     # Drain both queues by creating persistent reader tasks so no queue.get()
@@ -914,6 +910,9 @@ async def run_gateway(bridge: ConvexBridge) -> None:
 
     # Lightweight delivery: dict tracks pending cron deliveries, callback sends after completion
     pending_deliveries: dict[str, tuple[str, str]] = {}  # task_id → (channel, to)
+
+    # Task IDs requeued by cron — plan negotiation manager skips these
+    _cron_requeued_ids: set[str] = set()
 
     async def _send_telegram_direct(chat_id: str, content: str) -> None:
         """Send message to Telegram without polling — direct Bot API call."""
@@ -1020,6 +1019,7 @@ async def run_gateway(bridge: ConvexBridge) -> None:
             agent_name,
             f"Cron re-queued task to {agent_name}",
         )
+        _cron_requeued_ids.add(task_id)
         logger.info("[gateway] Cron re-queued task %s → assigned to %s", task_id, agent_name)
         return True
 
