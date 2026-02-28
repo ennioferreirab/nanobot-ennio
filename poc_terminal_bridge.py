@@ -83,15 +83,13 @@ def inject_input(text: str):
     time.sleep(0.2)
     tmux_enter()
 
-def clear_pending_input():
-    """Limpa o pendingInput no Convex após processar."""
-    bridge.mutation("terminalSessions:sendInput", {
-        "session_id": SESSION_ID,
-        "input": ""
-    })
+_last_good_output: str = ""
 
 def write_output_to_convex(output: str, status: str = "idle"):
     """Escreve o output do Claude no Convex."""
+    global _last_good_output
+    if output:
+        _last_good_output = output
     bridge.mutation("terminalSessions:upsert", {
         "session_id": SESSION_ID,
         "output": output,
@@ -101,10 +99,17 @@ def write_output_to_convex(output: str, status: str = "idle"):
     print(f"[bridge] Output escrito no Convex ({len(output)} chars, status={status}).", flush=True)
 
 def set_status(status: str):
-    """Atualiza apenas o status no Convex."""
+    """Atualiza apenas o status no Convex, preserving last known good output."""
+    global _last_good_output
+    try:
+        captured = tmux_capture()
+        if captured:
+            _last_good_output = captured
+    except Exception:
+        captured = ""
     bridge.mutation("terminalSessions:upsert", {
         "session_id": SESSION_ID,
-        "output": tmux_capture(),
+        "output": captured or _last_good_output,
         "status": status
     })
     print(f"[bridge] Status atualizado: {status}", flush=True)
@@ -146,14 +151,14 @@ def subscription_loop():
 
             # Escreve output no Convex com status idle
             write_output_to_convex(output, status="idle")
+
+            print("[subscription] ✅ Ciclo completo. Aguardando próximo input...\n", flush=True)
         except Exception as e:
             print(f"[subscription] ❌ Erro no ciclo: {e}", flush=True)
             try:
                 set_status("error")
             except Exception:
                 print("[subscription] ❌ Falha ao setar status de erro no Convex", flush=True)
-
-        print("[subscription] ✅ Ciclo completo. Aguardando próximo input...\n", flush=True)
 
 # ── Setup inicial ──────────────────────────────────────────────────────────────
 
