@@ -3,11 +3,15 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 
-export function TerminalPanel() {
+interface TerminalPanelProps {
+  sessionId: string;
+}
+
+export function TerminalPanel({ sessionId }: TerminalPanelProps) {
   const [input, setInput] = useState("");
   const outputEndRef = useRef<HTMLDivElement>(null);
 
-  const session = useQuery(api.terminalSessions.get, { sessionId: "poc-bridge-001" });
+  const session = useQuery(api.terminalSessions.get, { sessionId });
   const sendInput = useMutation(api.terminalSessions.sendInput);
 
   useEffect(() => {
@@ -24,7 +28,7 @@ export function TerminalPanel() {
     const trimmed = input.trim();
     if (!trimmed) return;
     setError(null);
-    sendInput({ sessionId: "poc-bridge-001", input: trimmed }).catch((e) => {
+    sendInput({ sessionId, input: trimmed }).catch((e) => {
       setError(e instanceof Error ? e.message : "Failed to send input");
     });
     setInput("");
@@ -61,6 +65,13 @@ export function TerminalPanel() {
         <span className="text-xs text-zinc-400">{statusText}</span>
       </div>
 
+      {/* Terminal header */}
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-zinc-800 bg-zinc-900">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-zinc-300">{sessionId}</span>
+        </div>
+      </div>
+
       {/* Output display */}
       <div className="flex-1 overflow-y-auto bg-zinc-950 p-3">
         <pre className="whitespace-pre-wrap break-words font-mono text-xs text-green-400">{session?.output || "Waiting for bridge connection..."}</pre>
@@ -87,7 +98,7 @@ export function TerminalPanel() {
             key={key}
             type="button"
             onClick={() => {
-              sendInput({ sessionId: "poc-bridge-001", input: `!!keys:${key}` }).catch(() => {});
+              sendInput({ sessionId, input: `!!keys:${key}` }).catch(() => {});
             }}
             className="rounded bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-zinc-700 active:bg-zinc-600"
           >
