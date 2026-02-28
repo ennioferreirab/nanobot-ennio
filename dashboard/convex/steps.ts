@@ -215,12 +215,13 @@ export const listByBoard = query({
           ctx.db
             .query("tasks")
             .withIndex("by_status", (q) => q.eq("status", status))
+            .filter((q) => q.eq(q.field("boardId"), undefined))
             .collect()
         )
       );
       for (const batch of batches) {
         for (const task of batch) {
-          if (!task.boardId) taskIds.add(task._id);
+          taskIds.add(task._id);
         }
       }
     }
