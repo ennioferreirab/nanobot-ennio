@@ -123,9 +123,9 @@ async def _run_step_agent(
     bridge: Any | None = None,
 ) -> str:
     """Lazily delegate step execution to executor helper."""
-    from nanobot.mc.executor import _run_agent_on_task
+    from nanobot.mc.executor import _run_agent_on_task, _background_tasks
 
-    return await _run_agent_on_task(
+    result, session_key, loop = await _run_agent_on_task(
         agent_name=agent_name,
         agent_prompt=agent_prompt,
         agent_model=agent_model,
@@ -139,6 +139,26 @@ async def _run_step_agent(
         cron_service=cron_service,
         bridge=bridge,
     )
+
+    # Fire-and-forget memory consolidation after step completion.
+    # Runs async so the caller sees the result immediately.
+    async def _post_step_consolidate():
+        try:
+            await loop.end_task_session(session_key)
+            logger.info(
+                "[dispatcher] Post-step memory consolidation done for agent '%s' session '%s'",
+                agent_name, session_key,
+            )
+        except Exception:
+            logger.warning(
+                "[dispatcher] Post-step memory consolidation failed for agent '%s' session '%s'",
+                agent_name, session_key, exc_info=True,
+            )
+
+    _task = asyncio.create_task(_post_step_consolidate())
+    _background_tasks.add(_task)
+    _task.add_done_callback(_background_tasks.discard)
+    return result
 
 
 class StepDispatcher:
