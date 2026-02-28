@@ -82,7 +82,7 @@ class CronTool(Tool):
                 },
                 "deliver_to": {
                     "type": "string",
-                    "description": "Override delivery recipient/chat_id for the chosen channel. Required if deliver_channel is set."
+                    "description": "Delivery recipient for the chosen channel. For 'telegram': a numeric chat ID (e.g. '986097959'). For 'mc': an agent name. Required if deliver_channel is set."
                 }
             },
             "required": ["action"]
@@ -127,6 +127,14 @@ class CronTool(Tool):
             return "Error: deliver_to is required when deliver_channel is set"
         if deliver_to and not deliver_channel:
             return "Error: deliver_channel is required when deliver_to is set"
+        if deliver_channel == "telegram":
+            effective_to = deliver_to or self._chat_id
+            if not effective_to.lstrip("-").isdigit():
+                return (
+                    f"Error: deliver_to must be a numeric Telegram chat ID "
+                    f"(e.g. '986097959'), got '{effective_to}'. "
+                    "Ask the user for their Telegram chat ID — it cannot be an agent name."
+                )
         if tz and not cron_expr:
             return "Error: tz can only be used with cron_expr"
         if tz:

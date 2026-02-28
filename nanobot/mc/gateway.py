@@ -922,6 +922,15 @@ async def run_gateway(bridge: ConvexBridge) -> None:
         from telegram import Bot
         from nanobot.channels.telegram import _markdown_to_telegram_html, _split_message
 
+        if not chat_id.lstrip("-").isdigit():
+            logger.error(
+                "[gateway] Telegram delivery aborted — chat_id %r is not a numeric ID. "
+                "The cron job was likely created with deliver_to set to an MC agent name "
+                "instead of a Telegram chat ID. Update or recreate the cron job with the "
+                "correct numeric chat_id (e.g. '986097959').",
+                chat_id,
+            )
+            return
         token = config.channels.telegram.token
         if not token:
             logger.warning("[gateway] No Telegram token — skipping delivery")
