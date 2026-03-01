@@ -37,6 +37,7 @@ from nanobot.mc.bridge import ConvexBridge
 # ── Constants ──────────────────────────────────────────────────────────────────
 STABLE_SECONDS = 0.0   # seconds without output change = Claude finished
 POLL_INTERVAL = 0.1    # local pane read interval (no LLM calls)
+PID_DIR = Path.home() / ".nanobot"
 
 
 # ── IP detection ───────────────────────────────────────────────────────────────
@@ -53,6 +54,39 @@ def get_local_ip() -> str:
         return "unknown"
 
 
+# ── Env auto-loading ───────────────────────────────────────────────────────────
+
+def _load_env() -> None:
+    """Auto-load CONVEX_URL and CONVEX_ADMIN_KEY from dashboard/.env.local if not already set."""
+    candidates = [
+        ROOT / "dashboard",
+        Path.cwd() / "dashboard",
+    ]
+    env_file = None
+    for candidate in candidates:
+        if candidate.is_dir() and (candidate / ".env.local").exists():
+            env_file = candidate / ".env.local"
+            break
+    if env_file is None:
+        return
+
+    env_map = {}
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        env_map[key.strip()] = val.strip().strip('"')
+
+    if not os.environ.get("CONVEX_URL") and env_map.get("NEXT_PUBLIC_CONVEX_URL"):
+        os.environ["CONVEX_URL"] = env_map["NEXT_PUBLIC_CONVEX_URL"]
+        print(f"[bridge] Loaded CONVEX_URL from {env_file}", flush=True)
+
+    if not os.environ.get("CONVEX_ADMIN_KEY") and env_map.get("CONVEX_ADMIN_KEY"):
+        os.environ["CONVEX_ADMIN_KEY"] = env_map["CONVEX_ADMIN_KEY"]
+        print(f"[bridge] Loaded CONVEX_ADMIN_KEY from {env_file}", flush=True)
+
+
 # ── CLI argument parsing ───────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
@@ -65,7 +99,7 @@ def parse_args() -> argparse.Namespace:
         help="Unique session identifier (default: auto-generated UUID4)",
     )
     parser.add_argument(
-        "-d", "--display-name",
+        "-n", "--name",
         default=None,
         help="Human-readable display name (default: same as --tmux-session)",
     )
@@ -75,7 +109,7 @@ def parse_args() -> argparse.Namespace:
         help="Convex deployment URL (default: $CONVEX_URL)",
     )
     parser.add_argument(
-        "--admin-key",
+        "-ad", "--admin-key",
         default=os.environ.get("CONVEX_ADMIN_KEY"),
         help="Convex admin key for server-side auth (default: $CONVEX_ADMIN_KEY)",
     )
@@ -89,9 +123,19 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Launch Claude with --dangerously-skip-permissions",
     )
+    parser.add_argument(
+        "-k", "--kill",
+        action="store_true",
+        help="Kill existing bridge session and exit",
+    )
+    parser.add_argument(
+        "-d", "--detach",
+        action="store_true",
+        help="Run bridge in background (detached)",
+    )
     args = parser.parse_args()
-    if args.display_name is None:
-        args.display_name = args.tmux_session
+    if args.name is None:
+        args.name = args.tmux_session
     return args
 
 
@@ -108,11 +152,13 @@ class TerminalBridge:
         admin_key: str | None,
         tmux_session: str,
         dangerous_skip: bool = False,
+        pid_file: Path | None = None,
     ) -> None:
         self.session_id = session_id
         self.display_name = display_name
         self.tmux_session = tmux_session
         self._dangerous_skip = dangerous_skip
+        self._pid_file = pid_file
         self.tmux_pane = f"{tmux_session}:0"
         self.agent_name = f"remote-{session_id[:8]}"
 
@@ -301,7 +347,11 @@ class TerminalBridge:
         subprocess.run(["tmux", "kill-session", "-t", self.tmux_session], capture_output=True)
         print("[bridge] tmux killed.", flush=True)
 
-        # 2. Notify Convex in a daemon thread with timeout
+        # 2. Remove PID file
+        if self._pid_file and self._pid_file.exists():
+            self._pid_file.unlink(missing_ok=True)
+
+        # 3. Notify Convex in a daemon thread with timeout
         def _notify():
             try:
                 self.monitor_bridge.mutation("terminalSessions:disconnectTerminal", {
@@ -459,8 +509,32 @@ class TerminalBridge:
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    _load_env()
     args = parse_args()
 
+    # PID file path (used by both --kill and --detach)
+    pid_file = PID_DIR / f"terminal-bridge-{args.tmux_session}.pid"
+
+    # ── --kill mode ────────────────────────────────────────────────────────────
+    if args.kill:
+        if pid_file.exists():
+            try:
+                pid = int(pid_file.read_text().strip())
+                os.kill(pid, signal.SIGTERM)
+                print(f"[bridge] Sent SIGTERM to PID {pid}.", flush=True)
+            except ProcessLookupError:
+                print(f"[bridge] PID {pid} not running.", flush=True)
+            except Exception as e:
+                print(f"[bridge] Error killing PID: {e}", flush=True)
+            pid_file.unlink(missing_ok=True)
+        else:
+            print(f"[bridge] No PID file found for session '{args.tmux_session}'.", flush=True)
+        # Always try killing tmux session too
+        subprocess.run(["tmux", "kill-session", "-t", args.tmux_session], capture_output=True)
+        print(f"[bridge] tmux session '{args.tmux_session}' killed (if it existed).", flush=True)
+        sys.exit(0)
+
+    # ── Validate required args ─────────────────────────────────────────────────
     if args.convex_url is None:
         print(
             "[bridge] ERROR: Convex URL is required. "
@@ -477,12 +551,33 @@ if __name__ == "__main__":
         )
         sys.exit(1)
 
+    # ── --detach mode ──────────────────────────────────────────────────────────
+    if args.detach:
+        pid = os.fork()
+        if pid > 0:
+            # Parent: write PID file, print info, exit
+            pid_file.parent.mkdir(parents=True, exist_ok=True)
+            pid_file.write_text(str(pid))
+            print(f"[bridge] Detached (PID {pid}). Kill with: terminal_bridge.py -k -s {args.tmux_session}", flush=True)
+            sys.exit(0)
+        # Child: setsid + redirect stdout/stderr to log file
+        os.setsid()
+        log_path = PID_DIR / f"terminal-bridge-{args.tmux_session}.log"
+        log_fd = open(log_path, "a")
+        os.dup2(log_fd.fileno(), sys.stdout.fileno())
+        os.dup2(log_fd.fileno(), sys.stderr.fileno())
+    else:
+        # Foreground: still write PID file so --kill works
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        pid_file.write_text(str(os.getpid()))
+
     tb = TerminalBridge(
         session_id=args.session_id,
-        display_name=args.display_name,
+        display_name=args.name,
         convex_url=args.convex_url,
         admin_key=args.admin_key,
         tmux_session=args.tmux_session,
         dangerous_skip=args.dangerous_skip,
+        pid_file=pid_file,
     )
     tb.run()
