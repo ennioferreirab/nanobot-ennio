@@ -117,3 +117,12 @@ development_status:
   # Epic 9: Task Enhancements & Search
   epic-9: in-progress
   9-4-text-search-tasks: done
+
+  # Epic 10: Convex Security Hardening
+  # Converts backend-only mutations to internalMutation and hardens
+  # Python startup to require CONVEX_ADMIN_KEY for server-side auth.
+  epic-10: in-progress
+  10-1-lock-down-terminal-session-mutations: ready-for-dev
+  10-2-convert-backend-mutations-to-internal: ready-for-dev
+  10-3-harden-python-startup-admin-key: ready-for-dev
+  epic-10-retrospective: optional
