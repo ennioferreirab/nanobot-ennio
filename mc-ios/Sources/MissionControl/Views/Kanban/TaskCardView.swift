@@ -5,6 +5,9 @@ struct TaskCardView: View {
     let task: MCTask
     let onTap: () -> Void
 
+    @State private var errorMessage: String?
+    @State private var showError = false
+
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
@@ -81,7 +84,10 @@ struct TaskCardView: View {
                 Task {
                     do {
                         try await taskStore.toggleFavorite(taskId: task.id)
-                    } catch {}
+                    } catch {
+                        errorMessage = error.localizedDescription
+                        showError = true
+                    }
                 }
             } label: {
                 Label(
@@ -97,7 +103,10 @@ struct TaskCardView: View {
                             Task {
                                 do {
                                     try await taskStore.updateStatus(taskId: task.id, status: status)
-                                } catch {}
+                                } catch {
+                                    errorMessage = error.localizedDescription
+                                    showError = true
+                                }
                             }
                         }
                     }
@@ -110,11 +119,19 @@ struct TaskCardView: View {
                 Task {
                     do {
                         try await taskStore.softDelete(taskId: task.id)
-                    } catch {}
+                    } catch {
+                        errorMessage = error.localizedDescription
+                        showError = true
+                    }
                 }
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "An error occurred")
         }
     }
 

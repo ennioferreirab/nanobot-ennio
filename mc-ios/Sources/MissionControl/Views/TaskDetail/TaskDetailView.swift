@@ -44,8 +44,8 @@ struct TaskDetailView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
-                ToolbarItemGroup(placement: .primaryAction) {
-                    toolbarActions
+                ToolbarItem(placement: .primaryAction) {
+                    TaskActionsMenu(task: task, onDelete: { dismiss() })
                 }
             }
         }
@@ -115,66 +115,6 @@ struct TaskDetailView: View {
         case .activity:
             ActivityTabView(taskId: task.id)
         }
-    }
-
-    // MARK: - Toolbar Actions
-
-    @ViewBuilder
-    private var toolbarActions: some View {
-        if task.status == .review {
-            Button {
-                Task {
-                    do {
-                        try await taskStore.updateStatus(taskId: task.id, status: .done)
-                    } catch {}
-                }
-            } label: {
-                Image(systemName: "checkmark")
-                    .foregroundStyle(.green)
-            }
-            .accessibilityLabel("Approve task")
-        }
-
-        if task.status == .inProgress || task.status == .assigned {
-            Button {
-                Task {
-                    do {
-                        try await taskStore.updateStatus(taskId: task.id, status: .review)
-                    } catch {}
-                }
-            } label: {
-                Image(systemName: "pause")
-                    .foregroundStyle(.orange)
-            }
-            .accessibilityLabel("Pause task")
-        }
-
-        if task.status == .failed || task.status == .crashed {
-            Button {
-                Task {
-                    do {
-                        try await taskStore.updateStatus(taskId: task.id, status: .ready)
-                    } catch {}
-                }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .foregroundStyle(.blue)
-            }
-            .accessibilityLabel("Retry task")
-        }
-
-        Button(role: .destructive) {
-            Task {
-                do {
-                    try await taskStore.softDelete(taskId: task.id)
-                    dismiss()
-                } catch {}
-            }
-        } label: {
-            Image(systemName: "trash")
-                .foregroundStyle(.red)
-        }
-        .accessibilityLabel("Delete task")
     }
 
 }
