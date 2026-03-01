@@ -63,10 +63,13 @@ final class TaskStore {
 
     // MARK: - Mutations
 
-    func createTask(title: String, boardId: String, description: String? = nil) async throws {
+    func createTask(title: String, boardId: String, description: String? = nil, assignedAgent: String? = nil, trustLevel: TrustLevel? = nil, tags: [String]? = nil) async throws {
         guard let client = ConvexClientManager.shared.client else { return }
         var args: [String: ConvexEncodable?] = ["title": title, "boardId": boardId]
         if let description { args["description"] = description }
+        if let assignedAgent { args["assignedAgent"] = assignedAgent }
+        if let trustLevel { args["trustLevel"] = trustLevel.rawValue }
+        if let tags, !tags.isEmpty { args["tags"] = tags }
         try await client.mutation("tasks:create", with: args)
     }
 

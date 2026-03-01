@@ -164,7 +164,10 @@ struct CreateTaskView: View {
             try await taskStore.createTask(
                 title: trimmedTitle,
                 boardId: boardId,
-                description: description.isEmpty ? nil : description
+                description: description.isEmpty ? nil : description,
+                assignedAgent: selectedAgent.isEmpty ? nil : selectedAgent,
+                trustLevel: selectedTrustLevel,
+                tags: selectedTags.isEmpty ? nil : Array(selectedTags)
             )
             dismiss()
         } catch {
