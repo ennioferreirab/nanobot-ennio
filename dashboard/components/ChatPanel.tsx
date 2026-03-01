@@ -180,32 +180,31 @@ export function ChatPanel() {
         <p className="text-xs text-muted-foreground text-center">
           Type @ to select an agent and start a conversation
         </p>
-        <div className="w-full relative">
-          <Textarea
-            ref={textareaRef}
-            placeholder="@agent-name..."
-            value={content}
-            onChange={handleTextChange}
-            onKeyDown={handleKeyDown}
-            onFocus={() => clearTimeout(blurTimeoutRef.current)}
-            onBlur={() => {
-              blurTimeoutRef.current = setTimeout(
-                () => setMentionQuery(null),
-                150
-              );
-            }}
-            className="text-sm min-h-[60px] max-h-[100px] resize-none"
+        {mentionQuery !== null && (
+          <AgentMentionAutocomplete
+            inline
+            agents={filteredAgents}
+            query={mentionQuery}
+            onSelect={handleMentionSelect}
+            onClose={() => setMentionQuery(null)}
+            anchorRef={textareaRef}
           />
-          {mentionQuery !== null && (
-            <AgentMentionAutocomplete
-              agents={filteredAgents}
-              query={mentionQuery}
-              onSelect={handleMentionSelect}
-              onClose={() => setMentionQuery(null)}
-              anchorRef={textareaRef}
-            />
-          )}
-        </div>
+        )}
+        <Textarea
+          ref={textareaRef}
+          placeholder="@agent-name..."
+          value={content}
+          onChange={handleTextChange}
+          onKeyDown={handleKeyDown}
+          onFocus={() => clearTimeout(blurTimeoutRef.current)}
+          onBlur={() => {
+            blurTimeoutRef.current = setTimeout(
+              () => setMentionQuery(null),
+              150
+            );
+          }}
+          className="text-sm min-h-[60px] max-h-[100px] resize-none"
+        />
       </div>
     );
   }
@@ -236,9 +235,23 @@ export function ChatPanel() {
       {/* Messages area */}
       <ChatMessages agentName={selectedAgent} />
 
+      {/* Inline autocomplete above input */}
+      {mentionQuery !== null && (
+        <div className="shrink-0 px-2">
+          <AgentMentionAutocomplete
+            inline
+            agents={filteredAgents}
+            query={mentionQuery}
+            onSelect={handleMentionSelect}
+            onClose={() => setMentionQuery(null)}
+            anchorRef={textareaRef}
+          />
+        </div>
+      )}
+
       {/* Chat input */}
       <div className="shrink-0 border-t border-border p-2">
-        <div className="flex gap-1.5 relative">
+        <div className="flex gap-1.5">
           <Textarea
             ref={textareaRef}
             placeholder={`Message @${selectedAgent}...`}
@@ -264,15 +277,6 @@ export function ChatPanel() {
           >
             <SendHorizontal className="h-3.5 w-3.5" />
           </Button>
-          {mentionQuery !== null && (
-            <AgentMentionAutocomplete
-              agents={filteredAgents}
-              query={mentionQuery}
-              onSelect={handleMentionSelect}
-              onClose={() => setMentionQuery(null)}
-              anchorRef={textareaRef}
-            />
-          )}
         </div>
       </div>
     </div>

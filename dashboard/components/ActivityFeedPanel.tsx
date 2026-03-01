@@ -31,7 +31,7 @@ export function ActivityFeedPanel() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex h-screen w-full flex-col overflow-hidden border-l border-border bg-muted md:relative md:inset-auto md:z-auto md:w-[280px] md:shrink-0">
+    <div className="fixed inset-0 z-50 flex flex-col overflow-hidden border-l border-border bg-muted md:relative md:inset-auto md:z-auto md:w-[280px] md:shrink-0">
       <div className="flex h-[60px] items-center justify-between border-b border-border px-4">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Activity Feed

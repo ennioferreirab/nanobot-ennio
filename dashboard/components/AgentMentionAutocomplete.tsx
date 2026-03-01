@@ -15,6 +15,7 @@ interface AgentMentionAutocompleteProps {
   onSelect: (agentName: string) => void;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLTextAreaElement | null>;
+  inline?: boolean;
 }
 
 export function AgentMentionAutocomplete({
@@ -23,6 +24,7 @@ export function AgentMentionAutocomplete({
   onSelect,
   onClose,
   anchorRef,
+  inline = false,
 }: AgentMentionAutocompleteProps) {
   const [focusedIndex, setFocusedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -77,10 +79,11 @@ export function AgentMentionAutocomplete({
     };
   }, [anchorRef, navigateDown, navigateUp, selectFocused, onClose]);
 
-  // Compute position relative to the textarea
+  // Compute position relative to the textarea (portal mode only)
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
+    if (inline) return;
     const el = anchorRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -88,49 +91,61 @@ export function AgentMentionAutocomplete({
     const dropdownHeight = 200;
 
     if (spaceAbove > dropdownHeight) {
-      // Position above — use getBoundingClientRect directly for fixed positioning
       setPosition({ top: rect.top - 4, left: rect.left });
     } else {
-      // Position below
       setPosition({ top: rect.bottom + 4, left: rect.left });
     }
-  }, [anchorRef, query]);
+  }, [anchorRef, query, inline]);
 
+  const listContent = filtered.length === 0 ? (
+    <div className="px-3 py-2 text-xs text-muted-foreground">No matching agents</div>
+  ) : (
+    filtered.map((agent, i) => (
+      <div
+        key={agent.name}
+        data-testid={`mention-option-${agent.name}`}
+        className={`px-3 py-1.5 text-sm cursor-pointer flex items-center justify-between ${
+          i === focusedIndex ? "bg-accent" : ""
+        }`}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onSelect(agent.name);
+        }}
+        onMouseEnter={() => setFocusedIndex(i)}
+      >
+        <span>{agent.displayName || agent.name}</span>
+        {agent.role && (
+          <span className="text-xs text-muted-foreground ml-2">{agent.role}</span>
+        )}
+      </div>
+    ))
+  );
+
+  // Inline mode: render directly in flow, no portal
+  if (inline) {
+    return (
+      <div
+        data-testid="mention-autocomplete"
+        className="bg-popover text-popover-foreground border border-border rounded-md shadow-md max-h-[200px] overflow-y-auto"
+        ref={listRef}
+      >
+        {listContent}
+      </div>
+    );
+  }
+
+  // Portal mode: fixed positioning
   if (!position) return null;
-
-  // When positioned above, shift up by 100% of dropdown height; below, no transform
   const isAbove = position.top < (anchorRef.current?.getBoundingClientRect().top ?? 0);
 
   const dropdown = (
     <div
       data-testid="mention-autocomplete"
-      className="fixed bg-popover text-popover-foreground border border-border rounded-md shadow-md z-50 w-[240px] max-h-[200px] overflow-y-auto animate-in fade-in-0 zoom-in-95"
+      className="fixed bg-popover text-popover-foreground border border-border rounded-md shadow-md z-[100] w-[240px] max-h-[200px] overflow-y-auto animate-in fade-in-0 zoom-in-95"
       style={{ top: position.top, left: position.left, ...(isAbove ? { transform: "translateY(-100%)" } : {}) }}
       ref={listRef}
     >
-      {filtered.length === 0 ? (
-        <div className="px-3 py-2 text-xs text-muted-foreground">No matching agents</div>
-      ) : (
-        filtered.map((agent, i) => (
-          <div
-            key={agent.name}
-            data-testid={`mention-option-${agent.name}`}
-            className={`px-3 py-1.5 text-sm cursor-pointer flex items-center justify-between ${
-              i === focusedIndex ? "bg-accent" : ""
-            }`}
-            onMouseDown={(e) => {
-              e.preventDefault(); // prevent textarea blur
-              onSelect(agent.name);
-            }}
-            onMouseEnter={() => setFocusedIndex(i)}
-          >
-            <span>{agent.displayName || agent.name}</span>
-            {agent.role && (
-              <span className="text-xs text-muted-foreground ml-2">{agent.role}</span>
-            )}
-          </div>
-        ))
-      )}
+      {listContent}
     </div>
   );
 
