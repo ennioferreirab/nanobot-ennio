@@ -66,9 +66,9 @@ def parse_args() -> argparse.Namespace:
         help="Unique session identifier (default: auto-generated UUID4)",
     )
     parser.add_argument(
-        "--display-name",
-        default="Remoto",
-        help="Human-readable display name for this terminal session (default: Remoto)",
+        "-d", "--display-name",
+        default=None,
+        help="Human-readable display name (default: same as --tmux-session)",
     )
     parser.add_argument(
         "--convex-url",
@@ -81,16 +81,19 @@ def parse_args() -> argparse.Namespace:
         help="Convex admin key for server-side auth (default: $CONVEX_ADMIN_KEY)",
     )
     parser.add_argument(
-        "--tmux-session",
+        "-s", "--tmux-session",
         default="claude-terminal",
         help="tmux session name (default: claude-terminal)",
     )
     parser.add_argument(
-        "--dangerous-skip",
+        "-ds", "--dangerous-skip",
         action="store_true",
-        help="Skip tmux/Claude setup (DANGEROUS: assumes session already exists)",
+        help="Launch Claude with --dangerously-skip-permissions",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.display_name is None:
+        args.display_name = args.tmux_session
+    return args
 
 
 # ── TerminalBridge class ───────────────────────────────────────────────────────
@@ -110,7 +113,7 @@ class TerminalBridge:
         self.session_id = session_id
         self.display_name = display_name
         self.tmux_session = tmux_session
-        self.dangerous_skip = dangerous_skip
+        self._dangerous_skip = dangerous_skip
         self.tmux_pane = f"{tmux_session}:0"
         self.agent_name = f"remote-{session_id[:8]}"
 
@@ -241,7 +244,7 @@ class TerminalBridge:
 
     # ── Lifecycle management ───────────────────────────────────────────────────
 
-    def setup_tmux_and_claude(self) -> None:
+    def setup_tmux_and_claude(self, dangerous_skip: bool = False) -> None:
         """Create tmux session, open Claude, and bypass the welcome screen."""
         print("[setup] Creating tmux session...", flush=True)
 
@@ -253,9 +256,10 @@ class TerminalBridge:
         subprocess.run(["tmux", "new-session", "-d", "-s", self.tmux_session], check=True)
         time.sleep(0.5)
 
-        # Open Claude
-        print("[setup] Opening Claude Code...", flush=True)
-        self.tmux_send("claude")
+        # Open Claude (with --dangerously-skip-permissions if requested)
+        claude_cmd = "claude --dangerously-skip-permissions" if dangerous_skip else "claude"
+        print(f"[setup] Opening Claude Code ({claude_cmd})...", flush=True)
+        self.tmux_send(claude_cmd)
         self.tmux_enter()
         time.sleep(4)
 
@@ -432,10 +436,7 @@ class TerminalBridge:
         # atexit fallback: catches unhandled exceptions and other non-signal exits
         atexit.register(self.cleanup)
 
-        if self.dangerous_skip:
-            print("[setup] --dangerous-skip: skipping tmux/Claude setup (assuming session exists).", flush=True)
-        else:
-            self.setup_tmux_and_claude()
+        self.setup_tmux_and_claude(self._dangerous_skip)
         self.register_terminal()
 
         # Background screen monitor (catches changes between input cycles)
