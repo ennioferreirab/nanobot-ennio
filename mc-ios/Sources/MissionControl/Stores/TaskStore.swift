@@ -69,7 +69,7 @@ final class TaskStore {
         if let description { args["description"] = description }
         if let assignedAgent { args["assignedAgent"] = assignedAgent }
         if let trustLevel { args["trustLevel"] = trustLevel.rawValue }
-        if let tags, !tags.isEmpty { args["tags"] = tags }
+        if let tags, !tags.isEmpty { args["tags"] = tags.map { $0 as ConvexEncodable? } }
         try await client.mutation("tasks:create", with: args)
     }
 

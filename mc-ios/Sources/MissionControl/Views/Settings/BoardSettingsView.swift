@@ -114,7 +114,9 @@ struct BoardAddView: View {
             Form {
                 Section("Board Identity") {
                     TextField("Name (slug)", text: $name)
+                        #if os(iOS)
                         .textInputAutocapitalization(.never)
+                        #endif
                         .autocorrectionDisabled()
                     TextField("Display Name", text: $displayName)
                 }
