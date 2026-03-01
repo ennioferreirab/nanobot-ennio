@@ -124,5 +124,5 @@ development_status:
   epic-10: in-progress
   10-1-lock-down-terminal-session-mutations: ready-for-dev
   10-2-convert-backend-mutations-to-internal: review
-  10-3-harden-python-startup-admin-key: ready-for-dev
+  10-3-harden-python-startup-admin-key: review
   epic-10-retrospective: optional
