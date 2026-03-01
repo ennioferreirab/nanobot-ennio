@@ -15,6 +15,10 @@ final class DeepLinkHandler {
     /// and navigate to the task, then clear it by setting it to nil.
     var pendingTaskId: String?
 
+    /// Set to the action identifier (e.g. "APPROVE", "RETRY", "VIEW") when a
+    /// notification action button is tapped. Clear after handling.
+    var pendingAction: String?
+
     // MARK: - Notification Response Handling
 
     /// Extracts the taskId from a notification response's userInfo and
@@ -26,8 +30,9 @@ final class DeepLinkHandler {
         }
     }
 
-    /// Clear the pending task id after navigation has been handled.
+    /// Clear pending state after navigation and action handling are complete.
     func clearPendingTaskId() {
         pendingTaskId = nil
+        pendingAction = nil
     }
 }

@@ -28,6 +28,11 @@ final class NotificationManager: NSObject {
 
     private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
+    // MARK: - Deep Link Handler
+
+    /// Wired by MCApp so that notification taps can drive navigation.
+    var deepLinkHandler: DeepLinkHandler?
+
     // MARK: - Private State (tracking previous task statuses for transition detection)
 
     private var previousStatuses: [String: TaskStatus] = [:]
@@ -186,6 +191,10 @@ final class NotificationManager: NSObject {
 
             previousStatuses[task.id] = current
         }
+
+        // Prune entries for tasks no longer in the list to prevent unbounded growth
+        let currentIds = Set(tasks.map(\.id))
+        previousStatuses = previousStatuses.filter { currentIds.contains($0.key) }
     }
 }
 
@@ -206,6 +215,17 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        // Extract Sendable values before hopping to MainActor to avoid data races.
+        let taskId = response.notification.request.content.userInfo["taskId"] as? String
+        let actionIdentifier = response.actionIdentifier
+        let pendingAction: String? = actionIdentifier == UNNotificationDefaultActionIdentifier
+            ? nil
+            : actionIdentifier
+        Task { @MainActor [weak self] in
+            guard let self, let taskId else { return }
+            self.deepLinkHandler?.pendingTaskId = taskId
+            self.deepLinkHandler?.pendingAction = pendingAction
+        }
         completionHandler()
     }
 }

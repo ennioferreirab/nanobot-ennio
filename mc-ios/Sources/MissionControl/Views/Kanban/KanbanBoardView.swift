@@ -5,6 +5,9 @@ struct KanbanBoardView: View {
     @Environment(BoardStore.self) private var boardStore
     @Environment(\.horizontalSizeClass) private var sizeClass
 
+    /// When provided (iPad/Mac split view), tapping a task calls this instead of presenting a sheet.
+    var onTaskSelected: ((MCTask) -> Void)? = nil
+
     @State private var searchText = ""
     @State private var selectedTags: Set<String> = []
     @State private var selectedTask: MCTask?
@@ -72,6 +75,11 @@ struct KanbanBoardView: View {
         .sheet(isPresented: $showCreateTask) {
             CreateTaskView()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshTasks)) { _ in
+            if let boardId = taskStore.currentBoardId {
+                taskStore.setBoard(boardId)
+            }
+        }
     }
 
     // MARK: - Compact (iPhone) layout
@@ -83,7 +91,13 @@ struct KanbanBoardView: View {
                     KanbanColumnView(
                         status: status,
                         tasks: filteredTasks(for: status),
-                        onTaskTap: { task in selectedTask = task }
+                        onTaskTap: { task in
+                            if let onTaskSelected {
+                                onTaskSelected(task)
+                            } else {
+                                selectedTask = task
+                            }
+                        }
                     )
                     .frame(width: 280)
                     .frame(maxHeight: 600)
@@ -102,7 +116,13 @@ struct KanbanBoardView: View {
                 KanbanColumnView(
                     status: status,
                     tasks: filteredTasks(for: status),
-                    onTaskTap: { task in selectedTask = task }
+                    onTaskTap: { task in
+                        if let onTaskSelected {
+                            onTaskSelected(task)
+                        } else {
+                            selectedTask = task
+                        }
+                    }
                 )
             }
         }
