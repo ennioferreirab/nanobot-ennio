@@ -38,6 +38,9 @@ struct MCApp: App {
                 .task {
                     await notificationManager.requestPermission()
                 }
+                .onAppear {
+                    notificationManager.deepLinkHandler = deepLinkHandler
+                }
                 .onChange(of: taskStore.tasks) { _, newTasks in
                     notificationManager.checkForStatusChanges(
                         tasks: newTasks,

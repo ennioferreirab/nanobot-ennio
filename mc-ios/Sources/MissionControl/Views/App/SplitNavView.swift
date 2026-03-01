@@ -34,7 +34,6 @@ struct SplitNavView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var selectedTask: MCTask?
     @State private var showCreateTask = false
-    @FocusState private var isSearchFocused: Bool
 
     private var selectedItem: SidebarItem {
         SidebarItem(rawValue: selectedItemRaw) ?? .tasks
@@ -69,7 +68,6 @@ struct SplitNavView: View {
         .keyboardShortcut("2", modifiers: .command, action: { selectedItemRaw = SidebarItem.agents.rawValue })
         .keyboardShortcut("3", modifiers: .command, action: { selectedItemRaw = SidebarItem.chat.rawValue })
         .keyboardShortcut("4", modifiers: .command, action: { selectedItemRaw = SidebarItem.settings.rawValue })
-        .keyboardShortcut("n", modifiers: .command, action: { showCreateTask = true })
         .keyboardShortcut("r", modifiers: .command, action: {
             NotificationCenter.default.post(name: .refreshTasks, object: nil)
         })
@@ -105,7 +103,7 @@ struct SplitNavView: View {
         switch selectedItem {
         case .tasks:
             NavigationStack {
-                KanbanBoardView()
+                KanbanBoardView(onTaskSelected: { selectedTask = $0 })
             }
         case .agents:
             NavigationStack {
