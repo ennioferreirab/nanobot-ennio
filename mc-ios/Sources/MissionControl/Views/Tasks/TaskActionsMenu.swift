@@ -29,7 +29,7 @@ struct TaskActionsMenu: View {
                 .accessibilityLabel("Task actions")
         }
         .confirmationDialog(
-            "Delete "\(task.title)"?",
+            "Delete \"\(task.title)\"?",
             isPresented: $showDeleteConfirmation,
             titleVisibility: .visible
         ) {
@@ -40,8 +40,6 @@ struct TaskActionsMenu: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This action cannot be undone.")
         }
         .alert("Deny Task", isPresented: $showDenyAlert) {
             TextField("Feedback", text: $denyFeedback)

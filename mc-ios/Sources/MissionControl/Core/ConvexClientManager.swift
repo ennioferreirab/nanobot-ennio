@@ -3,7 +3,7 @@ import SwiftUI
 import Combine
 
 // Replace this with your actual Convex deployment URL
-private let CONVEX_URL = "https://your-deployment.convex.cloud"
+private let CONVEX_URL = "https://affable-clownfish-908.convex.cloud"
 
 enum ConnectionStatus {
     case disconnected

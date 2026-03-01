@@ -64,7 +64,9 @@ private struct ModelTierEditView: View {
         Form {
             Section("Model ID") {
                 TextField("e.g. claude-sonnet-4-6", text: $value)
+                    #if os(iOS)
                     .textInputAutocapitalization(.never)
+                    #endif
                     .autocorrectionDisabled()
             }
             if let error = errorMessage {
