@@ -75,7 +75,7 @@ export function MarkdownRenderer({ content, className = "" }: MarkdownRendererPr
   const processed = useMemo(() => content || "", [content]);
 
   return (
-    <div className={`text-sm leading-relaxed word-break-all ${className}`}>
+    <div className={`text-sm leading-relaxed break-words ${className}`}>
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{

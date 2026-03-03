@@ -211,7 +211,7 @@ export function ChatPanel() {
 
   // Agent selected: chat view
   return (
-    <div className="flex flex-1 flex-col min-h-0">
+    <div className="flex flex-1 flex-col min-h-0 min-w-0">
       {/* Locked header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
         <span className="text-xs font-medium text-foreground truncate">
