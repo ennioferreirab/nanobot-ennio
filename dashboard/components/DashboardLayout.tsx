@@ -53,7 +53,7 @@ function DashboardContent({ isXl }: { isXl: boolean }) {
   const [searchQuery, setSearchQuery] = useState("");
 
   const parsedSearch = useMemo(() => parseSearch(searchQuery), [searchQuery]);
-  const { openTerminals } = useBoard();
+  const { openTerminals, closeAllTerminals } = useBoard();
 
   return (
     <SidebarProvider defaultOpen={isXl} className="h-screen overflow-hidden">
@@ -63,7 +63,10 @@ function DashboardContent({ isXl }: { isXl: boolean }) {
           <header className="flex h-[60px] items-center justify-between border-b border-border px-4">
             <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
               <SidebarTrigger className="md:hidden" />
-              <h1 className="text-base md:text-xl font-bold text-foreground whitespace-nowrap">
+              <h1
+                className={`text-base md:text-xl font-bold text-foreground whitespace-nowrap${openTerminals.length > 0 ? " cursor-pointer hover:text-muted-foreground transition-colors" : ""}`}
+                onClick={openTerminals.length > 0 ? closeAllTerminals : undefined}
+              >
                 <span className="md:hidden">M</span>
                 <span className="hidden md:inline">Mission Control</span>
               </h1>
