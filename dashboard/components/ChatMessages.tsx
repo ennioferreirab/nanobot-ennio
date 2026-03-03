@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
 function relativeTime(timestamp: string): string {
@@ -25,19 +24,8 @@ interface ChatMessagesProps {
 export function ChatMessages({ agentName }: ChatMessagesProps) {
   const messages = useQuery(api.chats.listByAgent, { agentName });
   const scrollEndRef = useRef<HTMLDivElement>(null);
-  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
-
-  const scrollAreaRef = useCallback((node: HTMLDivElement | null) => {
-    if (node) {
-      const viewport = node.querySelector(
-        "[data-radix-scroll-area-viewport]"
-      ) as HTMLDivElement | null;
-      if (viewport) {
-        viewportRef.current = viewport;
-      }
-    }
-  }, []);
 
   // Auto-scroll when new messages arrive
   useEffect(() => {
@@ -75,7 +63,7 @@ export function ChatMessages({ agentName }: ChatMessagesProps) {
   }
 
   return (
-    <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0">
+    <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
       <div className="space-y-2 p-3">
         {messages.map((msg) => {
           const isUser = msg.authorType === "user";
@@ -85,7 +73,7 @@ export function ChatMessages({ agentName }: ChatMessagesProps) {
               className={`flex ${isUser ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm overflow-hidden ${
                   isUser
                     ? "bg-primary/10 text-foreground"
                     : "bg-muted text-foreground"
@@ -138,6 +126,6 @@ export function ChatMessages({ agentName }: ChatMessagesProps) {
 
         <div ref={scrollEndRef} />
       </div>
-    </ScrollArea>
+    </div>
   );
 }

@@ -14,6 +14,7 @@ const ChatPanel = lazy(() =>
 
 export function ActivityFeedPanel() {
   const [collapsed, setCollapsed] = useState(true);
+  const [activeTab, setActiveTab] = useState("chats");
   const clearActivities = useMutation(api.activities.clearAll);
 
   if (collapsed) {
@@ -31,7 +32,7 @@ export function ActivityFeedPanel() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col overflow-hidden border-l border-border bg-muted md:relative md:inset-auto md:z-auto md:w-[280px] md:shrink-0">
+    <div className={`fixed inset-0 z-50 flex flex-col overflow-hidden border-l border-border bg-muted transition-all duration-200 md:relative md:inset-auto md:z-auto md:shrink-0 ${activeTab === "chats" ? "md:w-[420px]" : "md:w-[280px]"}`}>
       <div className="flex h-[60px] items-center justify-between border-b border-border px-4">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Activity Feed
@@ -59,7 +60,7 @@ export function ActivityFeedPanel() {
           </Button>
         </div>
       </div>
-      <Tabs defaultValue="chats" className="flex flex-1 min-h-0 flex-col">
+      <Tabs defaultValue="chats" className="flex flex-1 min-h-0 flex-col" onValueChange={setActiveTab}>
         <div className="px-3 pt-2">
           <TabsList className="w-full">
             <TabsTrigger value="activity" className="flex-1 text-xs">
