@@ -23,7 +23,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChevronDown, Plus, Settings2, History, Eraser } from "lucide-react";
 import { useBoard } from "@/components/BoardContext";
 import { SYSTEM_AGENT_NAMES } from "@/lib/constants";
@@ -177,12 +176,12 @@ export function BoardSelector({ onOpenSettings }: BoardSelectorProps) {
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>New Board</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 py-1">
+          <div className="space-y-4 py-1 overflow-y-auto min-h-0 flex-1">
             {/* Name */}
             <div className="space-y-1.5">
               <Label htmlFor="new-board-name">Name</Label>
@@ -233,7 +232,7 @@ export function BoardSelector({ onOpenSettings }: BoardSelectorProps) {
                   </p>
                 </div>
 
-                <ScrollArea className="max-h-52 pr-1">
+                <div className="max-h-52 overflow-y-auto pr-1">
                   <div className="space-y-1">
                     {nonSystemAgents.map((agent) => {
                       const isEnabled = enabledAgents.includes(agent.name);
@@ -307,7 +306,7 @@ export function BoardSelector({ onOpenSettings }: BoardSelectorProps) {
                       );
                     })}
                   </div>
-                </ScrollArea>
+                </div>
               </div>
             )}
 
@@ -316,7 +315,7 @@ export function BoardSelector({ onOpenSettings }: BoardSelectorProps) {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button
               variant="ghost"
               onClick={() => {
