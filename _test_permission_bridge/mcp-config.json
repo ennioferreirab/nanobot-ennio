@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "permbridge": {
-      "command": "node",
-      "args": ["/Users/ennio/Documents/nanobot-ennio/_test_permission_bridge/permission_server.mjs"]
-    }
-  }
-}
