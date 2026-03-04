@@ -752,6 +752,85 @@ class TestOnTaskCompletedCallback:
 
 
 # ---------------------------------------------------------------------------
+# cc/ model prefix routing
+# ---------------------------------------------------------------------------
+
+
+class TestCCModelRouting:
+    """Tests for cc/ model routing in _execute_task."""
+
+    @pytest.mark.asyncio
+    async def test_cc_model_routes_to_cc_task(self):
+        """When agent_model resolves to cc/*, should route to _execute_cc_task."""
+        bridge = _make_bridge()
+        executor = _make_executor(bridge)
+
+        # Agent has nanobot backend but model set to cc/claude-sonnet-4-6
+        nanobot_agent = AgentData(
+            name="test-agent",
+            display_name="Test Agent",
+            role="worker",
+            model="cc/claude-sonnet-4-6",
+            backend="nanobot",
+        )
+
+        captured_agent_data: list[AgentData] = []
+
+        async def capture_cc_task(task_id, title, description, agent_name, agent_data):
+            captured_agent_data.append(agent_data)
+
+        with (
+            patch.object(executor, "_load_agent_data", return_value=nanobot_agent),
+            patch.object(executor, "_execute_cc_task", side_effect=capture_cc_task),
+            patch.object(executor, "_load_agent_config", return_value=(None, "cc/claude-sonnet-4-6", None)),
+            patch.object(executor._bridge, "query", return_value={}),
+            patch.object(executor._bridge, "get_agent_by_name", return_value=None),
+        ):
+            await executor._execute_task(
+                task_id="task-123",
+                title="Test Task",
+                description="Test description",
+                agent_name="test-agent",
+                trust_level="autonomous",
+            )
+
+        assert len(captured_agent_data) == 1
+        assert captured_agent_data[0].model == "claude-sonnet-4-6"
+        assert captured_agent_data[0].backend == "claude-code"
+
+    @pytest.mark.asyncio
+    async def test_cc_model_creates_synthetic_agent_data_when_none(self):
+        """When _load_agent_data returns None, creates synthetic AgentData for cc/ routing."""
+        bridge = _make_bridge()
+        executor = _make_executor(bridge)
+
+        captured_agent_data: list[AgentData] = []
+
+        async def capture_cc_task(task_id, title, description, agent_name, agent_data):
+            captured_agent_data.append(agent_data)
+
+        with (
+            patch.object(executor, "_load_agent_data", return_value=None),
+            patch.object(executor, "_execute_cc_task", side_effect=capture_cc_task),
+            patch.object(executor, "_load_agent_config", return_value=(None, "cc/claude-opus-4-6", None)),
+            patch.object(executor._bridge, "query", return_value={}),
+            patch.object(executor._bridge, "get_agent_by_name", return_value=None),
+        ):
+            await executor._execute_task(
+                task_id="task-456",
+                title="Opus Task",
+                description=None,
+                agent_name="unknown-agent",
+                trust_level="autonomous",
+            )
+
+        assert len(captured_agent_data) == 1
+        assert captured_agent_data[0].model == "claude-opus-4-6"
+        assert captured_agent_data[0].backend == "claude-code"
+        assert captured_agent_data[0].name == "unknown-agent"
+
+
+# ---------------------------------------------------------------------------
 # _load_agent_data
 # ---------------------------------------------------------------------------
 

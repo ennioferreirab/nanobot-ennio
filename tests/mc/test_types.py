@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from mc.types import AgentData, ClaudeCodeOpts
+from mc.types import AgentData, ClaudeCodeOpts, is_cc_model, extract_cc_model_name, CC_AVAILABLE_MODELS
 from nanobot.config.schema import ClaudeCodeConfig
 
 
@@ -145,3 +145,32 @@ class TestClaudeCodeConfig:
         for mode in ("default", "acceptEdits", "bypassPermissions"):
             cfg = ClaudeCodeConfig(default_permission_mode=mode)
             assert cfg.default_permission_mode == mode
+
+
+class TestCCModelHelpers:
+    """Tests for cc/ model prefix helpers."""
+
+    def test_is_cc_model_with_cc_prefix(self) -> None:
+        assert is_cc_model("cc/claude-sonnet-4-6") is True
+
+    def test_is_cc_model_without_prefix(self) -> None:
+        assert is_cc_model("anthropic/claude-sonnet-4-6") is False
+
+    def test_is_cc_model_none(self) -> None:
+        assert is_cc_model(None) is False
+
+    def test_is_cc_model_empty(self) -> None:
+        assert is_cc_model("") is False
+
+    def test_extract_cc_model_name(self) -> None:
+        assert extract_cc_model_name("cc/claude-sonnet-4-6") == "claude-sonnet-4-6"
+
+    def test_extract_cc_model_name_opus(self) -> None:
+        assert extract_cc_model_name("cc/claude-opus-4-6") == "claude-opus-4-6"
+
+    def test_cc_available_models_all_have_prefix(self) -> None:
+        for m in CC_AVAILABLE_MODELS:
+            assert m.startswith("cc/"), f"{m} missing cc/ prefix"
+
+    def test_cc_available_models_non_empty(self) -> None:
+        assert len(CC_AVAILABLE_MODELS) >= 3

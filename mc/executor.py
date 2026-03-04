@@ -30,6 +30,8 @@ from mc.types import (
     TrustLevel,
     is_lead_agent,
     is_tier_reference,
+    is_cc_model,
+    extract_cc_model_name,
 )
 
 if TYPE_CHECKING:
@@ -1038,6 +1040,25 @@ class TaskExecutor:
                 logger.info(
                     "[executor] Reasoning level for agent '%s': %s", agent_name, reasoning_level
                 )
+
+        # Route to Claude Code backend when model starts with cc/ (e.g. set via tier dropdown)
+        if agent_model and is_cc_model(agent_model):
+            cc_model_name = extract_cc_model_name(agent_model)
+            if agent_data is None:
+                agent_data = self._load_agent_data(agent_name)
+            if agent_data is None:
+                agent_data = AgentData(
+                    name=agent_name,
+                    display_name=agent_name,
+                    role="agent",
+                    model=cc_model_name,
+                    backend="claude-code",
+                )
+            else:
+                agent_data.model = cc_model_name
+                agent_data.backend = "claude-code"
+            await self._execute_cc_task(task_id, title, description, agent_name, agent_data)
+            return
 
         # Inject global orientation for non-lead agents
         agent_prompt = self._maybe_inject_orientation(agent_name, agent_prompt)

@@ -483,8 +483,10 @@ def _sync_model_tiers(bridge: ConvexBridge) -> None:
 
     # Collect available models from provider config
     from mc.provider_factory import list_available_models
+    from mc.types import CC_AVAILABLE_MODELS
 
     models_list = list_available_models()
+    models_list.extend(m for m in CC_AVAILABLE_MODELS if m not in models_list)
 
     bridge.mutation(
         "settings:set",
