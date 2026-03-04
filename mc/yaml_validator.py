@@ -19,7 +19,7 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
-from mc.types import AgentData
+from mc.types import AgentData, ClaudeCodeOpts
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,20 @@ class AgentConfig(BaseModel):
     display_name: Optional[str] = None
     soul: Optional[str] = None
     is_system: Optional[bool] = None
+    backend: Optional[str] = None
+    claude_code: Optional[dict] = None
+
+    @field_validator("backend")
+    @classmethod
+    def validate_backend(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        valid = {"nanobot", "claude-code"}
+        if v not in valid:
+            raise ValueError(
+                f"Invalid backend '{v}'. Valid options: {', '.join(sorted(valid))}"
+            )
+        return v
 
     @field_validator("name")
     @classmethod
@@ -219,6 +233,16 @@ def validate_agents_dir(
 
 def _config_to_agent_data(config: AgentConfig) -> AgentData:
     """Convert a validated AgentConfig pydantic model to an AgentData dataclass."""
+    backend = config.backend or "nanobot"
+    cc_opts = None
+    if backend == "claude-code" and config.claude_code:
+        cc_opts = ClaudeCodeOpts(
+            max_budget_usd=config.claude_code.get("max_budget_usd"),
+            max_turns=config.claude_code.get("max_turns"),
+            permission_mode=config.claude_code.get("permission_mode", "acceptEdits"),
+            allowed_tools=config.claude_code.get("allowed_tools"),
+            disallowed_tools=config.claude_code.get("disallowed_tools"),
+        )
     return AgentData(
         name=config.name,
         display_name=config.display_name or config.name,
@@ -228,4 +252,6 @@ def _config_to_agent_data(config: AgentConfig) -> AgentData:
         skills=config.skills,
         model=config.model,
         is_system=config.is_system or False,
+        backend=backend,
+        claude_code_opts=cc_opts,
     )

@@ -318,6 +318,17 @@ class ToolsConfig(Base):
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
 
+class ClaudeCodeConfig(Base):
+    """Claude Code execution engine configuration."""
+
+    cli_path: str = "claude"
+    default_model: str = "claude-sonnet-4-6"
+    default_max_budget_usd: float = 5.0
+    default_max_turns: int = 50
+    default_permission_mode: str = "acceptEdits"
+    auth_method: str = "oauth"  # "oauth" | "api_key"
+
+
 class Config(BaseSettings):
     """Root configuration for nanobot."""
 
@@ -326,6 +337,7 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    claude_code: ClaudeCodeConfig = Field(default_factory=ClaudeCodeConfig)
 
     @property
     def workspace_path(self) -> Path:

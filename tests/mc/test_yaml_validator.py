@@ -225,6 +225,91 @@ class TestYamlParseErrors:
 
 
 # ---------------------------------------------------------------------------
+# Backend field tests (CC-1)
+# ---------------------------------------------------------------------------
+
+class TestBackendField:
+    """Tests for the backend field in agent YAML configurations."""
+
+    def test_valid_backend_claude_code_with_options(self, tmp_path: Path) -> None:
+        path = _write_yaml(tmp_path, "agent.yaml", """\
+            name: cc-agent
+            role: Claude Code Agent
+            prompt: "You are a claude-code agent."
+            backend: claude-code
+            claude_code:
+              max_budget_usd: 10.0
+              max_turns: 25
+              permission_mode: acceptEdits
+              allowed_tools:
+                - Bash
+                - Edit
+              disallowed_tools:
+                - WebFetch
+        """)
+        result = validate_agent_file(path)
+        assert isinstance(result, AgentData)
+        assert result.backend == "claude-code"
+        assert result.claude_code_opts is not None
+        assert result.claude_code_opts.max_budget_usd == 10.0
+        assert result.claude_code_opts.max_turns == 25
+        assert result.claude_code_opts.permission_mode == "acceptEdits"
+        assert result.claude_code_opts.allowed_tools == ["Bash", "Edit"]
+        assert result.claude_code_opts.disallowed_tools == ["WebFetch"]
+
+    def test_valid_backend_nanobot_explicit(self, tmp_path: Path) -> None:
+        path = _write_yaml(tmp_path, "agent.yaml", """\
+            name: nano-agent
+            role: Nanobot Agent
+            prompt: "You are a nanobot agent."
+            backend: nanobot
+        """)
+        result = validate_agent_file(path)
+        assert isinstance(result, AgentData)
+        assert result.backend == "nanobot"
+        assert result.claude_code_opts is None
+
+    def test_missing_backend_defaults_to_nanobot(self, tmp_path: Path) -> None:
+        path = _write_yaml(tmp_path, "agent.yaml", """\
+            name: my-agent
+            role: Agent
+            prompt: "You are an agent."
+        """)
+        result = validate_agent_file(path)
+        assert isinstance(result, AgentData)
+        assert result.backend == "nanobot"
+        assert result.claude_code_opts is None
+
+    def test_invalid_backend_value(self, tmp_path: Path) -> None:
+        path = _write_yaml(tmp_path, "agent.yaml", """\
+            name: my-agent
+            role: Agent
+            prompt: "You are an agent."
+            backend: openai
+        """)
+        result = validate_agent_file(path)
+        assert isinstance(result, list)
+        assert any("backend" in e.lower() for e in result)
+        assert any("invalid" in e.lower() for e in result)
+
+    def test_claude_code_section_with_nanobot_backend_ignored(self, tmp_path: Path) -> None:
+        path = _write_yaml(tmp_path, "agent.yaml", """\
+            name: my-agent
+            role: Agent
+            prompt: "You are an agent."
+            backend: nanobot
+            claude_code:
+              max_budget_usd: 5.0
+              max_turns: 10
+        """)
+        result = validate_agent_file(path)
+        assert isinstance(result, AgentData)
+        assert result.backend == "nanobot"
+        # claude_code section is ignored when backend is nanobot
+        assert result.claude_code_opts is None
+
+
+# ---------------------------------------------------------------------------
 # Directory validation tests
 # ---------------------------------------------------------------------------
 
