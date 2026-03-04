@@ -303,6 +303,16 @@ class TaskData:
 
 
 @dataclass
+class ClaudeCodeOpts:
+    """Options for agents using the claude-code backend."""
+    max_budget_usd: float | None = None
+    max_turns: int | None = None
+    permission_mode: str = "acceptEdits"
+    allowed_tools: list[str] | None = None
+    disallowed_tools: list[str] | None = None
+
+
+@dataclass
 class AgentData:
     """Python representation of a Convex agent document (snake_case fields)."""
     name: str
@@ -317,6 +327,8 @@ class AgentData:
     is_system: bool = False  # System agents cannot be deleted/deactivated
     last_active_at: str | None = None
     id: str | None = None  # Convex _id (populated on read)
+    backend: str = "nanobot"
+    claude_code_opts: ClaudeCodeOpts | None = None
 
 
 @dataclass

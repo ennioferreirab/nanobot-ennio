@@ -554,6 +554,8 @@ class ConvexBridge:
             args["soul"] = agent_data.soul
         if agent_data.is_system:
             args["is_system"] = True
+        if hasattr(agent_data, 'backend') and agent_data.backend != "nanobot":
+            args["backend"] = agent_data.backend
         return self.mutation("agents:upsertByName", args)
 
     def list_agents(self) -> list[dict[str, Any]]:
