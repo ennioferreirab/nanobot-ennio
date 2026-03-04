@@ -34,17 +34,23 @@ const EMPTY_SEARCH: ParsedSearch = {
 };
 
 function stepStatusToColumnStatus(
-  stepStatus: Doc<"steps">["status"]
+  stepStatus: Doc<"steps">["status"],
+  taskStatus?: Doc<"tasks">["status"]
 ): ColumnStatus | null {
   switch (stepStatus) {
     case "assigned":
     case "blocked":
-      return "assigned";
+      // When the parent task is already in_progress, waiting steps belong in
+      // the "In Progress" column — not "Assigned" (which is for tasks not yet started).
+      return taskStatus === "in_progress" ? "in_progress" : "assigned";
     case "running":
     case "crashed":
       return "in_progress";
     case "completed":
-      return "done";
+      // Done tasks already skip all steps (line 248-252), so this only
+      // affects non-done tasks. Old completed steps from previous runs
+      // must not pull an active task into the "Done" column.
+      return null;
     default:
       return null;
   }
@@ -248,7 +254,7 @@ export function KanbanBoard({ onTaskClick, search = EMPTY_SEARCH }: KanbanBoardP
     if (taskStatus === "done") {
       continue;
     }
-    const mappedColumn = stepStatusToColumnStatus(step.status);
+    const mappedColumn = stepStatusToColumnStatus(step.status, taskStatus);
     if (!mappedColumn) {
       continue;
     }
@@ -287,8 +293,9 @@ export function KanbanBoard({ onTaskClick, search = EMPTY_SEARCH }: KanbanBoardP
 
     const stepGroups = Array.from(stepsByTaskId.entries())
       .map(([taskId, taskSteps]) => {
+        const taskStatus = taskStatusMap.get(taskId);
         const steps = taskSteps
-          .filter((step) => stepStatusToColumnStatus(step.status) === col.status)
+          .filter((step) => stepStatusToColumnStatus(step.status, taskStatus) === col.status)
           .sort((a, b) => a.order - b.order);
         return {
           taskId,

@@ -132,7 +132,8 @@ class TestBackendRouting:
             )
 
         mock_cc.assert_awaited_once_with(
-            "t1", "Test task", "desc", "my-cc-agent", agent_data
+            "t1", "Test task", "desc", "my-cc-agent", agent_data,
+            trust_level="autonomous", task_data=None, needs_enrichment=True,
         )
 
     @pytest.mark.asyncio
@@ -294,9 +295,13 @@ class TestExecuteCCTaskHappyPath:
             patch(_PATCH_WS_MGR, return_value=mock_ws_mgr),
             patch(_PATCH_IPC_SRV, return_value=mock_ipc),
             patch(_PATCH_PROVIDER, return_value=mock_provider),
+            patch("mc.orientation.load_orientation", return_value=None),
+            patch("mc.executor._snapshot_output_dir", return_value={}),
+            patch("mc.executor._collect_output_artifacts", return_value=[]),
         ):
             await executor._execute_cc_task(
-                "t1", "Title only", None, "agent", agent_data
+                "t1", "Title only", None, "agent", agent_data,
+                needs_enrichment=False,
             )
 
         assert captured[0] == "Title only"
@@ -694,7 +699,7 @@ class TestOnTaskCompletedCallback:
 
         completed_task_ids: list[str] = []
 
-        async def on_completed(task_id: str) -> None:
+        async def on_completed(task_id: str, result_text: str) -> None:
             completed_task_ids.append(task_id)
 
         executor._on_task_completed = on_completed
@@ -776,7 +781,7 @@ class TestCCModelRouting:
 
         captured_agent_data: list[AgentData] = []
 
-        async def capture_cc_task(task_id, title, description, agent_name, agent_data):
+        async def capture_cc_task(task_id, title, description, agent_name, agent_data, **kwargs):
             captured_agent_data.append(agent_data)
 
         with (
@@ -806,7 +811,7 @@ class TestCCModelRouting:
 
         captured_agent_data: list[AgentData] = []
 
-        async def capture_cc_task(task_id, title, description, agent_name, agent_data):
+        async def capture_cc_task(task_id, title, description, agent_name, agent_data, **kwargs):
             captured_agent_data.append(agent_data)
 
         with (

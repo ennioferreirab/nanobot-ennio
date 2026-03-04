@@ -285,7 +285,8 @@ def _config_to_agent_data(config: AgentConfig) -> AgentData | list[str]:
     """
     backend = config.backend or "nanobot"
     cc_opts = None
-    if backend == "claude-code" and config.claude_code:
+    uses_cc_model = config.model is not None and config.model.startswith("cc/")
+    if (backend == "claude-code" or uses_cc_model) and config.claude_code:
         try:
             cc_opts = _parse_claude_code_opts(config.claude_code)
         except ValueError as exc:

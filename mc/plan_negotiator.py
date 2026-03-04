@@ -378,11 +378,17 @@ def _is_negotiable_status(task: dict[str, Any]) -> bool:
 
     Active statuses:
     - "review" with awaitingKickoff=True (pre-kickoff plan review)
-    - "in_progress" (during execution — only pending/blocked steps can change)
+    - "in_progress" with an execution_plan (during planned execution)
+
+    Tasks assigned directly via sendThreadMessage (no execution plan) are NOT
+    negotiable — lead-agent should not intercept direct agent assignments.
     """
     status = task.get("status", "")
     if status == "in_progress":
-        return True
+        # Only negotiable if there's an execution plan to negotiate.
+        # Tasks sent directly to an agent via thread message have no plan.
+        plan = task.get("execution_plan") or task.get("executionPlan")
+        return bool(plan and plan.get("steps"))
     if status == "review" and task.get("awaiting_kickoff"):
         return True
     return False

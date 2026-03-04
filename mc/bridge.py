@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from convex import ConvexClient
+from mc.types import task_safe_id
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +255,7 @@ class ConvexBridge:
         Args:
             task_id: Convex task _id (e.g. "jd7abc123xyz").
         """
-        safe_task_id = re.sub(r"[^\w\-]", "_", task_id)
+        safe_task_id = task_safe_id(task_id)
         task_dir = Path.home() / ".nanobot" / "tasks" / safe_task_id
         for subdir in ("attachments", "output"):
             path = task_dir / subdir
@@ -556,6 +557,17 @@ class ConvexBridge:
             args["is_system"] = True
         if agent_data.backend != "nanobot":
             args["backend"] = agent_data.backend
+        cc_opts = agent_data.claude_code_opts
+        if cc_opts is not None:
+            cc_payload: dict[str, Any] = {}
+            if cc_opts.permission_mode is not None:
+                cc_payload["permission_mode"] = cc_opts.permission_mode
+            if cc_opts.max_budget_usd is not None:
+                cc_payload["max_budget_usd"] = cc_opts.max_budget_usd
+            if cc_opts.max_turns is not None:
+                cc_payload["max_turns"] = cc_opts.max_turns
+            if cc_payload:
+                args["claude_code_opts"] = cc_payload
         return self.mutation("agents:upsertByName", args)
 
     def list_agents(self) -> list[dict[str, Any]]:
@@ -796,7 +808,7 @@ class ConvexBridge:
             "sh": "text/x-sh", "bash": "text/x-sh",
         }
 
-        safe_id = re.sub(r"[^\w\-]", "_", task_id)
+        safe_id = task_safe_id(task_id)
         output_dir = Path.home() / ".nanobot" / "tasks" / safe_id / "output"
 
         if not output_dir.exists():

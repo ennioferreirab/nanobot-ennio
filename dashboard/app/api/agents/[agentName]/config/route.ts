@@ -14,6 +14,11 @@ type AgentConfig = {
   display_name?: string;
   skills?: string[];
   soul?: string;
+  claude_code?: {
+    permission_mode?: string;
+    max_budget_usd?: number | null;
+    max_turns?: number | null;
+  } | null;
 };
 
 export async function PUT(
@@ -52,6 +57,17 @@ export async function PUT(
   if (updates.display_name !== undefined) merged.display_name = updates.display_name;
   if (updates.skills !== undefined) merged.skills = updates.skills?.length ? updates.skills : undefined;
   if (updates.soul !== undefined) merged.soul = updates.soul || undefined;
+  if (updates.claude_code !== undefined) {
+    if (updates.claude_code === null) {
+      delete merged.claude_code;
+    } else {
+      const cc: Record<string, unknown> = {};
+      if (updates.claude_code.permission_mode) cc.permission_mode = updates.claude_code.permission_mode;
+      if (updates.claude_code.max_budget_usd != null) cc.max_budget_usd = updates.claude_code.max_budget_usd;
+      if (updates.claude_code.max_turns != null) cc.max_turns = updates.claude_code.max_turns;
+      merged.claude_code = cc as AgentConfig["claude_code"];
+    }
+  }
 
   // Remove undefined keys before serializing
   const clean = Object.fromEntries(

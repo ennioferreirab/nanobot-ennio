@@ -11,9 +11,11 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -213,6 +215,23 @@ class MCSocketServer:
 
         # Fallback: post to task thread if we have bridge + task_id
         if self._bridge and task_id:
+            # Auto-sync media files to task output dir so sync_task_output_files picks them up
+            if media and task_id:
+                from mc.types import task_safe_id
+                safe_id = task_safe_id(task_id)
+                output_dir = Path.home() / ".nanobot" / "tasks" / safe_id / "output"
+                output_dir.mkdir(parents=True, exist_ok=True)
+                copied_names: list[str] = []
+                for src_path in media:
+                    src = Path(src_path)
+                    if src.is_file():
+                        try:
+                            shutil.copy2(src, output_dir / src.name)
+                            copied_names.append(src.name)
+                        except OSError as exc:
+                            logger.warning("Failed to copy media file %s: %s", src, exc)
+                if copied_names:
+                    content += "\n\nAttached files: " + ", ".join(copied_names)
             try:
                 await asyncio.to_thread(
                     self._bridge.send_message,

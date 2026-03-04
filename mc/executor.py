@@ -32,6 +32,7 @@ from mc.types import (
     is_tier_reference,
     is_cc_model,
     extract_cc_model_name,
+    task_safe_id,
 )
 
 if TYPE_CHECKING:
@@ -297,9 +298,7 @@ def _snapshot_output_dir(task_id: str) -> dict[str, float]:
     the file), e.g. ``"output/report.pdf"`` for a file stored in
     ``~/.nanobot/tasks/{safe_id}/output/report.pdf``.
     """
-    import re
-
-    safe_id = re.sub(r"[^\w\-]", "_", task_id)
+    safe_id = task_safe_id(task_id)
     output_dir = Path.home() / ".nanobot" / "tasks" / safe_id / "output"
     snapshot: dict[str, float] = {}
     if output_dir.exists():
@@ -325,9 +324,7 @@ def _collect_output_artifacts(
 
     The ``path`` is relative to the task base directory (e.g., ``"output/report.pdf"``).
     """
-    import re
-
-    safe_id = re.sub(r"[^\w\-]", "_", task_id)
+    safe_id = task_safe_id(task_id)
     output_dir = Path.home() / ".nanobot" / "tasks" / safe_id / "output"
     artifacts: list[dict[str, Any]] = []
     pre = pre_snapshot or {}
@@ -832,13 +829,20 @@ class TaskExecutor:
         # Route to Claude Code backend if agent is configured with backend: claude-code
         agent_data = self._load_agent_data(agent_name)
         if agent_data and agent_data.backend == "claude-code":
-            await self._execute_cc_task(task_id, title, description, agent_name, agent_data)
+            await self._execute_cc_task(
+                task_id,
+                title,
+                description,
+                agent_name,
+                agent_data,
+                trust_level=trust_level,
+                task_data=task_data,
+                needs_enrichment=True,
+            )
             return
 
-        import re
-
         # Fetch fresh task data for up-to-date file manifest (NFR8)
-        safe_id = re.sub(r"[^\w\-]", "_", task_id)
+        safe_id = task_safe_id(task_id)
         files_dir = str(Path.home() / ".nanobot" / "tasks" / safe_id)
         try:
             fresh_task = await asyncio.to_thread(
@@ -1034,7 +1038,17 @@ class TaskExecutor:
             else:
                 agent_data.model = cc_model_name
                 agent_data.backend = "claude-code"
-            await self._execute_cc_task(task_id, title, description, agent_name, agent_data)
+            await self._execute_cc_task(
+                task_id,
+                title,
+                description,
+                agent_name,
+                agent_data,
+                trust_level=trust_level,
+                task_data=task_data,
+                reasoning_level=reasoning_level,
+                needs_enrichment=False,
+            )
             return
 
         # Inject global orientation for non-lead agents
@@ -1279,6 +1293,111 @@ class TaskExecutor:
 
     # ── Claude Code backend methods ────────────────────────────────────────
 
+    async def _enrich_cc_description(
+        self, task_id: str, description: str | None, task_data: dict | None,
+    ) -> str:
+        """Enrich CC task description with file manifest, thread context, and tag attributes.
+
+        Mirrors the enrichment done for nanobot tasks (lines 840-931) but adapted
+        for the CC task path. Each enrichment is wrapped in try/except so partial
+        failures don't block execution.
+        """
+        description = description or ""
+
+        # File manifest (mirrors lines 840-879)
+        try:
+            safe_id = task_safe_id(task_id)
+            files_dir = str(Path.home() / ".nanobot" / "tasks" / safe_id)
+            try:
+                fresh_task = await asyncio.to_thread(
+                    self._bridge.query, "tasks:getById", {"task_id": task_id}
+                )
+                raw_files = (fresh_task or {}).get("files") or []
+            except Exception:
+                logger.warning(
+                    "[executor] CC enrich: failed to fetch fresh task for '%s', using snapshot",
+                    task_id,
+                )
+                raw_files = (task_data or {}).get("files") or []
+
+            file_manifest = [
+                {
+                    "name": f.get("name", "unknown"),
+                    "type": f.get("type", "application/octet-stream"),
+                    "size": f.get("size", 0),
+                    "subfolder": f.get("subfolder", "attachments"),
+                }
+                for f in raw_files
+            ]
+
+            output_dir = str(Path.home() / ".nanobot" / "tasks" / safe_id / "output")
+            task_instruction = (
+                f"Task workspace: {files_dir}\n"
+                f"Save ALL output files (reports, summaries, generated content) to: {output_dir}\n"
+                f"Do NOT save output files outside this directory."
+            )
+            if file_manifest:
+                manifest_summary = ", ".join(
+                    f"{f['name']} ({f['subfolder']}, {_human_size(f['size'])})"
+                    for f in file_manifest
+                )
+                task_instruction += (
+                    f"\nTask has {len(file_manifest)} attached file(s) at {files_dir}/attachments. "
+                    f"File manifest: {manifest_summary}"
+                )
+            description += f"\n\n{task_instruction}"
+        except Exception:
+            logger.warning("[executor] CC enrich: file manifest failed for '%s'", task_id, exc_info=True)
+
+        # Thread context (mirrors lines 882-899)
+        try:
+            thread_messages = await asyncio.to_thread(
+                self._bridge.get_task_messages, task_id
+            )
+            thread_context = _build_thread_context(thread_messages)
+            if thread_context:
+                description += f"\n{thread_context}"
+                injected_count = min(len(thread_messages), 20)
+                logger.info(
+                    "[executor] CC enrich: injected thread context (%d of %d messages) for task '%s'",
+                    injected_count, len(thread_messages), task_id,
+                )
+        except Exception:
+            logger.warning(
+                "[executor] CC enrich: thread context failed for '%s'", task_id, exc_info=True,
+            )
+
+        # Tag attributes (mirrors lines 901-931)
+        try:
+            task_tags = (task_data or {}).get("tags") or []
+            if task_tags:
+                tag_attr_values = await asyncio.to_thread(
+                    self._bridge.query,
+                    "tagAttributeValues:getByTask",
+                    {"task_id": task_id},
+                )
+                tag_attr_catalog = await asyncio.to_thread(
+                    self._bridge.query,
+                    "tagAttributes:list",
+                    {},
+                )
+                tag_attrs_context = _build_tag_attributes_context(
+                    task_tags,
+                    tag_attr_values if isinstance(tag_attr_values, list) else [],
+                    tag_attr_catalog if isinstance(tag_attr_catalog, list) else [],
+                )
+                if tag_attrs_context:
+                    description += f"\n\n{tag_attrs_context}"
+                    logger.info(
+                        "[executor] CC enrich: injected tag attributes for task '%s'", task_id,
+                    )
+        except Exception:
+            logger.warning(
+                "[executor] CC enrich: tag attributes failed for '%s'", task_id, exc_info=True,
+            )
+
+        return description
+
     async def _execute_cc_task(
         self,
         task_id: str,
@@ -1286,6 +1405,10 @@ class TaskExecutor:
         description: str | None,
         agent_name: str,
         agent_data: "AgentData",
+        trust_level: str = "autonomous",
+        task_data: dict | None = None,
+        reasoning_level: str | None = None,
+        needs_enrichment: bool = True,
     ) -> None:
         """Execute a task using the Claude Code CLI backend.
 
@@ -1296,6 +1419,73 @@ class TaskExecutor:
         from claude_code.workspace import CCWorkspaceManager
         from claude_code.provider import ClaudeCodeProvider
         from claude_code.ipc_server import MCSocketServer
+
+        # 0a. Enrich description if caller hasn't already done it
+        if needs_enrichment:
+            description = await self._enrich_cc_description(task_id, description, task_data)
+
+        # 0b. Sync Convex prompt, variables, and model into agent_data
+        # Both call sites need this — agent_data.prompt is never set from Convex at either site
+        convex_agent: dict | None = None
+        try:
+            convex_agent = await asyncio.to_thread(self._bridge.get_agent_by_name, agent_name)
+            if convex_agent:
+                if cp := convex_agent.get("prompt"):
+                    agent_data.prompt = cp
+                if cm := convex_agent.get("model"):
+                    if is_cc_model(cm):
+                        agent_data.model = extract_cc_model_name(cm)
+                        logger.info(
+                            "[executor] CC: Convex model synced for '%s': %s → %s",
+                            agent_name, cm, agent_data.model,
+                        )
+                    else:
+                        logger.info(
+                            "[executor] CC: Convex model '%s' is not cc/ prefixed, keeping agent_data model",
+                            cm,
+                        )
+                # Interpolate variables into prompt
+                for var in (convex_agent.get("variables") or []):
+                    if agent_data.prompt:
+                        agent_data.prompt = agent_data.prompt.replace(
+                            "{{" + var["name"] + "}}", var["value"])
+        except Exception:
+            logger.warning("[executor] CC: Convex agent sync failed for '%s'", agent_name)
+
+        # Sync claudeCodeOpts from Convex if YAML/local opts are not set.
+        if agent_data.claude_code_opts is None and convex_agent:
+            cc_raw = convex_agent.get("claude_code_opts")  # bridge converts camelCase → snake_case
+            if cc_raw and isinstance(cc_raw, dict):
+                from claude_code.types import ClaudeCodeOpts
+
+                agent_data.claude_code_opts = ClaudeCodeOpts(
+                    permission_mode=cc_raw.get("permission_mode", "acceptEdits"),
+                    max_budget_usd=cc_raw.get("max_budget_usd"),
+                    max_turns=cc_raw.get("max_turns"),
+                )
+                logger.info(
+                    "[executor] CC: claudeCodeOpts loaded from Convex for %s: permission_mode=%s",
+                    agent_name,
+                    agent_data.claude_code_opts.permission_mode,
+                )
+
+        # 0c. Map reasoning level to effort level
+        if reasoning_level:
+            effort_map = {"low": "low", "medium": "medium", "high": "high", "max": "high"}
+            effort = effort_map.get(reasoning_level, "high")
+            if agent_data.claude_code_opts is None:
+                from claude_code.types import ClaudeCodeOpts
+                agent_data.claude_code_opts = ClaudeCodeOpts()
+            agent_data.claude_code_opts.effort_level = effort
+            logger.info(
+                "[executor] CC: effort level set to '%s' (from reasoning '%s') for '%s'",
+                effort,
+                reasoning_level,
+                agent_name,
+            )
+
+        # 0d. Snapshot output dir for artifact detection
+        pre_snapshot = await asyncio.to_thread(_snapshot_output_dir, task_id)
 
         # 1. Prepare workspace
         try:
@@ -1360,6 +1550,9 @@ class TaskExecutor:
                 session_id=session_id,
                 on_stream=on_stream,
             )
+        except _PROVIDER_ERRORS as exc:
+            await self._handle_provider_error(task_id, title, agent_name, exc)
+            return
         except Exception as exc:
             await self._crash_task(task_id, title, f"Claude Code execution failed: {exc}", agent_name)
             return
@@ -1370,10 +1563,32 @@ class TaskExecutor:
         if result.is_error:
             await self._crash_task(task_id, title, f"Claude Code error: {result.output[:1000]}", agent_name)
         else:
-            await self._complete_cc_task(task_id, title, agent_name, result)
+            await self._complete_cc_task(
+                task_id,
+                title,
+                agent_name,
+                result,
+                trust_level=trust_level,
+            )
+            # Collect and sync output artifacts (best-effort)
+            try:
+                artifacts = await asyncio.to_thread(
+                    _collect_output_artifacts, task_id, pre_snapshot
+                )
+                if artifacts:
+                    logger.info(
+                        "[executor] CC: %d artifact(s) detected for task '%s'",
+                        len(artifacts),
+                        title,
+                    )
+                await asyncio.to_thread(
+                    self._bridge.sync_task_output_files, task_id, task_data or {}, agent_name
+                )
+            except Exception:
+                logger.warning("[executor] CC: artifact sync failed for '%s'", title, exc_info=True)
             if self._on_task_completed:
                 try:
-                    await self._on_task_completed(task_id)
+                    await self._on_task_completed(task_id, result.output or "")
                 except Exception:
                     logger.exception("[executor] on_task_completed failed for CC task '%s'", title)
 
@@ -1401,8 +1616,9 @@ class TaskExecutor:
         title: str,
         agent_name: str,
         result: "CCTaskResult",
+        trust_level: str = "autonomous",
     ) -> None:
-        """Post completion message, cost activity, store session, and transition task to DONE."""
+        """Post completion message, cost activity, store session, and transition task status."""
         from mc.types import CCTaskResult  # noqa: F401 — type annotation only
 
         # Post agent work message to thread (M5: include truncation notice)
@@ -1457,11 +1673,13 @@ class TaskExecutor:
                     exc_info=True,
                 )
 
-        # Transition to DONE
+        final_status = (
+            TaskStatus.DONE if trust_level == TrustLevel.AUTONOMOUS else TaskStatus.REVIEW
+        )
         await asyncio.to_thread(
             self._bridge.update_task_status,
             task_id,
-            TaskStatus.DONE,
+            final_status,
             agent_name,
             f"Agent {agent_name} completed task '{title}'",
         )
@@ -1470,6 +1688,37 @@ class TaskExecutor:
         # The session_id must persist after task completion so that follow-up
         # messages can resume the CC session. Cleanup happens only when the
         # agent is deleted (see _cleanup_deleted_agents in gateway.py).
+
+        # Write completion to global HEARTBEAT.md (mirrors nanobot path)
+        try:
+            from filelock import FileLock
+            result_snippet = (result.output or "Task completed.").strip()
+            if len(result_snippet) > 1000:
+                result_snippet = result_snippet[:1000] + "\n...(truncated)..."
+
+            heartbeat_content = (
+                f"\n## Mission Control Update\n\n"
+                f"The task **'{title}'** (ID: `{task_id}`) assigned to **{agent_name}** "
+                f"has finished with status: `{final_status}`.\n\n"
+                f"### Agent's Result:\n```\n{result_snippet}\n```\n\n"
+                f"Please summarize this naturally and notify the user that the task is complete.\n"
+            )
+
+            heartbeat_file = Path.home() / ".nanobot" / "workspace" / "HEARTBEAT.md"
+
+            def _write_heartbeat() -> None:
+                lock = FileLock(str(heartbeat_file) + ".lock", timeout=10)
+                with lock:
+                    with open(heartbeat_file, "a", encoding="utf-8") as f:
+                        f.write(heartbeat_content)
+
+            await asyncio.to_thread(_write_heartbeat)
+            logger.info("[executor] CC: Written task '%s' completion to HEARTBEAT.md", title)
+        except Exception as hb_exc:
+            logger.warning("[executor] CC: Failed to write HEARTBEAT.md for task '%s': %s", title, hb_exc)
+
+        # Clear retry count on success
+        self._agent_gateway.clear_retry_count(task_id)
 
         logger.info(
             "[executor] CC task '%s' done (cost=$%.4f)", title, result.cost_usd
@@ -1552,7 +1801,9 @@ class TaskExecutor:
         # Prepare workspace and IPC server
         try:
             ws_mgr = CCWorkspaceManager()
-            ws_ctx = ws_mgr.prepare(agent_name, agent_data, task_id)
+            from mc.orientation import load_orientation
+            orientation = load_orientation(agent_name)
+            ws_ctx = ws_mgr.prepare(agent_name, agent_data, task_id, orientation=orientation)
         except Exception as exc:
             logger.error("[executor] CC thread reply: workspace prep failed: %s", exc)
             return None

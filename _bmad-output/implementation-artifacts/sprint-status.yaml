@@ -118,6 +118,12 @@ development_status:
   epic-9: in-progress
   9-4-text-search-tasks: done
 
+  # Epic 11: Model Tier System & CC Backend Config
+  epic-11: in-progress
+  11-1-implement-model-tiers: ready-for-dev
+  11-2-model-override-per-agent: ready-for-dev
+  11-3-cc-backend-config-dashboard: in-progress
+
   # Epic 10: Convex Security Hardening
   # Converts backend-only mutations to internalMutation and hardens
   # Python startup to require CONVEX_ADMIN_KEY for server-side auth.

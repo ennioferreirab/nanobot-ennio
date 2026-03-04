@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import {
   type MentionAgent,
 } from "./AgentMentionAutocomplete";
 import { ChatMessages } from "./ChatMessages";
+import { useSelectableAgents } from "@/hooks/useSelectableAgents";
 
 export function ChatPanel() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -25,7 +26,7 @@ export function ChatPanel() {
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const sendChat = useMutation(api.chats.send);
-  const agents = useQuery(api.agents.list);
+  const selectableAgents = useSelectableAgents();
 
   // Keep refs in sync
   useEffect(() => {
@@ -39,9 +40,7 @@ export function ChatPanel() {
   }, [mentionQuery]);
   useEffect(() => () => clearTimeout(blurTimeoutRef.current), []);
 
-  const filteredAgents: MentionAgent[] = (agents ?? [])
-    .filter((a) => a.enabled !== false)
-    .map((a) => ({
+  const filteredAgents: MentionAgent[] = (selectableAgents ?? []).map((a) => ({
       name: a.name,
       displayName: a.displayName ?? undefined,
       role: a.role ?? undefined,
