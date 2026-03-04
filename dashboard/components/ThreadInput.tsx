@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { SendHorizontal, RotateCcw, MessageCircle } from "lucide-react";
 import { AgentMentionAutocomplete } from "./AgentMentionAutocomplete";
-import { HIDDEN_AGENT_NAMES } from "@/lib/constants";
+import { useSelectableAgents } from "@/hooks/useSelectableAgents";
 
 interface ThreadInputProps {
   task: Doc<"tasks">;
@@ -48,7 +48,6 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
   const postPlanMessage = useMutation(api.messages.postUserPlanMessage);
   const postComment = useMutation(api.messages.postComment);
   const restoreTask = useMutation(api.tasks.restore);
-  const agents = useQuery(api.agents.list);
   const board = useQuery(
     api.boards.getById,
     task.boardId ? { boardId: task.boardId } : "skip"
@@ -81,14 +80,7 @@ export function ThreadInput({ task, onMessageSent }: ThreadInputProps) {
   const isBlocked = BLOCKED_STATUSES.includes(task.status);
   const canSend = content.trim().length > 0 && !isSubmitting && (inputMode === "comment" || isPlanChatMode || !!selectedAgent);
 
-  // Filter agents by board's enabledAgents (empty = all agents eligible)
-  const enabledAgentNames = board?.enabledAgents ?? [];
-  const filteredAgents = agents?.filter((a) => {
-    if (!a.enabled) return false;
-    if (HIDDEN_AGENT_NAMES.has(a.name)) return false;
-    if (enabledAgentNames.length === 0) return true;
-    return enabledAgentNames.includes(a.name);
-  });
+  const filteredAgents = useSelectableAgents(board?.enabledAgents);
 
   const handleTextChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {

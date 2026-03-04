@@ -56,12 +56,18 @@ const STATUS_DOT_STYLES: Record<string, string> = {
   crashed: "bg-red-500",
 };
 
-type ModelMode = "default" | "tier" | "custom";
+type ModelMode = "default" | "tier" | "cc" | "custom";
 
 const TIER_LEVEL_OPTIONS = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
   { value: "high", label: "High" },
+] as const;
+
+const CC_MODEL_OPTIONS = [
+  "claude-haiku-4-5",
+  "claude-sonnet-4-6",
+  "claude-opus-4-6",
 ] as const;
 
 /** Parse a stored model string into modelMode + tierLevel + hadReasoning + customModel. */
@@ -73,6 +79,9 @@ function parseModelValue(model: string): {
 } {
   if (!model) {
     return { modelMode: "default", tierLevel: "", hadReasoning: false, customModel: "" };
+  }
+  if (model.startsWith("cc/")) {
+    return { modelMode: "cc", tierLevel: "", hadReasoning: false, customModel: model.slice(3) };
   }
   if (model.startsWith("tier:reasoning-")) {
     return { modelMode: "tier", tierLevel: model.replace("tier:reasoning-", ""), hadReasoning: true, customModel: "" };
@@ -137,6 +146,9 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
   const [tierLevel, setTierLevel] = useState("");
   const [reasoningLevel, setReasoningLevel] = useState("");
   const [customModel, setCustomModel] = useState("");
+  const [ccPermissionMode, setCcPermissionMode] = useState<string>("bypassPermissions");
+  const [ccMaxBudget, setCcMaxBudget] = useState<string>("");
+  const [ccMaxTurns, setCcMaxTurns] = useState<string>("");
   const [enabled, setEnabledState] = useState(true);
 
   // UI state
@@ -160,6 +172,8 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
     switch (modelMode) {
       case "tier":
         return tierLevel ? `tier:${reasoningLevel ? "reasoning" : "standard"}-${tierLevel}` : "";
+      case "cc":
+        return customModel ? `cc/${customModel}` : "";
       case "custom":
         return customModel;
       default:
@@ -179,6 +193,10 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
       setTierLevel(parsed.tierLevel);
       setReasoningLevel((agent as any).reasoningLevel || (parsed.hadReasoning ? "low" : ""));
       setCustomModel(parsed.customModel);
+      const ccOpts = agent.claudeCodeOpts;
+      setCcPermissionMode(ccOpts?.permissionMode ?? "bypassPermissions");
+      setCcMaxBudget(ccOpts?.maxBudgetUsd != null ? String(ccOpts.maxBudgetUsd) : "");
+      setCcMaxTurns(ccOpts?.maxTurns != null ? String(ccOpts.maxTurns) : "");
       setEnabledState(agent.enabled !== false);
       setErrors({});
       setSaveError(null);
@@ -246,6 +264,12 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
   // Dirty state detection
   const isDirty = useMemo(() => {
     if (!agent) return false;
+    const existingCc = agent.claudeCodeOpts;
+    const ccDirty = modelMode === "cc" && (
+      ccPermissionMode !== (existingCc?.permissionMode ?? "bypassPermissions") ||
+      ccMaxBudget !== (existingCc?.maxBudgetUsd != null ? String(existingCc.maxBudgetUsd) : "") ||
+      ccMaxTurns !== (existingCc?.maxTurns != null ? String(existingCc.maxTurns) : "")
+    );
     return (
       displayName !== agent.displayName ||
       role !== agent.role ||
@@ -253,10 +277,11 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
       JSON.stringify(skills) !== JSON.stringify(agent.skills) ||
       computedModel !== (agent.model || "") ||
       (reasoningLevel || "") !== ((agent as any).reasoningLevel || "") ||
+      ccDirty ||
       enabled !== (agent.enabled !== false) ||
       JSON.stringify(variables) !== JSON.stringify(agent.variables || [])
     );
-  }, [agent, displayName, role, prompt, skills, computedModel, reasoningLevel, enabled, variables]);
+  }, [agent, displayName, role, prompt, skills, computedModel, reasoningLevel, modelMode, ccPermissionMode, ccMaxBudget, ccMaxTurns, enabled, variables]);
 
   // Validation
   const validate = useCallback((): boolean => {
@@ -276,6 +301,11 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
     setSaveError(null);
 
     try {
+      const claudeCodeOpts = modelMode === "cc" ? {
+        permissionMode: ccPermissionMode || undefined,
+        maxBudgetUsd: ccMaxBudget ? parseFloat(ccMaxBudget) : undefined,
+        maxTurns: ccMaxTurns ? parseInt(ccMaxTurns, 10) : undefined,
+      } : undefined;
       await Promise.all([
         // Save to Convex
         updateConfig({
@@ -287,6 +317,7 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
           model: computedModel || undefined,
           variables,
           reasoningLevel: reasoningLevel || undefined,
+          claudeCodeOpts,
         }),
         // Write YAML directly to disk
         fetch(`/api/agents/${encodeURIComponent(agentName)}/config`, {
@@ -298,6 +329,11 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
             model: computedModel || null,
             display_name: displayName,
             skills,
+            claude_code: modelMode === "cc" ? {
+              permission_mode: ccPermissionMode || undefined,
+              max_budget_usd: ccMaxBudget ? parseFloat(ccMaxBudget) : null,
+              max_turns: ccMaxTurns ? parseInt(ccMaxTurns, 10) : null,
+            } : undefined,
           }),
         }),
       ]);
@@ -312,7 +348,7 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
     } catch {
       setSaveError("Failed to save. Please try again.");
     }
-  }, [agentName, agent, displayName, role, prompt, skills, computedModel, reasoningLevel, enabled, variables, validate, updateConfig, setEnabled]);
+  }, [agentName, agent, displayName, role, prompt, skills, computedModel, modelMode, reasoningLevel, ccPermissionMode, ccMaxBudget, ccMaxTurns, enabled, variables, validate, updateConfig, setEnabled]);
 
   const handleClose = useCallback(() => {
     if (isDirty) {
@@ -504,6 +540,8 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
                     value={
                       modelMode === "default"
                         ? "__default__"
+                        : modelMode === "cc"
+                          ? "__cc__"
                         : modelMode === "tier"
                           ? (tierLevel || "__default__")
                           : "__custom__"
@@ -516,6 +554,12 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
                       } else if (value === "__custom__") {
                         setModelMode("custom");
                         setTierLevel("");
+                      } else if (value === "__cc__") {
+                        setModelMode("cc");
+                        setTierLevel("");
+                        setReasoningLevel("");
+                        setCustomModel("claude-sonnet-4-6");
+                        setCcPermissionMode("bypassPermissions");
                       } else {
                         // Must be a tier level value (low/medium/high)
                         setModelMode("tier");
@@ -538,6 +582,8 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
                           </SelectItem>
                         ))}
                       </SelectGroup>
+                      <SelectSeparator />
+                      <SelectItem value="__cc__">Claude Code...</SelectItem>
                       <SelectSeparator />
                       <SelectItem value="__custom__">Custom...</SelectItem>
                     </SelectContent>
@@ -616,7 +662,86 @@ export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) 
                       Custom: {customModel}
                     </Badge>
                   )}
+                  {modelMode === "cc" && customModel && (
+                    <Badge variant="secondary" className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 font-normal">
+                      Claude Code: cc/{customModel}
+                    </Badge>
+                  )}
                 </div>
+
+                {modelMode === "cc" && (
+                  <div className="space-y-3 border-t pt-3">
+                    <label className="text-sm font-semibold">Claude Code Settings</label>
+
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">CC Model</label>
+                      <Select
+                        value={customModel || "__none__"}
+                        onValueChange={(value) => {
+                          setCustomModel(value === "__none__" ? "" : value);
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Claude Code model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" disabled>
+                            Select a model...
+                          </SelectItem>
+                          {CC_MODEL_OPTIONS.map((m) => (
+                            <SelectItem key={m} value={m}>
+                              {m}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">Permission Mode</label>
+                      <Select value={ccPermissionMode} onValueChange={setCcPermissionMode}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="bypassPermissions">
+                            Bypass - all tools run without approval
+                          </SelectItem>
+                          <SelectItem value="acceptEdits">
+                            Accept Edits - file edits auto-approved
+                          </SelectItem>
+                          <SelectItem value="default">
+                            Default - follows system CC defaults
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">Max Budget (USD)</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.5}
+                        placeholder="No limit"
+                        value={ccMaxBudget}
+                        onChange={(e) => setCcMaxBudget(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">Max Turns</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        step={1}
+                        placeholder="No limit"
+                        value={ccMaxTurns}
+                        onChange={(e) => setCcMaxTurns(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Skills */}
                 <SkillsSelector selected={skills} onChange={setSkills} />

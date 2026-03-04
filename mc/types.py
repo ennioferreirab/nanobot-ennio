@@ -8,6 +8,7 @@ String values MUST match exactly — any mismatch will cause runtime errors.
 from __future__ import annotations
 
 import sys
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -386,4 +387,8 @@ class ActivityData:
     agent_name: str | None = None
     id: str | None = None  # Convex _id (populated on read)
 
+
+def task_safe_id(task_id: str) -> str:
+    """Convert a Convex task ID to a filesystem-safe string."""
+    return re.sub(r"[^\w\-]", "_", task_id)
 

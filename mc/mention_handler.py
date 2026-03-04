@@ -201,8 +201,10 @@ async def handle_mention(
             agent_model = None
 
     # Inject global orientation for non-lead agents
-    from mc.executor import _maybe_inject_orientation
-    agent_prompt = _maybe_inject_orientation(agent_name, agent_prompt)
+    from mc.orientation import load_orientation
+    orientation = load_orientation(agent_name)
+    if orientation:
+        agent_prompt = f"{orientation}\n\n---\n\n{agent_prompt}" if agent_prompt else orientation
 
     # System agent (nanobot) uses SOUL.md identity — skip prompt injection
     if agent_name == NANOBOT_AGENT_NAME:

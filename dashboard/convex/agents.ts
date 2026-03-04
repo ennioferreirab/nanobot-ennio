@@ -18,6 +18,11 @@ export const upsertByName = mutation({
     soul: v.optional(v.string()),
     skills: v.array(v.string()),
     model: v.optional(v.string()),
+    claudeCodeOpts: v.optional(v.object({
+      permissionMode: v.optional(v.string()),
+      maxBudgetUsd: v.optional(v.number()),
+      maxTurns: v.optional(v.number()),
+    })),
     isSystem: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -55,6 +60,9 @@ export const upsertByName = mutation({
       if (args.isSystem !== undefined) {
         patch.isSystem = args.isSystem;
       }
+      if (args.claudeCodeOpts !== undefined) {
+        patch.claudeCodeOpts = args.claudeCodeOpts;
+      }
       await ctx.db.patch(existing._id, patch);
     } else {
       await ctx.db.insert("agents", {
@@ -68,6 +76,7 @@ export const upsertByName = mutation({
         enabled: true,
         isSystem: args.isSystem,
         model: args.model,
+        claudeCodeOpts: args.claudeCodeOpts,
         lastActiveAt: timestamp,
       });
     }
@@ -127,6 +136,11 @@ export const updateConfig = mutation({
     skills: v.optional(v.array(v.string())),
     model: v.optional(v.string()),
     reasoningLevel: v.optional(v.string()),
+    claudeCodeOpts: v.optional(v.object({
+      permissionMode: v.optional(v.string()),
+      maxBudgetUsd: v.optional(v.number()),
+      maxTurns: v.optional(v.number()),
+    })),
     variables: v.optional(v.array(v.object({ name: v.string(), value: v.string() }))),
   },
   handler: async (ctx, args) => {
@@ -149,6 +163,7 @@ export const updateConfig = mutation({
     if (args.skills !== undefined) updates.skills = args.skills;
     if (args.model !== undefined) updates.model = args.model;
     if (args.reasoningLevel !== undefined) updates.reasoningLevel = args.reasoningLevel;
+    if (args.claudeCodeOpts !== undefined) updates.claudeCodeOpts = args.claudeCodeOpts;
     if (args.variables !== undefined) updates.variables = args.variables;
 
     await ctx.db.patch(agent._id, updates);

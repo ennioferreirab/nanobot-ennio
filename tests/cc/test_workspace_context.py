@@ -454,3 +454,39 @@ class TestOrientationSection:
         content = ctx.claude_md.read_text(encoding="utf-8")
 
         assert "## Orientation" not in content
+
+
+class TestAlwaysOnSkills:
+    """Tests for CC-12: always-on skills injection into CLAUDE.md."""
+
+    def test_always_skills_included_when_available(self, tmp_path: Path) -> None:
+        """Always-on skills content appears in CLAUDE.md when skills are found."""
+        agent = _make_agent(name="skill-agent")
+        manager = CCWorkspaceManager(workspace_root=tmp_path)
+
+        with patch.object(manager, "_build_always_skills_content", return_value="Always skill content here"):
+            ctx = manager.prepare("skill-agent", agent, "task123")
+            content = ctx.claude_md.read_text(encoding="utf-8")
+
+        assert "## Active Skills" in content
+        assert "Always skill content here" in content
+
+    def test_always_skills_empty_when_none(self, tmp_path: Path) -> None:
+        """No Active Skills section when no always-on skills exist."""
+        agent = _make_agent(name="no-skill-agent")
+        manager = CCWorkspaceManager(workspace_root=tmp_path)
+
+        with patch.object(manager, "_build_always_skills_content", return_value=""):
+            ctx = manager.prepare("no-skill-agent", agent, "task123")
+            content = ctx.claude_md.read_text(encoding="utf-8")
+
+        assert "## Active Skills" not in content
+
+    def test_always_skills_import_error_graceful(self, tmp_path: Path) -> None:
+        """ImportError in SkillsLoader is handled gracefully (returns empty)."""
+        manager = CCWorkspaceManager(workspace_root=tmp_path)
+
+        with patch("nanobot.agent.skills.SkillsLoader", side_effect=ImportError("no module")):
+            result = manager._build_always_skills_content(tmp_path / "agents" / "test")
+
+        assert result == ""

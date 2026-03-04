@@ -16,8 +16,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Bot, Paperclip, User, X, Eye, Zap, ShieldCheck } from "lucide-react";
 // ShieldCheck used in taskMode=auto_review button
-import { TAG_COLORS, HIDDEN_AGENT_NAMES } from "@/lib/constants";
+import { TAG_COLORS } from "@/lib/constants";
 import { useBoard } from "@/components/BoardContext";
+import { useSelectableAgents } from "@/hooks/useSelectableAgents";
 
 const formatSize = (bytes: number) =>
   bytes < 1024 * 1024
@@ -43,7 +44,7 @@ export function TaskInput() {
 
   const { activeBoardId } = useBoard();
   const createTask = useMutation(api.tasks.create);
-  const agents = useQuery(api.agents.list);
+  const selectableAgents = useSelectableAgents();
   const predefinedTags = useQuery(api.taskTags.list);
   const allAttributes = useQuery(api.tagAttributes.list);
   const upsertAttrValue = useMutation(api.tagAttributeValues.upsert);
@@ -424,7 +425,7 @@ export function TaskInput() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">Auto (Lead Agent)</SelectItem>
-                    {agents?.filter((agent) => !HIDDEN_AGENT_NAMES.has(agent.name)).map((agent) => (
+                    {selectableAgents?.map((agent) => (
                       <SelectItem key={agent.name} value={agent.name} disabled={agent.enabled === false} className={agent.enabled === false ? "text-muted-foreground opacity-60" : ""}>
                         {agent.displayName}{agent.enabled === false ? " (Deactivated)" : ""}
                       </SelectItem>

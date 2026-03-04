@@ -174,6 +174,10 @@ class ClaudeCodeProvider:
         if session_id:
             cmd.extend(["--resume", session_id])
 
+        # Effort level
+        if cc and cc.effort_level:
+            cmd.extend(["--effort", cc.effort_level])
+
         return cmd
 
     async def _parse_stream(self, proc: asyncio.subprocess.Process) -> AsyncIterator[dict]:

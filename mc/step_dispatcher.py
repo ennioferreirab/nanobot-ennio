@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +25,7 @@ from mc.types import (
     is_tier_reference,
     is_cc_model,
     extract_cc_model_name,
+    task_safe_id,
 )
 
 if TYPE_CHECKING:
@@ -456,7 +456,7 @@ class StepDispatcher:
                 for f in raw_files
             ]
 
-            safe_task_id = re.sub(r"[^\w\-]", "_", task_id)
+            safe_task_id = task_safe_id(task_id)
             files_dir = str(Path.home() / ".nanobot" / "tasks" / safe_task_id)
             output_dir = str(Path.home() / ".nanobot" / "tasks" / safe_task_id / "output")
 

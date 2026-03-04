@@ -33,6 +33,7 @@ class ClaudeCodeOpts:
     permission_mode: str = "acceptEdits"
     allowed_tools: list[str] | None = None
     disallowed_tools: list[str] | None = None
+    effort_level: str | None = None
 
 
 @dataclass

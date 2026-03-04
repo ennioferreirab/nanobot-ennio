@@ -163,6 +163,11 @@ export default defineSchema({
     isSystem: v.optional(v.boolean()),
     model: v.optional(v.string()),
     reasoningLevel: v.optional(v.string()),
+    claudeCodeOpts: v.optional(v.object({
+      permissionMode: v.optional(v.string()),
+      maxBudgetUsd: v.optional(v.number()),
+      maxTurns: v.optional(v.number()),
+    })),
     variables: v.optional(v.array(v.object({ name: v.string(), value: v.string() }))),
     lastActiveAt: v.optional(v.string()),
     deletedAt: v.optional(v.string()),
