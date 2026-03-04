@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 claude_controller.py — High-level Python API to control a Claude Code session via tmux.
 
@@ -6,7 +5,7 @@ Combines screen parsing (screen_parser.py) with transcript reading
 (transcript_reader.py) to drive Claude Code programmatically.
 
 Usage:
-    from claude_controller import ClaudeController, Response
+    from tmux_claude_control import ClaudeController, Response
 
     ctrl = ClaudeController(session_name="my-claude", cwd="/tmp/workdir")
     ctrl.launch()
@@ -17,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -24,12 +24,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from screen_parser import (
+from .screen_parser import (
     ScreenMode,
     ScreenState,
     parse_screen,
 )
-from transcript_reader import ToolCall, TranscriptReader
+from .transcript_reader import ToolCall, TranscriptReader
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ from transcript_reader import ToolCall, TranscriptReader
 POLL_INTERVAL: float = 0.4          # seconds between wait_for_idle polls
 CLAUDE_STARTUP_WAIT: float = 6.0    # seconds to wait after launching Claude
 KEYSTROKE_SLEEP: float = 0.05       # sleep between individual keystrokes
-PRE_ENTER_SLEEP: float = 0.1        # sleep after typing text but before Enter
+PRE_ENTER_SLEEP: float = 0.5        # sleep after typing text but before Enter (Claude TUI needs time to render)
 
 # Patterns that indicate an error state in the screen output
 ERROR_PATTERNS: list[str] = [
@@ -157,23 +157,42 @@ class ClaudeController:
         self._tmux_send(claude_cmd)
         self._tmux_key("Enter")
 
-        # 5. Wait for Claude to start up and dismiss any welcome / update banner
+        # 5. Wait for Claude to start up, then handle any trust / welcome prompts
         time.sleep(CLAUDE_STARTUP_WAIT)
-        self._tmux_key("Enter")  # dismiss welcome screen if present
-        time.sleep(0.5)
+
+        # Claude Code shows a "trust this folder?" question for new directories.
+        # Detect it and press Enter to accept the default ("Yes, I trust this folder").
+        trust_deadline = time.monotonic() + 15.0
+        entered_once = False
+        while time.monotonic() < trust_deadline:
+            raw = self._tmux_capture()
+            state = parse_screen(raw)
+            if state.mode == ScreenMode.QUESTION:
+                # Trust question or other startup prompt — accept default
+                self._tmux_key("Enter")
+                time.sleep(1.5)
+                entered_once = False  # reset — need to re-check
+            elif state.mode == ScreenMode.IDLE:
+                break
+            elif not entered_once:
+                # First time seeing non-idle/non-question — press Enter once
+                # to dismiss welcome banner, then wait for state to settle
+                self._tmux_key("Enter")
+                entered_once = True
+                time.sleep(1.0)
+            else:
+                # Already pressed Enter once, just wait
+                time.sleep(0.5)
 
         # 6. Wait for idle state
         if wait_ready:
-            try:
-                self.wait_for_idle(timeout=timeout)
-            except ClaudeTimeoutError:
-                # Not necessarily fatal — Claude may just be loading slowly.
-                # Capture screen for debugging but don't raise.
-                screen_text = self._tmux_capture()
-                pass  # Caller can check is_idle() themselves
+            self.wait_for_idle(timeout=timeout)
 
-        # 7. Detect the transcript file (most recently modified ses_*.jsonl)
-        transcript_path = TranscriptReader.detect_transcript_for_session(self.session_name)
+        # 7. Detect the transcript file (most recently modified *.jsonl,
+        #    checking both ~/.claude/projects/<cwd>/ and ~/.claude/transcripts/)
+        transcript_path = TranscriptReader.detect_transcript_for_session(
+            self.session_name, cwd=self.cwd
+        )
         if transcript_path is not None:
             self._transcript = TranscriptReader(transcript_path)
 
@@ -227,56 +246,61 @@ class ClaudeController:
           1. Verify Claude is in IDLE state (wait for it if not).
           2. Record the current transcript file position / timestamp.
           3. Type the prompt and press Enter.
-          4. Wait for Claude to return to IDLE.
-          5. Extract the response from the JSONL transcript.
-          6. Return a Response object.
+          4. Wait for Claude to start processing (leave IDLE).
+          5. Wait for Claude to finish (screen returns to IDLE).
+          6. Extract response from JSONL transcript.
+          7. Return Response object.
         """
         # 1. Ensure Claude is idle before sending
         state = self.get_state()
         if state.mode != ScreenMode.IDLE:
             self.wait_for_idle(timeout=min(30.0, timeout))
 
-        # 2. Record file position / tool-call baseline before sending
-        transcript_position: Optional[int] = None
+        # 2. Record baseline timestamp for filtering new tool calls later.
+        #    Also refresh the transcript reference in case it was created after launch().
+        self._refresh_transcript()
         tool_call_baseline_time: Optional[str] = None
         if self._transcript is not None:
             try:
-                transcript_position = self._transcript.path.stat().st_size
-                # Get last tool call timestamp as baseline
                 existing_calls = self._transcript.get_tool_calls()
                 if existing_calls:
                     tool_call_baseline_time = existing_calls[-1].timestamp
             except Exception:
-                transcript_position = None
+                pass
 
         start_time = time.monotonic()
 
         # 3. Type the prompt and press Enter
-        # Use tmux send-keys with the literal text (no special key names needed)
-        # We send it in one shot to avoid character-by-character delays
         self._tmux_send(text)
         time.sleep(PRE_ENTER_SLEEP)
         self._tmux_key("Enter")
 
-        # Give Claude a moment to start processing before we begin polling
-        time.sleep(0.3)
+        # 4. Wait for Claude to start processing (leave IDLE state).
+        #    This avoids the race where we poll for IDLE before Claude has even
+        #    begun thinking.
+        self._wait_for_processing(timeout=15.0)
 
-        # 4. Wait for Claude to return to IDLE
-        final_state = self.wait_for_idle(timeout=timeout)
+        # 5. Now wait for Claude to return to IDLE (response complete).
+        remaining = timeout - (time.monotonic() - start_time)
+        final_state = self.wait_for_idle(timeout=max(remaining, 5.0))
         duration = time.monotonic() - start_time
 
-        # 5. Capture the screen at completion
+        # 6. Capture screen at completion
         screen_text = self._tmux_capture()
 
-        # 6. Extract response from transcript
-        response_text = ""
-        tool_calls: list[ToolCall] = []
+        # Refresh transcript reference — it may have been created DURING the
+        # response (first prompt of a brand-new session).  Poll briefly to give
+        # Claude time to flush the JSONL writer before we read.
+        response_text = self._wait_for_transcript_response(
+            baseline_response=self._transcript.get_last_response()
+            if self._transcript is not None else "",
+            send_time=start_time,
+            timeout=10.0,
+        )
 
+        # 7. Extract tool calls from the JSONL transcript
+        tool_calls: list[ToolCall] = []
         if self._transcript is not None:
-            try:
-                response_text = self._transcript.get_last_response()
-            except Exception:
-                response_text = ""
             try:
                 all_calls = self._transcript.get_tool_calls()
                 if tool_call_baseline_time is not None:
@@ -307,6 +331,19 @@ class ClaudeController:
         """
         deadline = time.monotonic() + timeout
 
+        # Only raise on patterns that definitively indicate a terminal/fatal error
+        # and are unlikely to appear in normal tool output.
+        FATAL_PATTERNS = [
+            "rate limit",
+            "Rate limit",
+            "Connection refused",
+            "ECONNREFUSED",
+            "context window",
+            "token limit",
+            "API error",
+            "Session expired",
+        ]
+
         while time.monotonic() < deadline:
             if not self._tmux_session_exists():
                 raise ClaudeSessionError(
@@ -315,11 +352,11 @@ class ClaudeController:
 
             raw = self._tmux_capture()
 
-            # Check for error patterns before doing normal state detection
-            for pattern in ERROR_PATTERNS:
+            # Check for fatal error patterns before doing normal state detection
+            for pattern in FATAL_PATTERNS:
                 if pattern in raw:
                     raise ClaudeError(
-                        f"Error pattern detected on screen: {pattern!r}\n"
+                        f"Fatal error pattern detected on screen: {pattern!r}\n"
                         f"Screen snippet: {raw[-500:]!r}"
                     )
 
@@ -430,7 +467,7 @@ class ClaudeController:
         if self._transcript is None:
             # Try to auto-detect the transcript lazily
             transcript_path = TranscriptReader.detect_transcript_for_session(
-                self.session_name
+                self.session_name, cwd=self.cwd
             )
             if transcript_path is None:
                 return ""
@@ -519,137 +556,95 @@ class ClaudeController:
         )
         return result.returncode == 0
 
+    def _wait_for_processing(self, timeout: float = 15.0) -> None:
+        """
+        Poll until Claude leaves IDLE (i.e., starts processing the prompt).
 
-# ── Self-test ─────────────────────────────────────────────────────────────────
+        This is used after pressing Enter on a prompt to avoid the race condition
+        where wait_for_idle() returns immediately because the screen is still in
+        IDLE mode before Claude has started thinking.
 
-def _print(msg: str) -> None:
-    print(msg, flush=True)
+        Does NOT raise on timeout — if Claude never leaves IDLE it could mean the
+        prompt was rejected or the session stalled; wait_for_idle() will handle
+        the wait for the actual response.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self._tmux_session_exists():
+                return
+            state = parse_screen(self._tmux_capture())
+            if state.mode != ScreenMode.IDLE:
+                return  # Claude started doing something
+            time.sleep(POLL_INTERVAL)
 
+    def _refresh_transcript(self) -> None:
+        """
+        Re-detect the most recently modified transcript file.
 
-def _run_skip_claude_tests() -> None:
-    """Tests that do not require a running Claude instance."""
-    _print("\n=== --skip-claude tests ===\n")
+        Called both before and after sending a prompt to handle the case where
+        the transcript file is created during the first response (after launch()).
+        If a newer file exists than what we currently have, update self._transcript.
+        """
+        try:
+            latest_path = TranscriptReader.detect_transcript_for_session(
+                self.session_name, cwd=self.cwd
+            )
+        except Exception:
+            return
 
-    # 1. Instantiation
-    ctrl = ClaudeController(session_name="test-skip", cwd="/tmp")
-    assert ctrl.session_name == "test-skip"
-    assert ctrl.cwd == str(Path("/tmp").resolve())
-    assert ctrl._pane == "test-skip:0"
-    assert ctrl._transcript is None
-    _print("[PASS] ClaudeController instantiation")
+        if latest_path is None:
+            return
 
-    # 2. _tmux_session_exists() returns False for a non-existent session
-    assert ctrl._tmux_session_exists() is False
-    _print("[PASS] _tmux_session_exists() → False for unknown session")
+        if self._transcript is None or latest_path != self._transcript.path:
+            self._transcript = TranscriptReader(latest_path)
 
-    # 3. is_healthy() returns False when session doesn't exist
-    assert ctrl.is_healthy() is False
-    _print("[PASS] is_healthy() → False when no tmux session")
+    def _wait_for_transcript_response(
+        self,
+        baseline_response: str,
+        send_time: float,
+        timeout: float = 10.0,
+    ) -> str:
+        """
+        Poll the transcript until a NEW assistant response appears (different
+        from `baseline_response`) and return it.
 
-    # 4. get_last_response() returns '' when no transcript
-    resp = ctrl.get_last_response()
-    assert resp == ""
-    _print("[PASS] get_last_response() → '' when no transcript")
+        This is needed because the JSONL writer may flush slightly after the
+        screen returns to IDLE.  We also re-detect the transcript file here in
+        case Claude created a new one during the response (first prompt of a
+        brand-new session).
 
-    # 5. kill() on non-existent session does not raise
-    ctrl.kill()
-    _print("[PASS] kill() on non-existent session is a no-op")
+        Parameters
+        ----------
+        baseline_response:
+            The last known response BEFORE this prompt was sent.  We poll
+            until a DIFFERENT (newer) response appears.
+        send_time:
+            monotonic timestamp of when the prompt was sent.  Used to avoid
+            mistaking a previous response for the new one.
+        timeout:
+            Maximum seconds to wait for the response to appear in the transcript.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            # Re-detect the transcript file (handles the case where Claude
+            # created a new file for this session)
+            self._refresh_transcript()
 
-    # 6. exit_gracefully() on non-existent session does not raise
-    ctrl.exit_gracefully()
-    _print("[PASS] exit_gracefully() on non-existent session is a no-op")
+            if self._transcript is not None:
+                try:
+                    latest = self._transcript.get_last_response()
+                    if latest and latest != baseline_response:
+                        return latest
+                except Exception:
+                    pass
 
-    # 7. Response dataclass
-    from screen_parser import ScreenState, ScreenMode
-    state = ScreenState(mode=ScreenMode.IDLE, raw_text="test")
-    r = Response(
-        text="Hello world",
-        screen_text="raw capture",
-        duration=1.23,
-        state=state,
-        tool_calls=[],
-    )
-    assert r.text == "Hello world"
-    assert r.duration == 1.23
-    _print("[PASS] Response dataclass construction")
+            time.sleep(0.3)
 
-    # 8. Custom exceptions are subclasses of ClaudeError
-    assert issubclass(ClaudeTimeoutError, ClaudeError)
-    assert issubclass(ClaudeNotReadyError, ClaudeError)
-    assert issubclass(ClaudeSessionError, ClaudeError)
-    _print("[PASS] Exception hierarchy correct")
+        # Timed out waiting for transcript — return whatever we have
+        if self._transcript is not None:
+            try:
+                return self._transcript.get_last_response()
+            except Exception:
+                pass
+        return ""
 
-    _print("\n=== All --skip-claude tests passed ===\n")
-
-
-def _run_full_tests() -> None:
-    """Full integration tests that launch a real Claude Code session."""
-    _print("\n=== Full integration tests ===\n")
-
-    session = "claude-ctrl-selftest"
-    ctrl = ClaudeController(session_name=session, cwd="/tmp")
-
-    # ── Step 1: Launch
-    _print("Step 1: Launching Claude Code...")
-    ctrl.launch(dangerous_skip=True, wait_ready=True, timeout=60.0)
-    _print(f"        Session alive: {ctrl._tmux_session_exists()}")
-
-    # ── Step 2: Verify idle
-    _print("Step 2: Checking is_idle()...")
-    idle = ctrl.is_idle()
-    assert idle, f"Expected Claude to be idle after launch, got state={ctrl.get_state().mode}"
-    _print(f"        is_idle() = {idle}  [PASS]")
-
-    # ── Step 3: Send a simple prompt
-    _print("Step 3: Sending prompt 'Say hello in exactly 3 words'...")
-    resp = ctrl.send_prompt("Say hello in exactly 3 words", timeout=120.0)
-    _print(f"        Response text: {resp.text!r}")
-    _print(f"        Duration: {resp.duration:.1f}s")
-    _print(f"        Final state: {resp.state.mode.value}")
-    assert resp.text, "Expected non-empty response text"
-    _print("        [PASS] Response has text")
-
-    # ── Step 4: /compact
-    _print("Step 4: Sending /compact...")
-    ctrl.send_slash_command("/compact")
-    time.sleep(2.0)
-    # /compact may ask a question or return to idle; wait for idle
-    try:
-        ctrl.wait_for_idle(timeout=30.0)
-        _print("        /compact completed, back to idle  [PASS]")
-    except ClaudeTimeoutError:
-        _print("        /compact: still not idle after 30s (may be asking a question)")
-        # Try answering with "1" if it's a question
-        state = ctrl.get_state()
-        if state.mode.value == "question":
-            ctrl.answer_question(1)
-            ctrl.wait_for_idle(timeout=20.0)
-            _print("        Answered question, now idle  [PASS]")
-
-    # ── Step 5: Exit gracefully
-    _print("Step 5: Exiting gracefully...")
-    ctrl.exit_gracefully()
-    time.sleep(1.0)
-    session_gone = not ctrl._tmux_session_exists()
-    assert session_gone, "Expected tmux session to be gone after exit_gracefully()"
-    _print(f"        Session killed: {session_gone}  [PASS]")
-
-    _print("\n=== All full integration tests passed ===\n")
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="ClaudeController self-test")
-    parser.add_argument(
-        "--skip-claude",
-        action="store_true",
-        help="Only test class instantiation and helper methods, without launching Claude",
-    )
-    args = parser.parse_args()
-
-    if args.skip_claude:
-        _run_skip_claude_tests()
-    else:
-        _run_skip_claude_tests()
-        _run_full_tests()

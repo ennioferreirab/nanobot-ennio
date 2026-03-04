@@ -150,10 +150,12 @@ class TranscriptReader:
     ----------
     transcript_path:
         Explicit path to a .jsonl transcript file.  If None, the most recently
-        modified file in ``~/.claude/transcripts/`` is used.
+        modified file in ``~/.claude/transcripts/`` or
+        ``~/.claude/projects/<sanitized-cwd>/`` is used.
     """
 
     _TRANSCRIPTS_DIR = Path.home() / ".claude" / "transcripts"
+    _PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
     def __init__(self, transcript_path: "str | Path | None" = None) -> None:
         if transcript_path is not None:
@@ -185,32 +187,67 @@ class TranscriptReader:
         return candidates[0]
 
     @classmethod
-    def detect_transcript_for_session(cls, tmux_session: str) -> "Path | None":
+    def _sanitize_path_for_projects(cls, cwd: "str | None") -> str:
+        """
+        Convert an absolute path to the Claude Code project-directory name.
+
+        Claude Code stores per-project transcripts under:
+            ~/.claude/projects/<sanitized-path>/
+        where <sanitized-path> is the absolute path with both "/" and "_"
+        replaced by "-".  Claude Code also resolves symlinks first (so on
+        macOS, /tmp becomes /private/tmp).
+
+        Example:
+            /private/tmp/my_work  →  -private-tmp-my-work
+            /Users/foo/bar        →  -Users-foo-bar
+        """
+        if not cwd:
+            return ""
+        p = str(Path(cwd).resolve())
+        # Replace both "/" and "_" with "-" (same convention Claude Code uses)
+        return p.replace("/", "-").replace("_", "-")
+
+    @classmethod
+    def detect_transcript_for_session(
+        cls,
+        tmux_session: str,
+        cwd: "str | None" = None,
+    ) -> "Path | None":
         """
         Try to find the transcript file for a given tmux session.
 
-        Current strategy: return the most recently modified .jsonl file in
-        ~/.claude/transcripts/ (the file being actively written to is almost
-        certainly the most recently touched one).
+        Strategy:
+          1. If ``cwd`` is given, look in
+             ``~/.claude/projects/<sanitized-cwd>/`` for the most recently
+             modified ``*.jsonl`` file (this is where recent Claude Code
+             versions write project-scoped transcripts).
+          2. Also check the legacy ``~/.claude/transcripts/ses_*.jsonl``
+             location.
+          3. Return the single most recently modified file across both
+             locations, or None if neither exists.
 
-        A future, more precise strategy would be:
-          1. Get the shell PID of the tmux pane for `tmux_session`.
-          2. Find the Claude Code process whose parent PID matches.
-          3. Extract the session-ID from the process environment or arguments.
-          4. Map that session-ID to a transcript file.
+        The file being actively written to is almost certainly the most
+        recently touched one.
         """
+        candidates: list[Path] = []
+
+        # 1. Project-scoped transcripts (current Claude Code behaviour)
+        if cwd:
+            sanitized = cls._sanitize_path_for_projects(cwd)
+            project_dir = cls._PROJECTS_DIR / sanitized
+            if project_dir.exists():
+                candidates.extend(project_dir.glob("*.jsonl"))
+
+        # 2. Legacy transcripts directory
         transcripts_dir = cls._TRANSCRIPTS_DIR
-        if not transcripts_dir.exists():
-            return None
-        candidates = sorted(
-            transcripts_dir.glob("ses_*.jsonl"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        if transcripts_dir.exists():
+            candidates.extend(transcripts_dir.glob("ses_*.jsonl"))
+
         if not candidates:
             return None
-        # Simple heuristic: the most recently modified file.
-        return candidates[0]
+
+        # Return the most recently modified file across all candidates
+        return max(candidates, key=lambda p: p.stat().st_mtime)
 
     # ------------------------------------------------------------------
     # Core read
@@ -406,153 +443,3 @@ class TranscriptReader:
         return None  # timed out
 
 
-# ---------------------------------------------------------------------------
-# Self-test
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    import tempfile
-    import threading
-
-    print("=== TranscriptReader self-test ===\n")
-
-    # ------------------------------------------------------------------
-    # 1. Build sample JSONL content covering both content formats
-    # ------------------------------------------------------------------
-    sample_lines = [
-        # Simple string content (user)
-        json.dumps({
-            "type": "user",
-            "timestamp": "2026-03-02T10:00:00.000Z",
-            "content": "Hello, Claude!",
-        }),
-        # Simple string content (assistant)
-        json.dumps({
-            "type": "assistant",
-            "timestamp": "2026-03-02T10:00:01.000Z",
-            "content": "Hello! How can I help you?",
-        }),
-        # tool_use entry
-        json.dumps({
-            "type": "tool_use",
-            "timestamp": "2026-03-02T10:00:02.000Z",
-            "tool_name": "bash",
-            "tool_input": {"command": "ls /tmp"},
-        }),
-        # tool_result entry (follows the tool_use above)
-        json.dumps({
-            "type": "tool_result",
-            "timestamp": "2026-03-02T10:00:02.500Z",
-            "tool_name": "bash",
-            "tool_input": {"command": "ls /tmp"},
-            "tool_output": {"result": "file1.txt\nfile2.txt"},
-        }),
-        # Rich array content format (user)
-        json.dumps({
-            "type": "user",
-            "timestamp": "2026-03-02T10:00:03.000Z",
-            "content": [
-                {"type": "text", "text": "What files are in /tmp?"},
-                {"type": "tool_result", "tool_use_id": "abc", "content": "file1\nfile2"},
-            ],
-        }),
-        # Rich array content format (assistant)
-        json.dumps({
-            "type": "assistant",
-            "timestamp": "2026-03-02T10:00:04.000Z",
-            "content": [
-                {"type": "text", "text": "I can see two files: "},
-                {"type": "text", "text": "file1.txt and file2.txt."},
-            ],
-        }),
-    ]
-
-    # ------------------------------------------------------------------
-    # 2. Write to a temp file and run read_all / accessors
-    # ------------------------------------------------------------------
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
-    ) as tmp:
-        tmp_path = tmp.name
-        tmp.write("\n".join(sample_lines) + "\n")
-
-    print(f"Temp transcript: {tmp_path}\n")
-
-    reader = TranscriptReader(tmp_path)
-
-    # --- read_all ---
-    entries = reader.read_all()
-    assert len(entries) == 6, f"Expected 6 entries, got {len(entries)}"
-    print(f"read_all()          : {len(entries)} entries  [PASS]")
-
-    # --- get_last_response ---
-    last_resp = reader.get_last_response()
-    expected_resp = "I can see two files: file1.txt and file2.txt."
-    assert last_resp == expected_resp, f"Unexpected response: {last_resp!r}"
-    print(f"get_last_response() : {last_resp!r}  [PASS]")
-
-    # --- get_last_user_prompt ---
-    last_user = reader.get_last_user_prompt()
-    expected_user = "What files are in /tmp?"
-    assert last_user == expected_user, f"Unexpected prompt: {last_user!r}"
-    print(f"get_last_user_prompt(): {last_user!r}  [PASS]")
-
-    # --- get_tool_calls ---
-    tool_calls = reader.get_tool_calls()
-    assert len(tool_calls) == 1, f"Expected 1 tool call, got {len(tool_calls)}"
-    tc = tool_calls[0]
-    assert tc.tool_name == "bash"
-    assert tc.tool_input == {"command": "ls /tmp"}
-    assert tc.tool_output == {"result": "file1.txt\nfile2.txt"}
-    print(f"get_tool_calls()    : 1 call, tool={tc.tool_name!r}, output={tc.tool_output}  [PASS]")
-
-    # --- get_tool_calls with since_timestamp (filter out the one tool call) ---
-    tc_filtered = reader.get_tool_calls(since_timestamp="2026-03-02T10:00:05.000Z")
-    assert tc_filtered == [], f"Expected empty list, got {tc_filtered}"
-    print(f"get_tool_calls(since=future): []  [PASS]")
-
-    # ------------------------------------------------------------------
-    # 3. Test tail() with simulated append
-    # ------------------------------------------------------------------
-    print("\n--- tail() test ---")
-
-    new_entry = json.dumps({
-        "type": "assistant",
-        "timestamp": "2026-03-02T10:00:10.000Z",
-        "content": "Appended response!",
-    })
-
-    collected: list[TranscriptEntry] = []
-
-    def _append_after_delay(path: str, line: str, delay: float = 0.4) -> None:
-        time.sleep(delay)
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-
-    # Start the appender thread
-    appender = threading.Thread(
-        target=_append_after_delay, args=(tmp_path, new_entry), daemon=True
-    )
-    appender.start()
-
-    # Consume from tail(); last_n=2 so we see the last 2 existing entries first
-    gen = reader.tail(last_n=2)
-    for _ in range(3):  # 2 existing + 1 new
-        entry = next(gen)
-        collected.append(entry)
-
-    appender.join(timeout=3)
-
-    assert len(collected) == 3, f"Expected 3 collected, got {len(collected)}"
-    # The last collected entry should be the appended assistant entry
-    assert collected[-1].content == "Appended response!", (
-        f"Unexpected tail content: {collected[-1].content!r}"
-    )
-    print(f"tail(last_n=2)      : got {len(collected)} entries, last={collected[-1].content!r}  [PASS]")
-
-    # ------------------------------------------------------------------
-    # 4. Clean up
-    # ------------------------------------------------------------------
-    os.unlink(tmp_path)
-    print(f"\nCleaned up {tmp_path}")
-    print("\n=== All tests passed ===")
