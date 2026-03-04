@@ -69,7 +69,7 @@ class _FakeDefaults:
 
 class TestBuildCommand:
     def test_minimal_command_structure(self, tmp_path):
-        """Command always includes -p, --output-format, --cwd, --mcp-config."""
+        """Command always includes -p, --output-format, --mcp-config (cwd via subprocess)."""
         provider = ClaudeCodeProvider()
         agent = _make_agent()
         ctx = _make_workspace(tmp_path)
@@ -80,8 +80,7 @@ class TestBuildCommand:
         assert "hello" in cmd
         assert "--output-format" in cmd
         assert "stream-json" in cmd
-        assert "--cwd" in cmd
-        assert str(tmp_path) in cmd
+        assert "--cwd" not in cmd  # cwd is set via subprocess cwd= param, not CLI flag
         assert "--mcp-config" in cmd
         assert str(ctx.mcp_config) in cmd
 
