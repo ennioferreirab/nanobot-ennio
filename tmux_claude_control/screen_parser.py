@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 screen_parser.py — Parse Claude Code TUI screen captures into structured state.
 
@@ -7,7 +6,7 @@ This module pattern-matches raw tmux capture output to identify what Claude is
 currently showing and what interaction is expected from the user.
 
 Usage:
-    from screen_parser import parse_screen, ScreenState, ScreenMode
+    from tmux_claude_control import parse_screen, ScreenState, ScreenMode
 
     captured = subprocess.run(
         ["tmux", "capture-pane", "-t", "session:0", "-p", "-S", "-50"],
@@ -522,88 +521,3 @@ def is_processing(state: ScreenState) -> bool:
     return state.mode == ScreenMode.PROCESSING
 
 
-if __name__ == "__main__":
-    # Quick self-test with synthetic screen data
-    sample_question_old = """
-╭─ Claude ─────────────────────────────────────────────────╮
-│ What programming language do you prefer?                  │
-│                                                           │
-│  ● Python                                                 │
-│  ○ TypeScript                                             │
-│  ○ Rust                                                   │
-│  ○ Go                                                     │
-╰───────────────────────────────────────────────────────────╯
-"""
-
-    # Real Claude Code v2.1.x AskUserQuestion format
-    sample_question_v21 = """
- ☐ Language
-
-Which programming language do you prefer?
-
-❯ 1. Python
-     General-purpose language popular for scripting, data science, and backend
-     development
-  2. TypeScript
-     Typed superset of JavaScript for frontend and backend development
-  3. Rust
-     Systems programming language focused on safety and performance
-  4. Go
-     Statically typed language designed for simplicity and concurrency
-  5. Type something.
-────────────────────────────────────────────────────────────────────────────────
-  6. Chat about this
-
-Enter to select · ↑/↓ to navigate · Esc to cancel
-"""
-
-    sample_permission = """
-Claude wants to run the following bash command:
-  rm -rf /tmp/test_files
-
-Allow? (Y/n)
-
-❯ Yes, allow
-  No, don't allow
-  Always allow for this session
-"""
-
-    sample_idle = """
-Claude Code v2.1.63
-
-? for shortcuts
->
-"""
-
-    sample_processing = """
-⠙ Thinking...
-
-I'll help you with that.
-"""
-
-    sample_transfiguring = """
-✽ Transfiguring…
-"""
-
-    sample_schlepping = """
-✢ Schlepping…
-"""
-
-    print("=== screen_parser self-test ===\n")
-    for name, sample in [
-        ("question-old", sample_question_old),
-        ("question-v21", sample_question_v21),
-        ("permission", sample_permission),
-        ("idle", sample_idle),
-        ("processing", sample_processing),
-        ("transfiguring", sample_transfiguring),
-        ("schlepping", sample_schlepping),
-    ]:
-        state = parse_screen(sample)
-        print(f"[{name}] mode={state.mode.value}, options={len(state.options)}, selected={state.selected_option_index}")
-        if state.options:
-            for opt in state.options:
-                print(f"  {opt}")
-        if state.question_text:
-            print(f"  question: {state.question_text!r}")
-        print()

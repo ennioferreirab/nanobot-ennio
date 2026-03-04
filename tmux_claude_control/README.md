@@ -1,7 +1,7 @@
-# Tmux Claude Code Control — Proof of Concept
+# tmux_claude_control — Tmux-based Claude Code Controller
 
-This directory contains a standalone proof-of-concept showing how an agent
-can control Claude Code's terminal UI (TUI) via tmux keyboard simulation.
+This package provides a Python API for controlling Claude Code's terminal UI (TUI)
+via tmux keyboard simulation, enabling automated testing and agent-driven interactions.
 
 ## Overview
 
@@ -14,89 +14,121 @@ bridges. This approach works because:
 3. The screen content can be parsed to determine what Claude is showing
 4. Keystrokes can navigate options, confirm selections, and send messages
 
-## Files
+## Package Structure
 
-| File | Description |
-|------|-------------|
-| `test_tmux_control.py` | Main test script — four parts described below |
-| `screen_parser.py` | Parses raw tmux capture output into structured ScreenState objects |
-| `README.md` | This file |
+```
+tmux_claude_control/
+├── __init__.py           # Public API exports
+├── screen_parser.py      # Parses raw tmux capture output into ScreenState objects
+├── transcript_reader.py  # Reads Claude Code JSONL transcripts for response extraction
+├── claude_controller.py  # High-level ClaudeController API
+├── orchestrator.py       # Multi-session Orchestrator for parallel task dispatch
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py             # Shared fixtures, --skip-claude flag, markers
+│   ├── test_screen_parser.py   # Pure unit tests for screen_parser
+│   ├── test_transcript_reader.py # Pure unit tests for transcript_reader
+│   ├── test_claude_controller.py # Tests requiring tmux (no Claude needed)
+│   ├── test_orchestrator.py    # Pure unit tests for orchestrator
+│   ├── test_integration.py     # Integration tests (requires live Claude)
+│   └── test_multi_turn.py      # Multi-turn agent loop tests (requires live Claude)
+└── README.md
+```
 
 ## Running the Tests
 
 ```bash
-# Run all parts (Parts 1, 2, 4 work without Claude)
-python3 test_tmux_control.py
+# Run all non-Claude tests (unit + tmux primitive tests)
+uv run pytest tmux_claude_control/tests/ --skip-claude -v
 
-# Skip the integration test (no Claude CLI needed)
-python3 test_tmux_control.py --skip-claude
+# Run only pure unit tests (no tmux, no Claude)
+uv run pytest tmux_claude_control/tests/test_screen_parser.py tmux_claude_control/tests/test_transcript_reader.py tmux_claude_control/tests/test_orchestrator.py -v
 
-# Verbose debug output
-python3 test_tmux_control.py --verbose
+# Run full test suite including integration tests (requires Claude CLI)
+uv run pytest tmux_claude_control/tests/ -v
 
-# Run only Part 1 (tmux primitives)
-python3 test_tmux_control.py --part 1
-
-# Run only Part 3 (integration test, requires Claude)
-python3 test_tmux_control.py --part 3
-
-# Run only Part 4 (screen parser unit tests)
-python3 test_tmux_control.py --part 4
+# Run only multi-turn tests
+uv run pytest tmux_claude_control/tests/test_multi_turn.py -v
 ```
 
 ### Requirements
 
 - **tmux** — `brew install tmux` (macOS) or `apt install tmux` (Linux)
-- **Python 3.8+** — system Python is fine for this standalone script
-- **Claude CLI** — only for Part 3; install from https://claude.ai/code
+- **Python 3.11+** — use `uv run python` as per project conventions
+- **Claude CLI** — only for integration/multi-turn tests; install from https://claude.ai/code
 
-## Test Parts
+## Public API
 
-### Part 1: Tmux Primitives
+```python
+from tmux_claude_control import (
+    ClaudeController,
+    Response,
+    ClaudeError,
+    Orchestrator,
+    parse_screen,
+    ScreenMode,
+    ScreenState,
+    ToolCall,
+    TranscriptReader,
+)
+```
 
-Tests basic tmux operations without launching Claude:
+### ClaudeController
 
-- Create a tmux session
-- Send text and verify it appears in the captured output
-- Send special keys: Up, Down, Enter, Tab, Escape, Ctrl+C
-- Send multi-key sequences
-- Clean up sessions
+```python
+from tmux_claude_control import ClaudeController, Response
 
-These tests always run, even in CI, as long as tmux is installed.
+ctrl = ClaudeController(session_name="my-claude", cwd="/tmp/workdir")
+ctrl.launch()
+resp = ctrl.send_prompt("Write a hello world in Python")
+print(resp.text)
+ctrl.exit_gracefully()
+```
 
-### Part 2: TUI Interaction Patterns
+### Orchestrator
 
-Documents (in code comments and printed output) the exact keystroke patterns
-for controlling Claude Code's TUI. No tests run — this is documentation only.
+```python
+from tmux_claude_control import Orchestrator
 
-### Part 3: Integration Test
+orch = Orchestrator(prefix="my-orch")
+orch.spawn_worker("alpha", cwd="/tmp/alpha")
+orch.spawn_worker("beta", cwd="/tmp/beta")
 
-Full end-to-end test that:
+results = orch.dispatch_parallel({
+    "alpha": "What is the capital of France?",
+    "beta": "What is the capital of Japan?",
+})
 
-1. Creates a tmux session named `test-claude-control`
-2. Launches `claude --dangerously-skip-permissions`
-3. Waits for Claude to display its idle input prompt
-4. Sends a prompt asking Claude to use AskUserQuestion
-5. Detects the AskUserQuestion TUI widget on screen
-6. Navigates to option 2 (Down arrow once)
-7. Presses Enter to select it
-8. Captures Claude's response
-9. Sends `/exit` to quit Claude
-10. Kills the tmux session
+for name, wr in results.items():
+    print(f"{name}: {wr.response.text if wr.response else wr.error}")
 
-Use `--skip-claude` to skip this part in CI.
+orch.shutdown_all()
+```
 
-### Part 4: Screen Parser Unit Tests
+### Screen Parser
 
-Tests the `screen_parser.py` module with synthetic screen captures:
+```python
+from tmux_claude_control import parse_screen, ScreenMode
 
-- Detects AskUserQuestion question widget
-- Counts and parses option labels
-- Identifies the currently selected option (index)
-- Detects permission prompts
-- Detects processing/spinner states
-- Detects idle input prompt
-- Strips ANSI escape sequences before parsing
+import subprocess
+captured = subprocess.run(
+    ["tmux", "capture-pane", "-t", "my-session:0", "-p", "-S", "-50"],
+    capture_output=True, text=True
+).stdout
+
+state = parse_screen(captured)
+
+if state.mode == ScreenMode.QUESTION:
+    print(f"Question: {state.question_text}")
+    for opt in state.options:
+        print(f"  {opt}")
+
+    # Select option at index N: send N Down arrows then Enter
+    target_index = 2
+    for _ in range(target_index - state.selected_option_index):
+        subprocess.run(["tmux", "send-keys", "-t", "my-session:0", "Down"])
+    subprocess.run(["tmux", "send-keys", "-t", "my-session:0", "Enter"])
+```
 
 ## TUI Interaction Patterns
 
@@ -139,9 +171,9 @@ Send N "Down" keystrokes, then "Enter"
 
 Example — select the 3rd option (index 2):
 ```python
-tmux_key(session, "Down")   # move to index 1
-tmux_key(session, "Down")   # move to index 2
-tmux_key(session, "Enter")  # confirm
+ctrl._tmux_key("Down")   # move to index 1
+ctrl._tmux_key("Down")   # move to index 2
+ctrl._tmux_key("Enter")  # confirm
 ```
 
 ### Permission Prompts
@@ -175,29 +207,24 @@ suppresses all permission prompts, which simplifies agent control.
 When Claude shows the idle input prompt (`>` or `❯`):
 
 ```python
-tmux_send(session, "Your message here")
-tmux_key(session, "Enter")
+ctrl._tmux_send("Your message here")
+ctrl._tmux_key("Enter")
 ```
 
-Then wait for Claude to finish processing:
+Or use the high-level API:
 
 ```python
-state = wait_for_screen_condition(
-    session,
-    lambda s: s.mode == ScreenMode.IDLE,
-    timeout=60.0,
-)
+resp = ctrl.send_prompt("Your message here")
+print(resp.text)
 ```
 
 ### Exiting Claude Code
 
 ```python
-tmux_send(session, "/exit")
-tmux_key(session, "Enter")
-time.sleep(2.0)
+ctrl.exit_gracefully()
+# or for immediate force-kill:
+ctrl.kill()
 ```
-
-Claude also accepts `/quit` and `/q`.
 
 ## Screen Parser
 
@@ -225,30 +252,6 @@ Claude also accepts `/quit` and `/q`.
 | `prompt_text` | `str` | Text in input box (if mode=IDLE) |
 | `permission_tool` | `str` | Tool name requesting permission |
 | `is_multiselect` | `bool` | True if multi-select mode |
-
-### Usage Example
-
-```python
-from screen_parser import parse_screen, ScreenMode
-
-captured = subprocess.run(
-    ["tmux", "capture-pane", "-t", "my-session:0", "-p", "-S", "-50"],
-    capture_output=True, text=True
-).stdout
-
-state = parse_screen(captured)
-
-if state.mode == ScreenMode.QUESTION:
-    print(f"Question: {state.question_text}")
-    for opt in state.options:
-        print(f"  {opt}")  # prints ○/● [index] 'label'
-
-    # Select option at index N: send N Down arrows then Enter
-    target_index = 2
-    for _ in range(target_index - state.selected_option_index):
-        subprocess.run(["tmux", "send-keys", "-t", "my-session:0", "Down"])
-    subprocess.run(["tmux", "send-keys", "-t", "my-session:0", "Enter"])
-```
 
 ## tmux Command Reference
 
@@ -319,7 +322,7 @@ The loop is:
 - Claude's AI response can take 5-90 seconds
 - `RENDER_WAIT = 0.3` seconds is a safe delay after navigation keystrokes
 - `RESPONSE_TIMEOUT = 90.0` seconds is the maximum wait for a response
-- Use `wait_for_screen_condition()` rather than fixed sleeps for response detection
+- Use `ctrl.wait_for_idle()` rather than fixed sleeps for response detection
 
 ## Limitations
 
@@ -327,16 +330,7 @@ The loop is:
   changes Claude Code's TUI layout or glyph choices, the parser may need updates.
 - **Race conditions**: If Claude renders very slowly, a `0.3s` delay may not be
   enough. Adjust `RENDER_WAIT` if navigation seems unreliable.
-- **No scroll back**: `tmux capture-pane -S -50` only captures 50 lines of
-  scrollback. For very long responses, increase the `-S` value.
+- **No scroll back**: `tmux capture-pane -S -100` captures 100 lines of scrollback
+  (in ClaudeController). For very long responses, increase the `-S` value.
 - **ANSI codes**: Some terminals/configurations emit complex ANSI sequences.
   The regex stripper handles common cases but may miss unusual codes.
-
-## Related Files
-
-- `/Users/ennio/Documents/nanobot-ennio/terminal_bridge.py` — production bridge
-  using the same tmux primitives, connected to Convex DB
-- `/Users/ennio/Documents/nanobot-ennio/.claude/ask-bridge/server.mjs` — MCP
-  server approach for intercepting AskUserQuestion at the tool level
-- `/Users/ennio/Documents/nanobot-ennio/_test_permission_bridge/` — tests for
-  the `--permission-prompt-tool` MCP interception approach
