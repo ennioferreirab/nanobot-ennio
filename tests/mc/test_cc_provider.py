@@ -235,6 +235,15 @@ class TestBuildCommand:
         idx = cmd.index("--permission-mode")
         assert cmd[idx + 1] == "bypassPermissions"
 
+    def test_cc_prefix_stripped_from_model(self, tmp_path):
+        """Model with cc/ prefix should have the prefix stripped."""
+        provider = ClaudeCodeProvider()
+        agent = _make_agent(model="cc/claude-sonnet-4-6")
+        ctx = _make_workspace(tmp_path)
+        cmd = provider._build_command("hello", agent, ctx, None)
+        model_idx = cmd.index("--model")
+        assert cmd[model_idx + 1] == "claude-sonnet-4-6"
+
 
 # ---------------------------------------------------------------------------
 # _parse_stream

@@ -64,6 +64,25 @@ def extract_tier_name(model: str) -> str | None:
     return name if name in VALID_TIER_NAMES else None
 
 
+CC_MODEL_PREFIX = "cc/"
+
+CC_AVAILABLE_MODELS: list[str] = [
+    "cc/claude-sonnet-4-6",
+    "cc/claude-opus-4-6",
+    "cc/claude-haiku-4-5",
+]
+
+
+def is_cc_model(model: str | None) -> bool:
+    """Return True if model is a cc/ reference (routes to Claude Code backend)."""
+    return model is not None and model.startswith(CC_MODEL_PREFIX)
+
+
+def extract_cc_model_name(model: str) -> str:
+    """Strip the cc/ prefix to get the bare model name."""
+    return model[len(CC_MODEL_PREFIX):]
+
+
 class TaskStatus(StrEnum):
     """Task lifecycle states. Matches Convex tasks.status union type."""
     PLANNING = "planning"

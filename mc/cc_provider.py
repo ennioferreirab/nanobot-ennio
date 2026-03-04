@@ -132,6 +132,8 @@ class ClaudeCodeProvider:
         model = agent_config.model
         if not model and self._defaults:
             model = self._defaults.default_model
+        if model and model.startswith("cc/"):
+            model = model[3:]
         if model:
             cmd.extend(["--model", model])
 
