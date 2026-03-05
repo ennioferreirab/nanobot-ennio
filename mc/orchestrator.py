@@ -115,6 +115,7 @@ class TaskOrchestrator:
     def __init__(self, bridge: ConvexBridge, cron_service: Any | None = None,
                  ask_user_registry: Any | None = None) -> None:
         self._bridge = bridge
+        self._ask_user_registry = ask_user_registry
         self._lead_agent_name = LEAD_AGENT_NAME
         self._plan_materializer = PlanMaterializer(bridge)
         self._step_dispatcher = StepDispatcher(bridge, cron_service=cron_service,
@@ -669,6 +670,15 @@ class TaskOrchestrator:
         if task.get("awaiting_kickoff"):
             logger.info(
                 "[orchestrator] Task '%s' is awaiting kick-off; skipping review routing.",
+                title,
+            )
+            return
+
+        # Skip tasks with a pending ask_user — the review state was set by the
+        # ask_user handler to surface the question in the UI. Do NOT auto-complete.
+        if self._ask_user_registry is not None and self._ask_user_registry.has_pending_ask(task_id):
+            logger.info(
+                "[orchestrator] Task '%s' has a pending ask_user — skipping review routing.",
                 title,
             )
             return
