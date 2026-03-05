@@ -229,6 +229,7 @@ class AgentLoop:
         while iteration < self.max_iterations:
             iteration += 1
 
+            logger.info("[agent:%s] calling model=%s (iteration=%d)", self.agent_name, self.model, iteration)
             response = await self.provider.chat(
                 messages=messages,
                 tools=self.tools.get_definitions(),
