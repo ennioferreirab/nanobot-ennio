@@ -914,7 +914,7 @@ def tasks_update_status(
     """Update the status of a task."""
     bridge = _get_bridge()
     try:
-        args: dict = {"task_id": task_id, "new_status": status}
+        args: dict = {"task_id": task_id, "status": status}
         if agent:
             args["agent_name"] = agent
         try:
@@ -1126,7 +1126,7 @@ def tasks_manual_move(
     """Manually move a task to a specific status."""
     bridge = _get_bridge()
     try:
-        args: dict = {"task_id": task_id, "status": status}
+        args: dict = {"task_id": task_id, "new_status": status}
         try:
             bridge.mutation("tasks:manualMove", args)
             console.print(f"[green]Task moved:[/green] {task_id} → {status}")
