@@ -1239,6 +1239,8 @@ async def main() -> None:
         )
         return
 
+    os.environ.setdefault("CONVEX_ADMIN_KEY", admin_key)
+
     bridge = ConvexBridge(convex_url, admin_key)
 
     try:
