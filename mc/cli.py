@@ -170,6 +170,18 @@ def start(
     except Exception:
         pass
 
+    # Pre-sync: update config.json from Convex BEFORE nanobot gateway starts.
+    # This avoids a race condition where the nanobot process reads config.json
+    # before mc.gateway has finished syncing the model from Convex.
+    try:
+        bridge = _get_bridge()
+        from mc.gateway import sync_nanobot_default_model
+
+        if sync_nanobot_default_model(bridge):
+            console.print("[green]✓[/green] Synced nanobot default model from dashboard")
+    except Exception:
+        pass  # Non-critical; mc.gateway will retry during its own startup
+
     async def _run():
         pm = ProcessManager(dashboard_dir=resolved_dir)
         try:
