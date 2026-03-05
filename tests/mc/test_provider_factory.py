@@ -279,7 +279,8 @@ class TestListAvailableModelsCodexDiscovery:
         from nanobot.providers.openai_codex_provider import CODEX_MODELS
         mock_token = MagicMock()
         config = self._make_config()
-        with patch('nanobot.config.loader.load_config', return_value=config),              patch('mc.provider_factory._get_codex_token', return_value=mock_token):
+        with patch('nanobot.config.loader.load_config', return_value=config), \
+             patch('mc.provider_factory._get_codex_token', return_value=mock_token):
             result = list_available_models()
         for m in CODEX_MODELS:
             assert m in result
@@ -289,7 +290,8 @@ class TestListAvailableModelsCodexDiscovery:
         from mc.provider_factory import list_available_models
         from nanobot.providers.openai_codex_provider import CODEX_MODELS
         config = self._make_config()
-        with patch('nanobot.config.loader.load_config', return_value=config),              patch('mc.provider_factory._get_codex_token', side_effect=Exception('no token')):
+        with patch('nanobot.config.loader.load_config', return_value=config), \
+             patch('mc.provider_factory._get_codex_token', side_effect=Exception('no token')):
             result = list_available_models()
         for m in CODEX_MODELS:
             assert m not in result
@@ -299,6 +301,7 @@ class TestListAvailableModelsCodexDiscovery:
         from mc.provider_factory import list_available_models
         mock_token = MagicMock()
         config = self._make_config(models=['openai-codex/gpt-5.3-codex', 'anthropic-oauth/claude-sonnet-4-6'])
-        with patch('nanobot.config.loader.load_config', return_value=config),              patch('mc.provider_factory._get_codex_token', return_value=mock_token):
+        with patch('nanobot.config.loader.load_config', return_value=config), \
+             patch('mc.provider_factory._get_codex_token', return_value=mock_token):
             result = list_available_models()
         assert result.count('openai-codex/gpt-5.3-codex') == 1
