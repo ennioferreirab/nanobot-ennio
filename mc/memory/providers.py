@@ -28,7 +28,10 @@ class LiteLLMProvider:
     def embed(self, texts: list[str]) -> list[list[float]] | None:
         import litellm
 
-        response = litellm.embedding(model=self.model, input=texts)
+        try:
+            response = litellm.embedding(model=self.model, input=texts)
+        except Exception:
+            return None
         data: Any = getattr(response, "data", None)
         if data is None and isinstance(response, dict):
             data = response.get("data")
