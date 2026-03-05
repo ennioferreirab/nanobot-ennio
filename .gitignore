@@ -24,3 +24,4 @@ start-bridge.sh
 tmux_claude_control
 .claude/*
 .worktrees/
+convex-full-backup.zip

@@ -292,6 +292,8 @@ export default defineSchema({
       v.literal("error"),
     )),
     agentName: v.optional(v.string()),
+    sleepMode: v.optional(v.boolean()),
+    wakeSignal: v.optional(v.boolean()),
   })
     .index("by_sessionId", ["sessionId"])
     .index("by_agentName", ["agentName"]),

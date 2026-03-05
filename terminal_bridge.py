@@ -35,8 +35,11 @@ sys.path.insert(0, str(ROOT))
 from mc.bridge import ConvexBridge
 
 # ── Constants ──────────────────────────────────────────────────────────────────
-STABLE_SECONDS = 0.0   # seconds without output change = Claude finished
-POLL_INTERVAL = 0.1    # local pane read interval (no LLM calls)
+STABLE_SECONDS = 0.0        # seconds without output change = Claude finished
+POLL_INTERVAL = 0.1         # local pane read interval (no LLM calls)
+ACTIVE_POLL_INTERVAL = 1.0  # Convex poll interval when active (seconds)
+SLEEP_POLL_INTERVAL = 30.0  # Convex poll interval when sleeping (seconds)
+AUTO_SLEEP_AFTER_SECONDS = 300  # auto-sleep after 5 min of no activity
 PID_DIR = Path.home() / ".nanobot"
 
 
@@ -178,6 +181,8 @@ class TerminalBridge:
         self._last_good_output: str = ""
         self._screen_monitor_paused: bool = False
         self._cleaned_up: bool = False  # guard against double-cleanup
+        self._is_sleeping: bool = False
+        self._last_activity: float = time.time()
 
     # ── tmux operations ────────────────────────────────────────────────────────
 
@@ -388,6 +393,7 @@ class TerminalBridge:
         Uses its own ConvexBridge instance for thread safety.
         Runs independently of input/output cycles so the dashboard stays
         up-to-date even when Claude shows follow-up questions or TUI prompts.
+        Paused during sleep mode to eliminate unnecessary Convex writes.
         """
         last_sent = ""
         while True:
@@ -398,18 +404,23 @@ class TerminalBridge:
                         print(f"[monitor] Screen changed ({len(current)} chars), pushing...", flush=True)
                         self.update_screen_only(current)
                         last_sent = current
+                        self._last_activity = time.time()  # screen activity = not idle
                 except Exception as e:
                     print(f"[monitor] Error: {e}", flush=True)
-            time.sleep(0.3)  # 300ms polling
+            time.sleep(ACTIVE_POLL_INTERVAL)  # 1s (was 300ms)
 
     def input_poll_loop(self) -> None:
         """
-        Polls Convex for new pendingInput every 300ms.
+        Polls Convex for new pendingInput.
+
+        Uses adaptive polling: ACTIVE_POLL_INTERVAL (1s) when in use,
+        SLEEP_POLL_INTERVAL (30s) when idle. Detects wakeSignal from the
+        dashboard to exit sleep mode without touching the remote server.
+        Auto-sleeps after AUTO_SLEEP_AFTER_SECONDS of no activity.
 
         We use polling instead of ConvexBridge.subscribe() because the Convex
         Python SDK's Rust/Tokio backend captures SIGINT at the OS level, making
         Ctrl+C and all signal handlers non-functional while a subscription is active.
-        300ms polling is imperceptible for human-typed input.
         """
         print("[input] Polling for pendingInput...", flush=True)
         last_input = ""
@@ -423,15 +434,29 @@ class TerminalBridge:
                 continue
 
             if snapshot is None:
-                time.sleep(0.3)
+                time.sleep(ACTIVE_POLL_INTERVAL)
                 continue
+
+            # Wake signal from dashboard
+            if snapshot.get("wake_signal"):
+                self._wake()
 
             pending = snapshot.get("pending_input", "") or ""
 
+            # Auto-sleep check (only when active and no pending input)
+            if not self._is_sleeping and not pending:
+                idle_seconds = time.time() - self._last_activity
+                if idle_seconds >= AUTO_SLEEP_AFTER_SECONDS:
+                    self._sleep()
+
             # Skip if empty or same as last processed
             if not pending or pending == last_input:
-                time.sleep(0.3)
+                time.sleep(SLEEP_POLL_INTERVAL if self._is_sleeping else ACTIVE_POLL_INTERVAL)
                 continue
+
+            # Any new input: wake up and record activity
+            self._wake()
+            self._last_activity = time.time()
 
             print(f"[input] New input detected: {repr(pending)}", flush=True)
 
@@ -482,6 +507,44 @@ class TerminalBridge:
                         print("[input] Failed to set error status in Convex", flush=True)
                 finally:
                     self._screen_monitor_paused = False
+
+    # ── Sleep / Wake ───────────────────────────────────────────────────────────
+
+    def _wake(self) -> None:
+        """Transition from sleep to active mode."""
+        if not self._is_sleeping:
+            return
+        self._is_sleeping = False
+        self._screen_monitor_paused = False
+        self._last_activity = time.time()
+        print("[bridge] Waking up — resuming active polling.", flush=True)
+        try:
+            self.bridge.mutation("terminalSessions:upsert", {
+                "session_id": self.session_id,
+                "output": self._last_good_output,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "sleep_mode": False,
+                "wake_signal": False,
+            })
+        except Exception as e:
+            print(f"[bridge] Wake Convex update error: {e}", flush=True)
+
+    def _sleep(self) -> None:
+        """Transition from active to sleep mode."""
+        if self._is_sleeping:
+            return
+        self._is_sleeping = True
+        self._screen_monitor_paused = True
+        print(f"[bridge] No activity for {AUTO_SLEEP_AFTER_SECONDS}s — entering sleep mode.", flush=True)
+        try:
+            self.bridge.mutation("terminalSessions:upsert", {
+                "session_id": self.session_id,
+                "output": self._last_good_output,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "sleep_mode": True,
+            })
+        except Exception as e:
+            print(f"[bridge] Sleep Convex update error: {e}", flush=True)
 
     # ── Entry point ────────────────────────────────────────────────────────────
 
