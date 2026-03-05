@@ -17,6 +17,7 @@ export function TerminalPanel({ sessionId, agentName, ipAddress }: TerminalPanel
 
   const session = useQuery(api.terminalSessions.get, { sessionId });
   const sendInput = useMutation(api.terminalSessions.sendInput);
+  const wakeTerminal = useMutation(api.terminalSessions.wake);
 
   const agentDoc = useQuery(
     api.agents.getByName,
@@ -75,12 +76,17 @@ export function TerminalPanel({ sessionId, agentName, ipAddress }: TerminalPanel
   let dotColor: string;
   let statusText: string;
 
+  const isSleeping = session?.sleepMode === true;
+
   if (session === undefined) {
     dotColor = "bg-zinc-500";
     statusText = "Loading...";
   } else if (session === null) {
     dotColor = "bg-zinc-500";
     statusText = "Disconnected";
+  } else if (isSleeping) {
+    dotColor = "bg-blue-400 animate-pulse";
+    statusText = "Sleeping";
   } else if (session.status === "processing") {
     dotColor = "bg-amber-400 animate-pulse";
     statusText = "Processing...";
@@ -95,9 +101,20 @@ export function TerminalPanel({ sessionId, agentName, ipAddress }: TerminalPanel
   return (
     <div className="flex h-full flex-col bg-zinc-950">
       {/* Status badge */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800">
-        <span className={`h-2 w-2 rounded-full ${dotColor}`} />
-        <span className="text-xs text-zinc-400">{statusText}</span>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
+        <div className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${dotColor}`} />
+          <span className="text-xs text-zinc-400">{statusText}</span>
+        </div>
+        {isSleeping && (
+          <button
+            type="button"
+            onClick={() => wakeTerminal({ sessionId }).catch(() => {})}
+            className="rounded bg-blue-700 px-2 py-0.5 text-xs text-blue-100 hover:bg-blue-600 active:bg-blue-500"
+          >
+            Wake
+          </button>
+        )}
       </div>
 
       {/* Terminal header */}
