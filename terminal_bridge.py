@@ -141,6 +141,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run bridge in background (detached)",
     )
+    parser.add_argument(
+        "-a", "--attach",
+        action="store_true",
+        help="Attach to the tmux session visually after setup (Ctrl+B D to detach, bridge keeps running)",
+    )
     args = parser.parse_args()
     if args.name is None:
         args.name = args.tmux_session
@@ -168,6 +173,7 @@ class TerminalBridge:
         self.tmux_session = tmux_session
         self._dangerous_skip = dangerous_skip
         self._raw = raw
+        self._attach = False  # set after construction if --attach flag given
         self._pid_file = pid_file
         self.tmux_pane = f"{tmux_session}:0"
         self.agent_name = f"remote-{session_id[:8]}"
@@ -577,6 +583,11 @@ class TerminalBridge:
         print("Ctrl+C to stop.")
         print("=" * 60 + "\n")
 
+        if self._attach:
+            print(f"[bridge] Attaching to tmux session '{self.tmux_session}' (Ctrl+B D to detach)...", flush=True)
+            subprocess.call(["tmux", "attach-session", "-t", self.tmux_session])
+            print("[bridge] Detached from tmux — bridge still running. Ctrl+C to stop.", flush=True)
+
         while True:
             time.sleep(1)
 
@@ -656,4 +667,5 @@ if __name__ == "__main__":
         raw=args.raw,
         pid_file=pid_file,
     )
+    tb._attach = args.attach
     tb.run()
