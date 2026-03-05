@@ -842,7 +842,7 @@ class AgentGateway:
 _cron_requeued_ids: set[str] = set()
 
 
-async def _run_plan_negotiation_manager(bridge: "ConvexBridge") -> None:
+async def _run_plan_negotiation_manager(bridge: "ConvexBridge", ask_user_registry: "Any | None" = None) -> None:
     """Manage per-task plan negotiation loops.
 
     Subscribes to tasks in both "review" (awaitingKickoff) and "in_progress"
@@ -871,7 +871,7 @@ async def _run_plan_negotiation_manager(bridge: "ConvexBridge") -> None:
 
         async def _run_and_cleanup() -> None:
             try:
-                await start_plan_negotiation_loop(bridge, task_id)
+                await start_plan_negotiation_loop(bridge, task_id, ask_user_registry=ask_user_registry)
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -1164,7 +1164,7 @@ async def run_gateway(bridge: ConvexBridge) -> None:
 
     # Plan negotiation manager — spawns per-task loops for review/in_progress tasks
     plan_negotiation_task = asyncio.create_task(
-        _run_plan_negotiation_manager(bridge)
+        _run_plan_negotiation_manager(bridge, ask_user_registry=ask_user_registry)
     )
 
     # Chat handler — polls for pending direct-chat messages (Story 10.2)

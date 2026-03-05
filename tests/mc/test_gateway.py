@@ -177,7 +177,7 @@ class TestRunGateway:
                 except asyncio.CancelledError:
                     pass
 
-            MockOrch.assert_called_once_with(mock_bridge, cron_service=ANY)
+            MockOrch.assert_called_once_with(mock_bridge, cron_service=ANY, ask_user_registry=ANY)
             MockTC.assert_called_once_with(mock_bridge)
             mock_orch_instance.start_routing_loop.assert_called_once()
             mock_orch_instance.start_review_routing_loop.assert_called_once()

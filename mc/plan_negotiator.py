@@ -398,6 +398,7 @@ async def start_plan_negotiation_loop(
     bridge: "ConvexBridge",
     task_id: str,
     poll_interval: float = 2.0,
+    ask_user_registry: "Any | None" = None,
 ) -> None:
     """Subscribe to main thread messages for a task in review or in_progress status
     and dispatch each new user message to the plan negotiation handler.
@@ -405,6 +406,10 @@ async def start_plan_negotiation_loop(
     Subscribes to messages:listByTask (the full task thread) and filters for
     user messages only. Runs until the task leaves a negotiable status or is
     no longer found.
+
+    When ask_user_registry is provided, user messages are skipped while an
+    ask_user call is pending for the task — those replies are handled by the
+    AskUserReplyWatcher instead.
 
     Story 7.3: Replaces the old messages:listPlanChat subscription with
     messages:listByTask so that the Lead Agent responds to messages in the
@@ -492,6 +497,15 @@ async def start_plan_negotiation_loop(
             # Only process user messages (skip agent completions, system events,
             # and the Lead Agent's own responses to avoid an infinite loop)
             if author_type != "user":
+                continue
+
+            # Skip if an ask_user call is pending — that reply belongs to the
+            # AskUserReplyWatcher, not to the plan negotiator.
+            if ask_user_registry is not None and ask_user_registry.has_pending_ask(task_id):
+                logger.debug(
+                    "[plan_negotiator] Skipping user message for task %s — ask_user pending",
+                    task_id,
+                )
                 continue
 
             content = msg.get("content", "")
