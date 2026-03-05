@@ -180,3 +180,34 @@ Files most likely to conflict on upstream sync (sorted by patch size):
 3. `config/schema.py` — schema additions
 4. `agent/skills.py` — global skills + allowed_names
 5. `providers/litellm_provider.py` — reasoning_level injection
+
+---
+
+## vendor/claude-code/ (CC Backend)
+
+### New Files
+
+| File | Description |
+|------|-------------|
+| `claude_code/memory_consolidator.py` | `CCMemoryConsolidator`: post-task LLM consolidation into MEMORY.md + HISTORY.md + SQLite index; mirrors nanobot `end_task_session()` |
+
+### Modified Files
+
+#### `claude_code/workspace.py`
+
+- **`CCWorkspaceManager.prepare()`**: new `board_name: str | None = None` and `memory_mode: str = "clean"` params; when `board_name` is provided, workspace root is set via `mc.board_utils.resolve_board_workspace()` instead of the global `~/.nanobot/agents/{agent}/` path.
+
+---
+
+## mc/ (Mission Control Backend)
+
+### Modified Files
+
+#### `mc/chat_handler.py`
+
+- **Fire-and-forget CC memory consolidation** added to the CC chat path (in the `finally` block after IPC server stop): when `execute_task()` returns a result object (even on error), a background `asyncio.Task` runs `CCMemoryConsolidator.consolidate()` to persist facts into MEMORY.md/HISTORY.md. Uses `tier:standard-low` model resolved via `TierResolver`. Strong references held in `_chat_background_tasks` set to prevent premature GC.
+
+#### `mc/executor.py`
+
+- **`_execute_cc_task()`**: board-scoped workspace block (step 0d) now runs _before_ the output-dir snapshot (step 0e), matching the ordering in the nanobot execution path.
+- **`handle_cc_thread_reply()`**: fetches task data via `tasks:getById` to extract `board_id`; resolves `board_name` / `memory_mode` the same way as `_execute_cc_task()` before preparing the workspace. Falls back to global workspace on any bridge failure.
