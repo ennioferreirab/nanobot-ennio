@@ -16,6 +16,7 @@ import logging
 import os
 import shutil
 import signal
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -707,6 +708,128 @@ def sync_skills(
     return synced_names
 
 
+def sync_nanobot_default_model(bridge: "ConvexBridge") -> bool:
+    """Sync config.json default model from the canonical Convex system agent."""
+    import json
+
+    agent = bridge.get_agent_by_name(NANOBOT_AGENT_NAME)
+    if not agent:
+        logger.warning(
+            "[gateway] Skipping %s model sync: agent not found in Convex",
+            NANOBOT_AGENT_NAME,
+        )
+        return False
+
+    convex_model: str | None = None
+    if isinstance(agent, dict):
+        model_val = agent.get("model")
+        if isinstance(model_val, str):
+            convex_model = model_val.strip()
+    else:
+        model_val = getattr(agent, "model", None)
+        if isinstance(model_val, str):
+            convex_model = model_val.strip()
+
+    if not convex_model:
+        logger.warning(
+            "[gateway] Skipping %s model sync: missing model in Convex",
+            NANOBOT_AGENT_NAME,
+        )
+        return False
+
+    from nanobot.config.loader import get_config_path
+
+    config_path = get_config_path()
+    if not config_path.exists():
+        logger.warning(
+            "[gateway] Skipping %s model sync: config not found at %s",
+            NANOBOT_AGENT_NAME,
+            config_path,
+        )
+        return False
+
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        logger.warning(
+            "[gateway] Skipping %s model sync: could not read %s",
+            NANOBOT_AGENT_NAME,
+            config_path,
+            exc_info=True,
+        )
+        return False
+
+    if not isinstance(config, dict):
+        logger.warning(
+            "[gateway] Skipping %s model sync: invalid config format",
+            NANOBOT_AGENT_NAME,
+        )
+        return False
+
+    agents_cfg = config.setdefault("agents", {})
+    if not isinstance(agents_cfg, dict):
+        logger.warning(
+            "[gateway] Skipping %s model sync: invalid agents config",
+            NANOBOT_AGENT_NAME,
+        )
+        return False
+
+    defaults_cfg = agents_cfg.setdefault("defaults", {})
+    if not isinstance(defaults_cfg, dict):
+        logger.warning(
+            "[gateway] Skipping %s model sync: invalid agents.defaults config",
+            NANOBOT_AGENT_NAME,
+        )
+        return False
+
+    old_model = defaults_cfg.get("model")
+    if old_model == convex_model:
+        logger.debug(
+            "[gateway] %s default model already in sync: %s",
+            NANOBOT_AGENT_NAME,
+            convex_model,
+        )
+        return False
+
+    defaults_cfg["model"] = convex_model
+
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=config_path.parent,
+            prefix=f"{config_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as tmp_file:
+            tmp_path = tmp_file.name
+            json.dump(config, tmp_file, indent=2, ensure_ascii=False)
+            tmp_file.write("\n")
+        os.replace(tmp_path, config_path)
+    except Exception:
+        logger.error(
+            "[gateway] Failed to sync %s default model to %s",
+            NANOBOT_AGENT_NAME,
+            config_path,
+            exc_info=True,
+        )
+        if tmp_path:
+            try:
+                Path(tmp_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+        return False
+
+    logger.info(
+        "[gateway] Updated %s default model: %s → %s",
+        NANOBOT_AGENT_NAME,
+        old_model,
+        convex_model,
+    )
+    return True
+
+
 # Max auto-retries per task (FR37: single retry)
 MAX_AUTO_RETRIES = 1
 
@@ -1251,6 +1374,13 @@ async def main() -> None:
             for filename, errs in errors.items():
                 for err in errs:
                     logger.warning("[gateway] Agent sync error (%s): %s", filename, err)
+
+        try:
+            updated = sync_nanobot_default_model(bridge)
+            if updated:
+                logger.info("[gateway] Nanobot default model synced from Convex")
+        except Exception:
+            logger.exception("[gateway] Nanobot model sync failed")
 
         # Sync skills alongside agents (Story 8.2)
         try:
