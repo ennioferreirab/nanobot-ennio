@@ -14,6 +14,8 @@ export const upsert = internalMutation({
       v.literal("error"),
     )),
     agentName: v.optional(v.string()),
+    sleepMode: v.optional(v.boolean()),
+    wakeSignal: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -29,6 +31,9 @@ export const upsert = internalMutation({
       if (args.pendingInput !== undefined) patch.pendingInput = args.pendingInput;
       if (args.status !== undefined) patch.status = args.status;
       if (args.agentName !== undefined) patch.agentName = args.agentName;
+      // sleepMode/wakeSignal: true sets the flag, false clears it (undefined)
+      if (args.sleepMode !== undefined) patch.sleepMode = args.sleepMode || undefined;
+      if (args.wakeSignal !== undefined) patch.wakeSignal = args.wakeSignal || undefined;
       await ctx.db.patch(existing._id, patch);
     } else {
       await ctx.db.insert("terminalSessions", {
@@ -39,6 +44,20 @@ export const upsert = internalMutation({
         status: args.status,
         agentName: args.agentName,
       });
+    }
+  },
+});
+
+// Wake a sleeping terminal session — sets wakeSignal so the bridge polls immediately.
+export const wake = mutation({
+  args: { sessionId: v.string() },
+  handler: async (ctx, args) => {
+    const session = await ctx.db
+      .query("terminalSessions")
+      .withIndex("by_sessionId", (q) => q.eq("sessionId", args.sessionId))
+      .first();
+    if (session) {
+      await ctx.db.patch(session._id, { wakeSignal: true });
     }
   },
 });
