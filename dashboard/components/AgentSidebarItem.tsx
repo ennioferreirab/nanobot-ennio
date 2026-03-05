@@ -61,9 +61,6 @@ export function AgentSidebarItem({ agent, onClick, onDelete, onRestore }: AgentS
   const initials = getInitials(agent.displayName);
   const avatarColor = getAvatarColor(agent.name);
   const isDisabled = agent.enabled === false;
-  const statusStyle = isDisabled
-    ? DISABLED_DOT_STYLE
-    : (STATUS_DOT_STYLES[agent.status as AgentStatus] ?? STATUS_DOT_STYLES.idle);
 
   const isRemoteTerminal = agent.role === "remote-terminal";
   const { toggleTerminal, openTerminals } = useBoard();
@@ -73,6 +70,14 @@ export function AgentSidebarItem({ agent, onClick, onDelete, onRestore }: AgentS
     api.terminalSessions.listSessions,
     isRemoteTerminal ? { agentName: agent.name } : "skip"
   );
+
+  const isSleeping = isRemoteTerminal && terminalSessions?.some((s) => s.sleepMode === true);
+
+  const statusStyle = isDisabled
+    ? DISABLED_DOT_STYLE
+    : isSleeping
+      ? "bg-blue-400"
+      : (STATUS_DOT_STYLES[agent.status as AgentStatus] ?? STATUS_DOT_STYLES.idle);
 
   const ipAddress = agent.variables?.find((variable) => variable.name === "ipAddress")?.value;
 
@@ -107,9 +112,11 @@ export function AgentSidebarItem({ agent, onClick, onDelete, onRestore }: AgentS
             >
               {isRemoteTerminal ? <Terminal className="h-4 w-4" /> : initials}
             </div>
-            <span
-              className={`absolute bottom-0 right-0 h-2 w-2 rounded-full ring-2 ring-sidebar transition-colors duration-200 ${statusStyle}`}
-            />
+            {isRemoteTerminal && (
+              <span
+                className={`absolute bottom-0 right-0 h-2 w-2 rounded-full ring-2 ring-sidebar transition-colors duration-200 ${statusStyle}`}
+              />
+            )}
           </div>
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -151,7 +158,7 @@ export function AgentSidebarItem({ agent, onClick, onDelete, onRestore }: AgentS
             </>
           )}
         </div>
-        {!onDelete && !onRestore && (
+        {!onDelete && !onRestore && isRemoteTerminal && (
           <span
             className={`h-2 w-2 shrink-0 rounded-full transition-colors duration-200 ${statusStyle}`}
           />
