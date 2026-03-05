@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -29,6 +30,18 @@ SAMPLE_AGENTS = [
 def _mock_llm_response(data: dict) -> LLMResponse:
     """Create a mock LLM response from a dict."""
     return LLMResponse(content=json.dumps(data))
+
+
+@pytest.fixture(autouse=True)
+def _stub_non_cc_default_model():
+    """Keep planner unit tests on the non-CC path unless a test opts in explicitly."""
+    cfg = SimpleNamespace(
+        agents=SimpleNamespace(
+            defaults=SimpleNamespace(model="anthropic/test-model")
+        )
+    )
+    with patch("nanobot.config.loader.load_config", return_value=cfg):
+        yield
 
 
 def _single_step_plan_json() -> dict:
@@ -239,6 +252,65 @@ class TestTaskPlannerPrompt:
         assert "python" in user_msg
         assert "documentation" in user_msg
         assert "code-review" in user_msg
+
+    @pytest.mark.asyncio
+    async def test_prompt_includes_batch_parallelization_hint_for_multi_item_requests(self):
+        """Multi-item requests should carry an explicit batching hint to the LLM."""
+        from mc.planner import TaskPlanner
+
+        plan_json = _single_step_plan_json()
+        mock_provider = MagicMock()
+        mock_provider.chat = AsyncMock(return_value=_mock_llm_response(plan_json))
+
+        planner = TaskPlanner()
+
+        with patch("mc.provider_factory.create_provider", return_value=(mock_provider, "test-model")):
+            await planner.plan_task(
+                title="Transcrever e resumir os ultimos 5 videos deste canal",
+                description="Gerar um consolidado dos 5 videos mais recentes do canal no YouTube",
+                agents=SAMPLE_AGENTS,
+            )
+
+        call_kwargs = mock_provider.chat.call_args
+        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
+        user_msg = messages[1]["content"]
+
+        assert "The user explicitly asked for 5 items" in user_msg
+        assert "final aggregation or synthesis step" in user_msg
+        assert "distinct output artifact" in user_msg
+
+    @pytest.mark.asyncio
+    async def test_prompt_injects_lead_agent_planning_skill_content(self):
+        """Direct planner path should inline configured planning skill content."""
+        from mc.planner import TaskPlanner
+
+        plan_json = _single_step_plan_json()
+        mock_provider = MagicMock()
+        mock_provider.chat = AsyncMock(return_value=_mock_llm_response(plan_json))
+
+        planner = TaskPlanner()
+
+        with (
+            patch("mc.provider_factory.create_provider", return_value=(mock_provider, "test-model")),
+            patch(
+                "mc.planner._load_lead_agent_planning_skills",
+                return_value=(
+                    ["writing-plans"],
+                    "### Skill: writing-plans\n\nAlways decompose multi-step work carefully.",
+                ),
+            ),
+        ):
+            await planner.plan_task(
+                title="Write tests",
+                description="Unit tests for auth module",
+                agents=SAMPLE_AGENTS,
+            )
+
+        messages = mock_provider.chat.call_args.kwargs["messages"]
+        system_msg = messages[0]["content"]
+        assert "Activated Lead-Agent Planning Skills" in system_msg
+        assert "writing-plans" in system_msg
+        assert "Always decompose multi-step work carefully." in system_msg
 
 
 class TestTaskPlannerNanobotFallback:
@@ -509,6 +581,95 @@ class TestLLMFailureFallback:
         assert plan.steps[0].assigned_agent == "nanobot"
 
 
+class TestPlannerReasoningLevel:
+    """Ensure reasoning-level config is forwarded into planner provider calls."""
+
+    @pytest.mark.asyncio
+    async def test_default_model_is_forwarded_to_provider(self):
+        """Planner should pass the resolved default model into create_provider()."""
+        from mc.planner import TaskPlanner
+
+        plan_json = _single_step_plan_json()
+        mock_provider = MagicMock()
+        mock_provider.chat = AsyncMock(return_value=_mock_llm_response(plan_json))
+
+        planner = TaskPlanner()
+
+        with patch(
+            "mc.provider_factory.create_provider",
+            return_value=(mock_provider, "test-model"),
+        ) as create_provider_mock:
+            await planner.plan_task(
+                title="Write tests",
+                description="Unit tests for planner",
+                agents=SAMPLE_AGENTS,
+            )
+
+        assert create_provider_mock.call_args.kwargs["model"] == "anthropic/test-model"
+
+    @pytest.mark.asyncio
+    async def test_reasoning_level_is_forwarded_to_provider(self):
+        """Non-CC provider calls should receive the planner reasoning level."""
+        from mc.planner import TaskPlanner
+
+        plan_json = _single_step_plan_json()
+        mock_provider = MagicMock()
+        mock_provider.chat = AsyncMock(return_value=_mock_llm_response(plan_json))
+
+        planner = TaskPlanner()
+
+        with patch("mc.provider_factory.create_provider", return_value=(mock_provider, "test-model")):
+            await planner.plan_task(
+                title="Write tests",
+                description="Unit tests for planner",
+                agents=SAMPLE_AGENTS,
+                reasoning_level="low",
+            )
+
+        call_kwargs = mock_provider.chat.call_args
+        assert call_kwargs.kwargs["reasoning_level"] == "low"
+
+    @pytest.mark.asyncio
+    async def test_cc_planning_receives_configured_lead_agent_skills(self):
+        """CC planner path should pass configured lead-agent skills into _cc_plan()."""
+        from mc.planner import TaskPlanner
+
+        planner = TaskPlanner(bridge=MagicMock())
+        expected_plan = ExecutionPlan(
+            steps=[
+                ExecutionPlanStep(
+                    temp_id="step_1",
+                    title="Plan work",
+                    description="Plan work",
+                    assigned_agent="code-agent",
+                    blocked_by=[],
+                    parallel_group=1,
+                    order=1,
+                )
+            ]
+        )
+
+        with (
+            patch(
+                "mc.planner._load_lead_agent_planning_skills",
+                return_value=(["using-superpowers", "writing-plans"], "skill body"),
+            ),
+            patch.object(planner, "_cc_plan", AsyncMock(return_value=expected_plan)) as cc_plan_mock,
+        ):
+            plan = await planner.plan_task(
+                title="Plan task",
+                description="desc",
+                agents=SAMPLE_AGENTS,
+                model="cc/claude-sonnet-4-6",
+            )
+
+        assert plan is expected_plan
+        assert cc_plan_mock.call_args.kwargs["lead_agent_skills"] == [
+            "using-superpowers",
+            "writing-plans",
+        ]
+
+
 class TestPlannerDiagnosticLogging:
     """Verify planner logs diagnostic details on failure."""
 
@@ -591,23 +752,70 @@ class TestPlannerModelParameter:
 
     @pytest.mark.asyncio
     async def test_no_model_param_passes_none(self):
-        """When no model specified, create_provider gets model=None."""
+        """When no model specified, create_provider gets the resolved default model."""
         from mc.planner import TaskPlanner
 
         plan_json = _single_step_plan_json()
         mock_provider = MagicMock()
         mock_provider.chat = AsyncMock(return_value=_mock_llm_response(plan_json))
+        mock_config = MagicMock()
+        mock_config.agents.defaults.model = "anthropic/claude-sonnet-4-6"
 
         planner = TaskPlanner()
 
-        with patch("mc.provider_factory.create_provider", return_value=(mock_provider, "test-model")) as mock_create:
+        with (
+            patch("nanobot.config.loader.load_config", return_value=mock_config),
+            patch("mc.provider_factory.create_provider", return_value=(mock_provider, "test-model")) as mock_create,
+        ):
             await planner.plan_task(
                 title="Test task",
                 description=None,
                 agents=SAMPLE_AGENTS,
             )
 
-        mock_create.assert_called_once_with(model=None)
+        mock_create.assert_called_once_with(model="anthropic/claude-sonnet-4-6")
+
+    @pytest.mark.asyncio
+    async def test_cc_model_routes_to_claude_code_backend(self):
+        """cc/ models must use Claude Code backend instead of LiteLLM create_provider()."""
+        from mc.planner import TaskPlanner
+
+        bridge = MagicMock()
+        planner = TaskPlanner(bridge=bridge)
+        mock_ipc = MagicMock()
+        mock_ipc.start = AsyncMock()
+        mock_ipc.stop = AsyncMock()
+        mock_ws_mgr = MagicMock()
+        mock_ws_mgr.prepare.return_value = MagicMock(cwd=".", mcp_config=".mcp.json", claude_md="CLAUDE.md", socket_path="/tmp/planner.sock")
+        mock_cc_provider = MagicMock()
+        mock_cc_provider.execute_task = AsyncMock(return_value=MagicMock(
+            is_error=False,
+            output=json.dumps(_single_step_plan_json()),
+        ))
+        mock_config = MagicMock()
+        mock_config.agents.defaults.model = "cc/claude-sonnet-4-6"
+        mock_config.claude_code = MagicMock(cli_path="claude")
+
+        with (
+            patch("nanobot.config.loader.load_config", return_value=mock_config),
+            patch("mc.provider_factory.create_provider") as mock_create,
+            patch("claude_code.workspace.CCWorkspaceManager", return_value=mock_ws_mgr),
+            patch("claude_code.ipc_server.MCSocketServer", return_value=mock_ipc),
+            patch("claude_code.provider.ClaudeCodeProvider", return_value=mock_cc_provider),
+            patch("mc.orientation.load_orientation", return_value=None),
+        ):
+            plan = await planner.plan_task(
+                title="Test task",
+                description="Use CC backend",
+                agents=SAMPLE_AGENTS,
+                model="cc/claude-sonnet-4-6",
+            )
+
+        assert isinstance(plan, ExecutionPlan)
+        assert len(plan.steps) == 1
+        assert plan.steps[0].assigned_agent == "code-agent"
+        mock_create.assert_not_called()
+        mock_cc_provider.execute_task.assert_awaited()
 
 
 class TestMalformedJSONFallback:
@@ -675,6 +883,66 @@ class TestMalformedJSONFallback:
         assert isinstance(plan, ExecutionPlan)
         assert len(plan.steps) == 1
         assert plan.steps[0].temp_id == "step_1"
+
+    @pytest.mark.asyncio
+    async def test_json_with_preamble_and_postamble_is_parsed(self):
+        """LLM response with extra prose around JSON should still be parsed."""
+        from mc.planner import TaskPlanner
+
+        plan_json = _single_step_plan_json()
+        wrapped_response = (
+            "Here is the plan you requested:\n\n"
+            f"{json.dumps(plan_json)}\n\n"
+            "This satisfies the task."
+        )
+        mock_provider = MagicMock()
+        mock_provider.chat = AsyncMock(return_value=LLMResponse(content=wrapped_response))
+
+        planner = TaskPlanner()
+
+        with patch("mc.provider_factory.create_provider", return_value=(mock_provider, "test-model")):
+            plan = await planner.plan_task(
+                title="Test task",
+                description=None,
+                agents=SAMPLE_AGENTS,
+            )
+
+        assert isinstance(plan, ExecutionPlan)
+        assert len(plan.steps) == 1
+        assert plan.steps[0].temp_id == "step_1"
+
+    @pytest.mark.asyncio
+    async def test_slightly_malformed_json_is_repaired(self):
+        """LLM response with minor JSON formatting errors should be repaired."""
+        from mc.planner import TaskPlanner
+
+        malformed = """
+        {
+          "steps": [
+            {
+              "step_id": "step_1",
+              "description": "Write the Python utility function",
+              "assigned_agent": "code-agent",
+              "depends_on": [],
+            }
+          ]
+        }
+        """
+        mock_provider = MagicMock()
+        mock_provider.chat = AsyncMock(return_value=LLMResponse(content=malformed))
+
+        planner = TaskPlanner()
+
+        with patch("mc.provider_factory.create_provider", return_value=(mock_provider, "test-model")):
+            plan = await planner.plan_task(
+                title="Write a utility function",
+                description="Create a Python helper",
+                agents=SAMPLE_AGENTS,
+            )
+
+        assert isinstance(plan, ExecutionPlan)
+        assert len(plan.steps) == 1
+        assert plan.steps[0].assigned_agent == "code-agent"
 
 
 # ---------------------------------------------------------------------------
