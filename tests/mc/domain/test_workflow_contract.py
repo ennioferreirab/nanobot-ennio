@@ -514,7 +514,7 @@ class TestParityWithConvex:
             "completed": [],
             "crashed": ["assigned"],
             "blocked": ["assigned", "crashed"],
-            "waiting_human": ["completed", "crashed"],
+            "waiting_human": ["running", "completed", "crashed"],
         }
 
         spec_transitions = SPEC["stepTransitions"]
