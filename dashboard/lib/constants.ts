@@ -21,6 +21,7 @@ export const STEP_STATUS = {
   COMPLETED: "completed",
   CRASHED: "crashed",
   BLOCKED: "blocked",
+  WAITING_HUMAN: "waiting_human",
 } as const;
 
 // Trust level values
@@ -68,6 +69,7 @@ export const ACTIVITY_EVENT_TYPE = {
   BOARD_CREATED: "board_created",
   BOARD_UPDATED: "board_updated",
   BOARD_DELETED: "board_deleted",
+  STEP_RETRYING: "step_retrying",
 } as const;
 
 // Message type values
@@ -217,6 +219,11 @@ export const STEP_STATUS_COLORS: Record<
   },
   blocked: {
     border: "border-l-amber-500",
+    bg: "bg-amber-100 dark:bg-amber-950",
+    text: "text-amber-700 dark:text-amber-300",
+  },
+  waiting_human: {
+    border: "border-l-amber-600",
     bg: "bg-amber-100 dark:bg-amber-950",
     text: "text-amber-700 dark:text-amber-300",
   },

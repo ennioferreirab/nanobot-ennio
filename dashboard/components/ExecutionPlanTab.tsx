@@ -64,6 +64,7 @@ interface ExecutionPlanTabProps {
 
 interface NormalizedStep {
   stepId: string;
+  actionStepId: string;
   title?: string;
   description: string;
   assignedAgent?: string;
@@ -90,6 +91,7 @@ function normalizePlanSteps(planSteps: ExecutionPlanStep[]): NormalizedStep[] {
     })
     .map(({ step }, index) => ({
       stepId: String(step.stepId ?? step.tempId ?? `step-${index + 1}`),
+      actionStepId: String(step.stepId ?? step.tempId ?? `step-${index + 1}`),
       title: step.title,
       description: step.description,
       assignedAgent: step.assignedAgent,
@@ -146,6 +148,7 @@ function mergeStepsWithLiveData(
     if (!liveStep) return planStep;
     return {
       ...planStep,
+      actionStepId: liveStep._id ?? planStep.actionStepId,
       title: liveStep.title ?? planStep.title,
       description: liveStep.description || planStep.description,
       assignedAgent: liveStep.assignedAgent || planStep.assignedAgent,
@@ -187,15 +190,30 @@ export function ExecutionPlanTab({
   onLocalPlanChange,
 }: ExecutionPlanTabProps) {
   const acceptHumanStepMutation = useMutation(api.steps.acceptHumanStep);
+  const retryStepMutation = useMutation(api.steps.retryStep);
   const [acceptingStepId, setAcceptingStepId] = useState<string | null>(null);
   const [acceptErrors, setAcceptErrors] = useState<Record<string, string>>({});
+  const [retryingStepId, setRetryingStepId] = useState<string | null>(null);
+  const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
+
+  const steps = useMemo(() => {
+    if (!executionPlan?.steps || executionPlan.steps.length === 0) return [];
+    const normalizedPlan = normalizePlanSteps(executionPlan.steps);
+    return mergeStepsWithLiveData(normalizedPlan, liveSteps);
+  }, [executionPlan, liveSteps]);
+
+  const actionStepIdByPlanId = useMemo(
+    () => new Map(steps.map((step) => [step.stepId, step.actionStepId] as const)),
+    [steps]
+  );
 
   const handleAccept = useCallback(
     async (stepId: string) => {
+      const actionStepId = actionStepIdByPlanId.get(stepId) ?? stepId;
       setAcceptingStepId(stepId);
       setAcceptErrors((prev) => ({ ...prev, [stepId]: "" }));
       try {
-        await acceptHumanStepMutation({ stepId: stepId as Id<"steps"> });
+        await acceptHumanStepMutation({ stepId: actionStepId as Id<"steps"> });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to accept step";
         setAcceptErrors((prev) => ({ ...prev, [stepId]: message }));
@@ -203,14 +221,25 @@ export function ExecutionPlanTab({
         setAcceptingStepId(null);
       }
     },
-    [acceptHumanStepMutation]
+    [acceptHumanStepMutation, actionStepIdByPlanId]
   );
 
-  const steps = useMemo(() => {
-    if (!executionPlan?.steps || executionPlan.steps.length === 0) return [];
-    const normalizedPlan = normalizePlanSteps(executionPlan.steps);
-    return mergeStepsWithLiveData(normalizedPlan, liveSteps);
-  }, [executionPlan, liveSteps]);
+  const handleRetry = useCallback(
+    async (stepId: string) => {
+      const actionStepId = actionStepIdByPlanId.get(stepId) ?? stepId;
+      setRetryingStepId(stepId);
+      setRetryErrors((prev) => ({ ...prev, [stepId]: "" }));
+      try {
+        await retryStepMutation({ stepId: actionStepId as Id<"steps"> });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to retry step";
+        setRetryErrors((prev) => ({ ...prev, [stepId]: message }));
+      } finally {
+        setRetryingStepId(null);
+      }
+    },
+    [actionStepIdByPlanId, retryStepMutation]
+  );
 
   const completedCount = steps.filter(
     (step) => normalizeStatus(step.status) === "completed"
@@ -233,15 +262,26 @@ export function ExecutionPlanTab({
           status: statusMap.get(n.id) ?? "planned",
           isEditMode: false as const,
           onAccept: handleAccept,
+          onRetry: handleRetry,
           isAccepting: acceptingStepId === n.id,
           acceptError: acceptErrors[n.id],
+          isRetrying: retryingStepId === n.id,
+          retryError: retryErrors[n.id],
         },
       };
     });
 
     const positioned = layoutWithDagre(nodesWithStatus, rawEdges);
     return { flowNodes: positioned, flowEdges: rawEdges };
-  }, [steps, handleAccept, acceptingStepId, acceptErrors]);
+  }, [
+    steps,
+    handleAccept,
+    handleRetry,
+    acceptingStepId,
+    acceptErrors,
+    retryingStepId,
+    retryErrors,
+  ]);
 
   // Edit mode: render PlanEditor
   const canEditPlan =

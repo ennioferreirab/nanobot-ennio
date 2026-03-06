@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -43,6 +44,29 @@ logger = logging.getLogger(__name__)
 # Strong references to fire-and-forget background tasks to prevent GC cancellation.
 # See: https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task
 _background_tasks: set[asyncio.Task[None]] = set()
+
+
+@dataclass(slots=True)
+class AgentRunResult:
+    content: str
+    is_error: bool = False
+    error_message: str | None = None
+
+
+def _coerce_agent_run_result(value: Any) -> AgentRunResult:
+    """Normalize old string results and structured loop results to one shape."""
+    if isinstance(value, AgentRunResult):
+        return value
+    if isinstance(value, str):
+        return AgentRunResult(content=value)
+    content = getattr(value, "content", "") or ""
+    is_error = bool(getattr(value, "is_error", False))
+    error_message = getattr(value, "error_message", None)
+    return AgentRunResult(
+        content=content,
+        is_error=is_error,
+        error_message=error_message,
+    )
 
 
 def _collect_provider_error_types() -> tuple[type[Exception], ...]:
@@ -168,7 +192,7 @@ async def _run_agent_on_task(
     task_id: str | None = None,
     bridge: "ConvexBridge | None" = None,
     ask_user_registry: Any | None = None,
-) -> tuple[str, str, "AgentLoop"]:
+) -> tuple[AgentRunResult, str, "AgentLoop"]:
     """Run the nanobot agent loop on a task and return the result.
 
     Uses AgentLoop.process_direct() with the agent's system prompt and model.
@@ -294,20 +318,30 @@ async def _run_agent_on_task(
             _ask_user_cleanup = (ask_user_registry, task_id)
 
     try:
-        result = await loop.process_direct(
-            content=message,
-            session_key=session_key,
-            channel="mc",
-            chat_id=agent_name,
-            task_id=task_id,
-        )
+        process_direct_result = getattr(loop.__class__, "process_direct_result", None)
+        if callable(process_direct_result):
+            result = await loop.process_direct_result(
+                content=message,
+                session_key=session_key,
+                channel="mc",
+                chat_id=agent_name,
+                task_id=task_id,
+            )
+        else:
+            result = await loop.process_direct(
+                content=message,
+                session_key=session_key,
+                channel="mc",
+                chat_id=agent_name,
+                task_id=task_id,
+            )
     finally:
         if _ask_user_cleanup is not None:
             reg, tid = _ask_user_cleanup
             if reg and tid:
                 reg.unregister(tid)
 
-    return result, session_key, loop
+    return _coerce_agent_run_result(result), session_key, loop
 
 
 def _human_size(b: int) -> str:
@@ -1179,6 +1213,16 @@ class TaskExecutor:
                 ask_user_registry=self._ask_user_registry,
             )
 
+            result = _coerce_agent_run_result(result)
+            if result.is_error:
+                raise RuntimeError(
+                    result.error_message
+                    or result.content
+                    or "Agent returned an execution error"
+                )
+
+            result_content = result.content
+
             # Collect file artifacts produced during agent execution.
             artifacts = await asyncio.to_thread(
                 _collect_output_artifacts, task_id, pre_snapshot
@@ -1191,7 +1235,7 @@ class TaskExecutor:
                     task_id,
                     step_id,
                     agent_name,
-                    result,
+                    result_content,
                     artifacts or None,
                 )
             else:
@@ -1201,7 +1245,7 @@ class TaskExecutor:
                     task_id,
                     agent_name,
                     AuthorType.AGENT,
-                    result,
+                    result_content,
                     MessageType.WORK,
                 )
 
@@ -1275,7 +1319,7 @@ class TaskExecutor:
             # Write completion to global HEARTBEAT.md for the main agent (Owl) to pick up
             try:
                 from filelock import FileLock
-                result_snippet = (result or "Task completed.").strip()
+                result_snippet = (result_content or "Task completed.").strip()
                 if len(result_snippet) > 1000:
                     result_snippet = result_snippet[:1000] + "\n...(truncated)..."
 
@@ -1300,7 +1344,7 @@ class TaskExecutor:
             # Deliver cron result to external channel if pending
             if self._on_task_completed:
                 try:
-                    await self._on_task_completed(task_id, result or "")
+                    await self._on_task_completed(task_id, result_content or "")
                 except Exception:
                     logger.exception("[executor] on_task_completed failed for task '%s'", title)
 
