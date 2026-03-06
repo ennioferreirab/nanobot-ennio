@@ -255,3 +255,11 @@ class ReviewHandler:
                 f"Human approval requested for '{title}'",
                 task_id,
             )
+        else:
+            # Autonomous or unexpected trust level — mark done
+            await asyncio.to_thread(
+                self._bridge.update_task_status,
+                task_id,
+                TaskStatus.DONE,
+                reviewer_name,
+            )
