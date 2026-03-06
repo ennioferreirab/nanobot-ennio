@@ -2,6 +2,11 @@ import { internalMutation, mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { isValidTransition } from "./tasks";
 
+import {
+  canPostComment,
+  logThreadMessageSent,
+} from "./lib/threadRules";
+
 /** Validator for the unified thread message type (new field). */
 const threadMessageTypeValidator = v.optional(v.union(
   v.literal("step_completion"),
@@ -109,11 +114,10 @@ export const postStepCompletion = internalMutation({
       timestamp,
     });
 
-    // Observability event
-    await ctx.db.insert("activities", {
+    // Observability event via thread rules helper
+    await logThreadMessageSent(ctx, {
       taskId: args.taskId,
       agentName: args.agentName,
-      eventType: "thread_message_sent",
       description: `Step completion posted by ${args.agentName}`,
       timestamp,
     });
@@ -145,10 +149,9 @@ export const postSystemError = internalMutation({
       timestamp,
     });
 
-    // Observability event
-    await ctx.db.insert("activities", {
+    // Observability event via thread rules helper
+    await logThreadMessageSent(ctx, {
       taskId: args.taskId,
-      eventType: "thread_message_sent",
       description: "System error posted to thread",
       timestamp,
     });
@@ -182,11 +185,10 @@ export const postLeadAgentMessage = internalMutation({
       timestamp,
     });
 
-    // Observability event
-    await ctx.db.insert("activities", {
+    // Observability event via thread rules helper
+    await logThreadMessageSent(ctx, {
       taskId: args.taskId,
       agentName: "lead-agent",
-      eventType: "thread_message_sent",
       description: `Lead agent posted ${args.type === "lead_agent_plan" ? "plan" : "chat"} message`,
       timestamp,
     });
@@ -237,9 +239,8 @@ export const postUserPlanMessage = mutation({
       timestamp,
     });
 
-    await ctx.db.insert("activities", {
+    await logThreadMessageSent(ctx, {
       taskId: args.taskId,
-      eventType: "thread_message_sent",
       description: "User sent plan-chat message to Lead Agent",
       timestamp,
     });
@@ -265,7 +266,9 @@ export const postComment = mutation({
     if (!task) {
       throw new ConvexError("Task not found");
     }
-    if (task.status === "deleted") {
+
+    // Validate using thread rules
+    if (!canPostComment(task.status)) {
       throw new ConvexError("Cannot post comments on deleted tasks");
     }
 
@@ -283,10 +286,9 @@ export const postComment = mutation({
       timestamp,
     });
 
-    // Observability event
-    await ctx.db.insert("activities", {
+    // Observability event via thread rules helper
+    await logThreadMessageSent(ctx, {
       taskId: args.taskId,
-      eventType: "thread_message_sent",
       description: "User posted a comment",
       timestamp,
     });
@@ -421,11 +423,10 @@ export const sendThreadMessage = mutation({
       }
     }
 
-    // 3. Create activity event
-    await ctx.db.insert("activities", {
+    // 3. Create activity event via thread rules helper
+    await logThreadMessageSent(ctx, {
       taskId: args.taskId,
       agentName: args.agentName,
-      eventType: "thread_message_sent",
       description: `User sent follow-up message to ${args.agentName}`,
       timestamp,
     });
