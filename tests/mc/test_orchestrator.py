@@ -358,7 +358,7 @@ class TestHandleReviewTransitionPausedTask:
             "awaiting_kickoff": None,
         }
 
-        with patch("mc.orchestrator.asyncio.to_thread", new=_sync_to_thread):
+        with patch("mc.review_handler.asyncio.to_thread", new=_sync_to_thread):
             await orchestrator._handle_review_transition("task-1", paused_task)
 
         # Task must NOT be auto-completed to done
@@ -381,7 +381,7 @@ class TestHandleReviewTransitionPausedTask:
             "awaiting_kickoff": None,
         }
 
-        with patch("mc.orchestrator.asyncio.to_thread", new=_sync_to_thread):
+        with patch("mc.review_handler.asyncio.to_thread", new=_sync_to_thread):
             await orchestrator._handle_review_transition("task-1", review_task)
 
         # Task SHOULD be auto-completed (no steps = normal autonomous review)
