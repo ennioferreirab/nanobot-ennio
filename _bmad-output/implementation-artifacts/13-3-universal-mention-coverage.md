@@ -102,7 +102,7 @@ so that I can consult agents on any task without worrying about which subsystem 
 
 ### Existing Code to Reuse
 
-**`mc/mentions/watcher.py`** (lines 48-202):
+**`mc/mention_watcher.py`** (lines 48-202):
 - `_poll_all_tasks()` — the main polling method to modify
 - `_per_task_seen` — existing dedup mechanism (no changes needed)
 - Lines 121-125 — the guards to remove
@@ -111,7 +111,7 @@ so that I can consult agents on any task without worrying about which subsystem 
 - The user message polling loop — add `is_mention_message()` guard
 - Existing @mention routing code — will become dead code after the guard
 
-**`mc/mentions/handler.py`**:
+**`mc/mention_handler.py`**:
 - `is_mention_message()` — import and use in PlanNegotiator
 
 ### Common Mistakes to Avoid
@@ -129,19 +129,19 @@ so that I can consult agents on any task without worrying about which subsystem 
 
 ### Project Structure Notes
 
-- **MODIFIED**: `mc/mentions/watcher.py` — remove status-based skip guards
+- **MODIFIED**: `mc/mention_watcher.py` — remove status-based skip guards
 - **MODIFIED**: `mc/plan_negotiator.py` — add @mention skip guard
-- **NEW**: `tests/mc/mentions/test_watcher_universal.py` — tests for universal coverage
+- **NEW**: `tests/mc/test_mention_watcher_universal.py` — tests for universal coverage
 - **NEW**: `tests/mc/test_plan_negotiator_mention_skip.py` — test PlanNegotiator skips mentions
 - No Convex/dashboard changes in this story
 
 ### References
 
-- [Source: mc/mentions/watcher.py#_poll_all_tasks — lines 85-202, polling loop with status guards]
-- [Source: mc/mentions/watcher.py#_NEGOTIATION_STATUSES — line 30, statuses to remove]
+- [Source: mc/mention_watcher.py#_poll_all_tasks — lines 85-202, polling loop with status guards]
+- [Source: mc/mention_watcher.py#_NEGOTIATION_STATUSES — line 30, statuses to remove]
 - [Source: mc/plan_negotiator.py — PlanNegotiator message handling loop]
-- [Source: mc/mentions/handler.py#is_mention_message — line 104-106, mention detection utility]
-- [Source: mc/mentions/handler.py#handle_mention — lines 109-341, session isolation pattern]
+- [Source: mc/mention_handler.py#is_mention_message — line 104-106, mention detection utility]
+- [Source: mc/mention_handler.py#handle_mention — lines 109-341, session isolation pattern]
 
 ## Dev Agent Record
 

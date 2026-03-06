@@ -313,15 +313,26 @@ class TestMentionWatcherUniversalCoverage:
         assert "msg_a1" in watcher._per_task_seen["task_transition"]
 
     def test_concurrent_session_key_uniqueness(self):
-        """Task 4.1: session key in handle_mention uses unique UUID per mention."""
-        import uuid
+        """Task 4.1: session key in handle_mention uses unique UUID per mention.
 
-        agent_name = "researcher"
-        task_id = "task_concurrent"
-        key1 = f"mc:mention:{agent_name}:{task_id}:{uuid.uuid4().hex[:8]}"
-        key2 = f"mc:mention:{agent_name}:{task_id}:{uuid.uuid4().hex[:8]}"
+        Verifies the actual source code in mention_handler.py constructs
+        session keys with the expected `mc:mention:{agent}:{task}:{uuid}` format.
+        """
+        import inspect
+        import re
 
-        # Session keys are unique even for the same agent + task
-        assert key1 != key2
-        # They follow the expected prefix pattern
-        assert key1.startswith(f"mc:mention:{agent_name}:{task_id}:")
+        from mc.mention_handler import handle_mention
+
+        source = inspect.getsource(handle_mention)
+        # The source should contain the session_key pattern
+        pattern = re.compile(
+            r'session_key\s*=\s*f"mc:mention:\{agent_name\}:\{task_id\}:'
+        )
+        assert pattern.search(source), (
+            "handle_mention does not construct session_key with "
+            "'mc:mention:{agent_name}:{task_id}:...' pattern"
+        )
+        # Verify it uses uuid for uniqueness
+        assert "uuid.uuid4()" in source, (
+            "handle_mention does not use uuid.uuid4() for session key uniqueness"
+        )
