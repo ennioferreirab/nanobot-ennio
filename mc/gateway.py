@@ -404,8 +404,8 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
         logger.info("[gateway] Cron service started with %d job(s)", cron_status["jobs"])
 
     # Ask-user reply routing — registry + watcher (CC agents only)
-    from mc.ask_user_registry import AskUserRegistry
-    from mc.ask_user_watcher import AskUserReplyWatcher
+    from mc.ask_user.registry import AskUserRegistry
+    from mc.ask_user.watcher import AskUserReplyWatcher
 
     ask_user_registry = AskUserRegistry()
 
@@ -451,7 +451,7 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
 
     # Mention watcher — detects @agent-name mentions in all task threads
     # (covers tasks not handled by plan_negotiator: done, crashed, inbox, etc.)
-    from mc.mention_watcher import MentionWatcher
+    from mc.mentions.watcher import MentionWatcher
 
     mention_watcher = MentionWatcher(bridge)
     mention_task = asyncio.create_task(mention_watcher.run())
