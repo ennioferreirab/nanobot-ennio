@@ -281,6 +281,14 @@ class ConvexBridge(ConvexBridgeSubscriptionsMixin):
                         activity_exc,
                     )
 
+    def get_task(self, task_id: str) -> dict[str, Any] | None:
+        """Fetch a single task by its Convex _id.
+
+        Returns:
+            Task dict with snake_case keys, or None if not found.
+        """
+        return self.query("tasks:getById", {"task_id": task_id})
+
     def get_task_messages(self, task_id: str) -> list[dict[str, Any]]:
         """Fetch all thread messages for a task, in chronological order."""
         result = self.query("messages:listByTask", {"task_id": task_id})
