@@ -109,7 +109,7 @@ async def execute_step_via_cc(
 
     try:
         ws_mgr = CCWorkspaceManager()
-        from mc.orientation import load_orientation
+        from mc.agent_orientation import load_orientation
         orientation = load_orientation(agent_name)
         ws_ctx = ws_mgr.prepare(agent_name, agent_data_for_cc, task_id, orientation=orientation,
                                 task_prompt=step_title)
@@ -118,7 +118,7 @@ async def execute_step_via_cc(
         logger.error("[dispatcher] %s", error_msg)
         raise
 
-    from mc.ask_user_handler import AskUserHandler
+    from mc.ask_user.handler import AskUserHandler
 
     ask_handler = AskUserHandler()
     ipc_server = MCSocketServer(bridge, None)
