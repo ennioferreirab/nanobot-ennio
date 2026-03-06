@@ -286,8 +286,13 @@ class TestNoDoubleProcessing:
     def _run(self, coro):
         return asyncio.run(coro)
 
-    def test_mention_handled_only_by_watcher_not_negotiator(self):
-        """When both systems see a @mention message, only MentionWatcher dispatches it."""
+    def test_mention_skipped_by_negotiator_and_processed_by_watcher(self):
+        """Sequential verification: PlanNegotiator skips @mention, then MentionWatcher processes it.
+
+        This test runs each system independently (not concurrently) to verify
+        that the PlanNegotiator skip guard and MentionWatcher dispatch each
+        behave correctly in isolation.
+        """
         # Simulate: PlanNegotiator skips the mention
         task_data = _make_task_data(status="in_progress")
 
@@ -363,29 +368,34 @@ class TestNoDoubleProcessing:
 
         watcher = MentionWatcher(watcher_bridge)
 
-        # First poll: seed seen messages
-        self._run(watcher._poll_all_tasks())
-
-        # Second poll with a new message
-        new_mention = {
-            "_id": "msg_double_2",
-            "author_type": "user",
-            "content": "@researcher new question",
-        }
-        watcher_bridge.get_task_messages = MagicMock(
-            return_value=[mention_msg, new_mention]
+        # Mock asyncio.to_thread for ALL MentionWatcher polls (including the
+        # first seed poll) to avoid spawning real threads in tests.
+        _to_thread_mock = AsyncMock(
+            side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs)
         )
 
         with patch(
             "mc.mention_watcher.asyncio.to_thread",
-            new=AsyncMock(
-                side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs)
-            ),
-        ), patch(
-            "mc.mention_handler.handle_all_mentions",
-            new=AsyncMock(return_value=True),
-        ) as mock_handle_mention:
+            new=_to_thread_mock,
+        ):
+            # First poll: seed seen messages
             self._run(watcher._poll_all_tasks())
+
+            # Second poll with a new message
+            new_mention = {
+                "_id": "msg_double_2",
+                "author_type": "user",
+                "content": "@researcher new question",
+            }
+            watcher_bridge.get_task_messages = MagicMock(
+                return_value=[mention_msg, new_mention]
+            )
+
+            with patch(
+                "mc.mention_handler.handle_all_mentions",
+                new=AsyncMock(return_value=True),
+            ) as mock_handle_mention:
+                self._run(watcher._poll_all_tasks())
 
         # MentionWatcher MUST have processed the new mention
         mock_handle_mention.assert_called_once()
