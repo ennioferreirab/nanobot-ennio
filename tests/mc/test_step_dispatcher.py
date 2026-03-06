@@ -104,6 +104,106 @@ def _patch_executor_helpers():
     )
 
 
+def _make_step_execution_request(step: dict[str, Any]) -> Any:
+    """Build a mock ExecutionRequest from a step dict for ContextBuilder mocking."""
+    from mc.application.execution.request import EntityType, ExecutionRequest
+
+    step_title = (step.get("title") or "Untitled Step").strip()
+    step_description = step.get("description") or ""
+    agent_name = (step.get("assigned_agent") or "nanobot").strip()
+    task_id = step.get("task_id", "task-1")
+    step_id = step.get("id", "")
+
+    # Build a realistic execution description matching the unified pipeline
+    from mc.application.execution.file_enricher import (
+        build_file_context,
+        resolve_task_dirs,
+    )
+
+    files_dir, output_dir = resolve_task_dirs(task_id)
+
+    return ExecutionRequest(
+        entity_type=EntityType.STEP,
+        entity_id=step_id,
+        task_id=task_id,
+        title="Main Task",
+        step_title=step_title,
+        step_description=step_description,
+        agent_name=agent_name,
+        agent_prompt=None,
+        agent_model=None,
+        agent_skills=None,
+        reasoning_level=None,
+        description=build_file_context(
+            [],
+            files_dir,
+            output_dir,
+            is_step=True,
+            step_title=step_title,
+            step_description=step_description,
+            task_title="Main Task",
+        ),
+        board_name=None,
+        memory_workspace=None,
+        files_dir=files_dir,
+        output_dir=output_dir,
+        file_manifest=[],
+        task_data={"title": "Main Task", "status": "in_progress"},
+        predecessor_step_ids=[str(pid) for pid in (step.get("blocked_by") or []) if pid],
+        is_cc=False,
+    )
+
+
+def _patch_context_builder(bridge_or_query_return=None):
+    """Return a patch that mocks ContextBuilder.build_step_context.
+
+    The mock builds a realistic ExecutionRequest from the step dict
+    passed to it, so the rest of the dispatcher logic works correctly.
+    """
+    async def _mock_build_step_context(self, task_id, step):
+        return _make_step_execution_request(step)
+
+    return patch(
+        "mc.application.execution.context_builder.ContextBuilder.build_step_context",
+        new=_mock_build_step_context,
+    )
+
+
+def _patch_context_builder_with_files(query_return):
+    """Return a patch that mocks ContextBuilder.build_step_context with file data.
+
+    Uses the task data from query_return to build file manifest into the request.
+    """
+    async def _mock_build_step_context(self, task_id, step):
+        req = _make_step_execution_request(step)
+        # Inject file data from the query_return
+        raw_files = query_return.get("files") or []
+        if raw_files:
+            from mc.application.execution.file_enricher import (
+                build_file_context,
+                build_file_manifest,
+            )
+            req.files = raw_files
+            req.file_manifest = build_file_manifest(raw_files)
+            req.task_data = query_return
+            req.description = build_file_context(
+                req.file_manifest,
+                req.files_dir,
+                req.output_dir,
+                is_step=True,
+                step_title=req.step_title,
+                step_description=req.step_description,
+                task_title=query_return.get("title", "Main Task"),
+                raw_files=raw_files,
+            )
+        return req
+
+    return patch(
+        "mc.application.execution.context_builder.ContextBuilder.build_step_context",
+        new=_mock_build_step_context,
+    )
+
+
 class TestStepDispatcher:
     @pytest.mark.asyncio
     async def test_dispatch_single_step_completes_task(self) -> None:
@@ -113,14 +213,7 @@ class TestStepDispatcher:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch(
                 "mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(return_value="step output"),
@@ -184,14 +277,7 @@ class TestStepDispatcher:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_run_agent),
             snap_patch,
             collect_patch,
@@ -220,14 +306,7 @@ class TestStepDispatcher:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_run_agent),
             snap_patch,
             collect_patch,
@@ -259,14 +338,7 @@ class TestStepDispatcher:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_run_agent),
             snap_patch,
             collect_patch,
@@ -315,14 +387,7 @@ class TestStepDispatcher:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_run_agent),
             snap_patch,
             collect_patch,
@@ -346,14 +411,7 @@ class TestStepDispatcher:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch(
                 "mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(return_value="ok"),
@@ -379,14 +437,7 @@ class TestStepDispatcher:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch(
                 "mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(return_value="Report written."),
@@ -414,14 +465,7 @@ class TestStepDispatcher:
 
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch(
                 "mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(return_value="Analysis done."),
@@ -448,14 +492,7 @@ class TestStepDispatcher:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch(
                 "mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(return_value="Computation done."),
@@ -495,7 +532,7 @@ class TestTaskFileManifestInjection:
     async def test_step_with_task_files_includes_manifest_in_description(self) -> None:
         """Task-level file manifest is injected into execution_description when task has files."""
         bridge, state = _make_stateful_bridge([_step("step-1", "Analyze", order=1)])
-        bridge.query.return_value = {
+        query_data = {
             "title": "Main Task",
             "status": "in_progress",
             "files": [
@@ -515,6 +552,7 @@ class TestTaskFileManifestInjection:
                 },
             ],
         }
+        bridge.query.return_value = query_data
         dispatcher = StepDispatcher(bridge)
 
         captured_description: list[str] = []
@@ -526,14 +564,7 @@ class TestTaskFileManifestInjection:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder_with_files(query_data),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_capture_run_agent),
             snap_patch,
             collect_patch,
@@ -566,14 +597,7 @@ class TestTaskFileManifestInjection:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_capture_run_agent),
             snap_patch,
             collect_patch,
@@ -601,14 +625,7 @@ class TestTaskFileManifestInjection:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_capture_run_agent),
             snap_patch,
             collect_patch,
@@ -624,7 +641,7 @@ class TestTaskFileManifestInjection:
     async def test_manifest_includes_human_readable_sizes(self) -> None:
         """Manifest summary includes human-readable sizes for various file sizes."""
         bridge, state = _make_stateful_bridge([_step("step-1", "Analyze", order=1)])
-        bridge.query.return_value = {
+        query_data = {
             "title": "Main Task",
             "status": "in_progress",
             "files": [
@@ -651,6 +668,7 @@ class TestTaskFileManifestInjection:
                 },
             ],
         }
+        bridge.query.return_value = query_data
         dispatcher = StepDispatcher(bridge)
 
         captured_description: list[str] = []
@@ -662,14 +680,7 @@ class TestTaskFileManifestInjection:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder_with_files(query_data),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_capture_run_agent),
             snap_patch,
             collect_patch,
@@ -686,7 +697,7 @@ class TestTaskFileManifestInjection:
     async def test_manifest_single_file_correct_count(self) -> None:
         """A task with one file shows '1 file(s) in its manifest'."""
         bridge, state = _make_stateful_bridge([_step("step-1", "Process", order=1)])
-        bridge.query.return_value = {
+        query_data = {
             "title": "Main Task",
             "status": "in_progress",
             "files": [
@@ -699,6 +710,7 @@ class TestTaskFileManifestInjection:
                 },
             ],
         }
+        bridge.query.return_value = query_data
         dispatcher = StepDispatcher(bridge)
 
         captured_description: list[str] = []
@@ -710,14 +722,7 @@ class TestTaskFileManifestInjection:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder_with_files(query_data),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_capture_run_agent),
             snap_patch,
             collect_patch,
@@ -744,14 +749,7 @@ class TestStepOutputFileSync:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch(
                 "mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(return_value="analysis done"),
@@ -781,14 +779,7 @@ class TestStepOutputFileSync:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch(
                 "mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(return_value="build done"),
@@ -834,14 +825,7 @@ class TestStepOutputFileSync:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch(
                 "mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(return_value="report done"),
@@ -870,14 +854,7 @@ class TestStepOutputFileSync:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch(
                 "mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(side_effect=RuntimeError("agent exploded")),
@@ -901,14 +878,7 @@ class TestStepOutputFileSync:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch(
                 "mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(
@@ -946,14 +916,7 @@ class TestStepOutputFileSync:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch(
                 "mc.step_dispatcher._run_step_agent",
                 new=AsyncMock(side_effect=RuntimeError("agent exploded")),
@@ -1054,14 +1017,7 @@ class TestPausedTaskDispatch:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_should_not_run),
             snap_patch,
             collect_patch,
@@ -1090,7 +1046,7 @@ class TestTaskLevelFileSummaryInDelegationContext:
     ) -> None:
         """AC #2: delegation context includes task-level file summary when task has files."""
         bridge, state = _make_stateful_bridge([_step("step-1", "Analyze", order=1)])
-        bridge.query.return_value = {
+        query_data = {
             "title": "Main Task",
             "status": "in_progress",
             "files": [
@@ -1108,6 +1064,7 @@ class TestTaskLevelFileSummaryInDelegationContext:
                 },
             ],
         }
+        bridge.query.return_value = query_data
         dispatcher = StepDispatcher(bridge)
 
         captured_description: list[str] = []
@@ -1119,14 +1076,7 @@ class TestTaskLevelFileSummaryInDelegationContext:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder_with_files(query_data),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_capture_run_agent),
             snap_patch,
             collect_patch,
@@ -1165,14 +1115,7 @@ class TestTaskLevelFileSummaryInDelegationContext:
         snap_patch, collect_patch = _patch_executor_helpers()
         with (
             patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
-            patch(
-                "mc.step_dispatcher._load_agent_config",
-                return_value=(None, None, None),
-            ),
-            patch(
-                "mc.step_dispatcher._maybe_inject_orientation",
-                side_effect=lambda agent_name, prompt: prompt,
-            ),
+            _patch_context_builder(),
             patch("mc.step_dispatcher._run_step_agent", side_effect=_capture_run_agent),
             snap_patch,
             collect_patch,

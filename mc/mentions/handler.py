@@ -18,7 +18,6 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from mc.thread_context import ThreadContextBuilder
 from mc.types import (
     NANOBOT_AGENT_NAME,
     ActivityEventType,
@@ -210,16 +209,15 @@ async def handle_mention(
     if agent_name == NANOBOT_AGENT_NAME:
         agent_prompt = None
 
-    # Fetch thread context and task data for the agent
+    # Fetch thread context and task data for the agent (shared pipeline -- AC2 of 16.1)
     thread_context = ""
     task_data: dict[str, Any] | None = None
     try:
         thread_messages = await asyncio.to_thread(
             bridge.get_task_messages, task_id
         )
-        thread_context = ThreadContextBuilder().build(
-            thread_messages, max_messages=20
-        )
+        from mc.application.execution.thread_context_builder import build_thread_context
+        thread_context = build_thread_context(thread_messages, max_messages=20)
     except Exception:
         logger.warning(
             "[mention_handler] Failed to fetch thread context for task %s",
