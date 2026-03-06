@@ -246,7 +246,7 @@ class ReviewHandler:
                 task_id,
                 "system",
                 AuthorType.SYSTEM,
-                "Agent review passed. Awaiting human approval.",
+                "Task completed. Awaiting human approval.",
                 MessageType.SYSTEM_EVENT,
             )
             await asyncio.to_thread(

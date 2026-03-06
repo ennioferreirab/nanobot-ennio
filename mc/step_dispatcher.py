@@ -69,7 +69,7 @@ def _maybe_inject_orientation(
     agent_name: str, agent_prompt: str | None
 ) -> str | None:
     """Prepend global orientation for non-lead agents."""
-    from mc.orientation import load_orientation
+    from mc.agent_orientation import load_orientation
 
     orientation = load_orientation(agent_name)
     if not orientation:
