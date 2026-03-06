@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from mc.plan_materializer import PlanMaterializer
 from mc.planner import TaskPlanner
 from mc.provider_factory import create_provider
+from mc.review_handler import ReviewHandler
 from mc.step_dispatcher import StepDispatcher
 from mc.types import (
     LEAD_AGENT_NAME,
@@ -25,7 +26,6 @@ from mc.types import (
     ExecutionPlan,
     MessageType,
     TaskStatus,
-    TrustLevel,
 )
 
 if TYPE_CHECKING:
@@ -121,9 +121,9 @@ class TaskOrchestrator:
         self._plan_materializer = PlanMaterializer(bridge)
         self._step_dispatcher = StepDispatcher(bridge, cron_service=cron_service,
                                                 ask_user_registry=ask_user_registry)
+        self._review_handler = ReviewHandler(bridge, ask_user_registry=ask_user_registry)
         self._known_inbox_ids: set[str] = set()
         self._known_planning_ids: set[str] = set()
-        self._known_review_task_ids: set[str] = set()
         self._known_kickoff_ids: set[str] = set()
 
     async def start_inbox_routing_loop(self) -> None:
@@ -513,13 +513,13 @@ class TaskOrchestrator:
             # Prune IDs no longer in review so tasks can re-enter and be
             # re-processed (e.g., after step execution completes → review).
             current_ids = {t.get("id") for t in tasks if t.get("id")}
-            self._known_review_task_ids &= current_ids
+            self._review_handler._known_review_task_ids &= current_ids
             for task_data in tasks:
                 task_id = task_data.get("id")
-                if not task_id or task_id in self._known_review_task_ids:
+                if not task_id or task_id in self._review_handler._known_review_task_ids:
                     continue
-                self._known_review_task_ids.add(task_id)
-                await self._handle_review_transition(task_id, task_data)
+                self._review_handler._known_review_task_ids.add(task_id)
+                await self._review_handler._handle_review_transition(task_id, task_data)
 
     async def start_kickoff_watch_loop(self) -> None:
         """Watch for kicked-off or resumed tasks that need step dispatch.
@@ -656,102 +656,13 @@ class TaskOrchestrator:
                             exc_info=True,
                         )
 
+    # -- Review delegation wrappers (implementation in ReviewHandler) ----------
+
     async def _handle_review_transition(
         self, task_id: str, task: dict[str, Any]
     ) -> None:
-        """Handle a task entering review state (FR27)."""
-        title = task.get("title", "Untitled")
-        logger.info(
-            "[orchestrator] _handle_review_transition called for task '%s' (%s) — "
-            "awaiting_kickoff=%s, supervision_mode=%s, trust_level=%s",
-            title,
-            task_id,
-            task.get("awaiting_kickoff"),
-            task.get("supervision_mode"),
-            task.get("trust_level"),
-        )
-
-        # Skip tasks awaiting kick-off — those are supervised plan-review tasks
-        # managed by the PreKickoffModal + kickoff_watch_loop, not work reviews.
-        if task.get("awaiting_kickoff"):
-            logger.info(
-                "[orchestrator] Task '%s' is awaiting kick-off; skipping review routing.",
-                title,
-            )
-            return
-
-        # Skip tasks with a pending ask_user — the review state was set by the
-        # ask_user handler to surface the question in the UI. Do NOT auto-complete.
-        if self._ask_user_registry is not None and self._ask_user_registry.has_pending_ask(task_id):
-            logger.info(
-                "[orchestrator] Task '%s' has a pending ask_user — skipping review routing.",
-                title,
-            )
-            return
-
-        # Skip tasks that were paused mid-execution (Story 7.4):
-        # A paused task enters review WITHOUT awaiting_kickoff but WITH materialized steps.
-        # Auto-completing such a task to "done" would discard all pending/running steps.
-        steps = await asyncio.to_thread(self._bridge.get_steps_by_task, task_id)
-        if steps:
-            logger.info(
-                "[orchestrator] Task '%s' entered review with %d materialized steps — "
-                "treating as paused task; skipping auto-completion.",
-                title,
-                len(steps),
-            )
-            return
-
-        reviewers: list[str] = task.get("reviewers") or []
-        trust_level = task.get("trust_level", TrustLevel.AUTONOMOUS)
-        title = task.get("title", "Untitled")
-
-        if not reviewers and trust_level == TrustLevel.AUTONOMOUS:
-            logger.info(
-                "[orchestrator] Task '%s' is autonomous with no reviewers — "
-                "auto-completing to done.",
-                title,
-            )
-            await asyncio.to_thread(
-                self._bridge.update_task_status,
-                task_id,
-                TaskStatus.DONE,
-            )
-            return
-
-        if reviewers:
-            reviewer_names = ", ".join(reviewers)
-            logger.info(
-                "[orchestrator] Routing review for task '%s' to: %s",
-                title,
-                reviewer_names,
-            )
-            await asyncio.to_thread(
-                self._bridge.send_message,
-                task_id,
-                "system",
-                AuthorType.SYSTEM,
-                f"Review requested. Awaiting review from: {reviewer_names}",
-                MessageType.SYSTEM_EVENT,
-            )
-            await asyncio.to_thread(
-                self._bridge.create_activity,
-                ActivityEventType.REVIEW_REQUESTED,
-                f"Review requested from {reviewer_names} for '{title}'",
-                task_id,
-            )
-
-        if trust_level == TrustLevel.HUMAN_APPROVED and not reviewers:
-            logger.info(
-                "[orchestrator] Human approval requested for task '%s'.",
-                title,
-            )
-            await asyncio.to_thread(
-                self._bridge.create_activity,
-                ActivityEventType.HITL_REQUESTED,
-                f"Human approval requested for '{title}'",
-                task_id,
-            )
+        """Handle a task entering review state (FR27). Delegates to ReviewHandler."""
+        await self._review_handler._handle_review_transition(task_id, task)
 
     async def send_agent_message(
         self,
@@ -760,123 +671,31 @@ class TaskOrchestrator:
         content: str,
         message_type: str = MessageType.WORK,
     ) -> Any:
-        """Send a task-scoped message on behalf of an agent (FR26)."""
-        logger.info(
-            "[orchestrator] Agent '%s' sending message on task %s",
-            agent_name,
-            task_id,
+        """Send a task-scoped message on behalf of an agent (FR26). Delegates to ReviewHandler."""
+        return await self._review_handler.send_agent_message(
+            task_id, agent_name, content, message_type
         )
-        result = await asyncio.to_thread(
-            self._bridge.send_message,
-            task_id,
-            agent_name,
-            AuthorType.AGENT,
-            content,
-            message_type,
-        )
-        return result
 
     async def handle_review_feedback(
         self, task_id: str, reviewer_name: str, feedback: str
     ) -> None:
-        """Handle reviewer feedback on a task (FR28)."""
-        logger.info(
-            "[orchestrator] Reviewer '%s' providing feedback on task %s",
-            reviewer_name,
-            task_id,
-        )
-        await asyncio.to_thread(
-            self._bridge.send_message,
-            task_id,
-            reviewer_name,
-            AuthorType.AGENT,
-            feedback,
-            MessageType.REVIEW_FEEDBACK,
-        )
-        task = await asyncio.to_thread(
-            self._bridge.query, "tasks:getById", {"task_id": task_id}
-        )
-        title = task.get("title", "Untitled") if task else "Untitled"
-        await asyncio.to_thread(
-            self._bridge.create_activity,
-            ActivityEventType.REVIEW_FEEDBACK,
-            f"{reviewer_name} provided feedback on '{title}'",
-            task_id,
-            reviewer_name,
+        """Handle reviewer feedback on a task (FR28). Delegates to ReviewHandler."""
+        await self._review_handler.handle_review_feedback(
+            task_id, reviewer_name, feedback
         )
 
     async def handle_agent_revision(
         self, task_id: str, agent_name: str, content: str
     ) -> None:
-        """Handle an agent's revision in response to review feedback (FR29)."""
-        logger.info(
-            "[orchestrator] Agent '%s' submitting revision on task %s",
-            agent_name,
-            task_id,
-        )
-        await asyncio.to_thread(
-            self._bridge.send_message,
-            task_id,
-            agent_name,
-            AuthorType.AGENT,
-            content,
-            MessageType.WORK,
+        """Handle an agent's revision in response to review feedback (FR29). Delegates to ReviewHandler."""
+        await self._review_handler.handle_agent_revision(
+            task_id, agent_name, content
         )
 
     async def handle_review_approval(
         self, task_id: str, reviewer_name: str
     ) -> None:
-        """Handle reviewer approval of a task (FR30)."""
-        logger.info(
-            "[orchestrator] Reviewer '%s' approving task %s",
-            reviewer_name,
-            task_id,
+        """Handle reviewer approval of a task (FR30). Delegates to ReviewHandler."""
+        await self._review_handler.handle_review_approval(
+            task_id, reviewer_name
         )
-        await asyncio.to_thread(
-            self._bridge.send_message,
-            task_id,
-            reviewer_name,
-            AuthorType.AGENT,
-            f"Approved by {reviewer_name}",
-            MessageType.APPROVAL,
-        )
-        task = await asyncio.to_thread(
-            self._bridge.query, "tasks:getById", {"task_id": task_id}
-        )
-        title = task.get("title", "Untitled") if task else "Untitled"
-        trust_level = (
-            task.get("trust_level", TrustLevel.AUTONOMOUS)
-            if task
-            else TrustLevel.AUTONOMOUS
-        )
-
-        await asyncio.to_thread(
-            self._bridge.create_activity,
-            ActivityEventType.REVIEW_APPROVED,
-            f"{reviewer_name} approved '{title}'",
-            task_id,
-            reviewer_name,
-        )
-
-        if trust_level == TrustLevel.AGENT_REVIEWED:
-            await asyncio.to_thread(
-                self._bridge.update_task_status,
-                task_id,
-                TaskStatus.DONE,
-                reviewer_name,
-            )
-        elif trust_level == TrustLevel.HUMAN_APPROVED:
-            await asyncio.to_thread(
-                self._bridge.send_message,
-                task_id,
-                "system",
-                AuthorType.SYSTEM,
-                "Agent review passed. Awaiting human approval.",
-                MessageType.SYSTEM_EVENT,
-            )
-            await asyncio.to_thread(
-                self._bridge.create_activity,
-                ActivityEventType.HITL_REQUESTED,
-                f"Human approval requested for '{title}'",
-                task_id,
-            )
