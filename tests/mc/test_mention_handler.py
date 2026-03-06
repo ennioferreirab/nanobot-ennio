@@ -7,10 +7,11 @@ from unittest.mock import patch
 import pytest
 
 from mc.mention_handler import (
+    _build_execution_plan_summary,
+    _build_task_context,
+    _build_task_files_section,
     extract_mentions,
     is_mention_message,
-    _build_mention_context,
-    _list_available_agents,
 )
 
 # All agent names used across tests — returned by the mocked _known_agent_names
@@ -117,68 +118,94 @@ class TestIsMentionMessage:
         assert is_mention_message("") is False
 
 
-class TestBuildMentionContext:
-    """Tests for _build_mention_context()."""
+class TestBuildTaskContext:
+    """Tests for _build_task_context()."""
 
-    def test_empty_messages(self):
-        result = _build_mention_context([])
-        assert result == ""
+    def test_none_task_data(self):
+        assert _build_task_context(None) == ""
 
-    def test_filters_system_events(self):
-        messages = [
-            {
-                "author_name": "System",
-                "author_type": "system",
-                "message_type": "system_event",
-                "content": "Task started",
-            },
-            {
-                "author_name": "Alice",
-                "author_type": "user",
-                "message_type": "user_message",
-                "content": "Hello",
-            },
-        ]
-        result = _build_mention_context(messages)
-        assert "Hello" in result
-        assert "Task started" not in result
+    def test_empty_task_data(self):
+        assert _build_task_context({}) == ""
 
-    def test_truncates_long_content(self):
-        long_content = "x" * 500
-        messages = [
-            {
-                "author_name": "Alice",
-                "author_type": "user",
-                "content": long_content,
+    def test_full_task_context(self):
+        task = {
+            "title": "Fix the bug",
+            "description": "A critical bug in auth",
+            "status": "in_progress",
+            "assigned_agent": "researcher",
+            "tags": ["urgent", "backend"],
+            "board_name": "Sprint 5",
+        }
+        result = _build_task_context(task)
+        assert "[Task Context]" in result
+        assert "Title: Fix the bug" in result
+        assert "Description: A critical bug in auth" in result
+        assert "Status: in_progress" in result
+        assert "Assigned Agent: researcher" in result
+        assert "Tags: urgent, backend" in result
+        assert "Board: Sprint 5" in result
+
+    def test_omits_empty_fields(self):
+        task = {"title": "Only title", "description": ""}
+        result = _build_task_context(task)
+        assert "Title: Only title" in result
+        assert "Description" not in result
+
+
+class TestBuildExecutionPlanSummary:
+    """Tests for _build_execution_plan_summary()."""
+
+    def test_none_task_data(self):
+        assert _build_execution_plan_summary(None) == ""
+
+    def test_no_plan(self):
+        assert _build_execution_plan_summary({"title": "Test"}) == ""
+
+    def test_plan_with_steps(self):
+        task = {
+            "execution_plan": {
+                "steps": [
+                    {"title": "Research", "status": "completed"},
+                    {"title": "Implement", "status": "in_progress"},
+                    {"title": "Test", "status": "pending"},
+                ]
             }
-        ]
-        result = _build_mention_context(messages)
-        assert "..." in result
-        assert len(result) < len(long_content) + 100  # Significantly shorter
+        }
+        result = _build_execution_plan_summary(task)
+        assert "[Execution Plan]" in result
+        assert "1. Research — completed" in result
+        assert "2. Implement — in_progress" in result
+        assert "3. Test — pending" in result
 
-    def test_returns_context_header(self):
-        messages = [
-            {
-                "author_name": "Alice",
-                "author_type": "user",
-                "content": "Test message",
-            }
-        ]
-        result = _build_mention_context(messages)
-        assert "[Recent Thread Context]" in result
-        assert "Alice" in result
-        assert "Test message" in result
+    def test_empty_steps_list(self):
+        task = {"execution_plan": {"steps": []}}
+        assert _build_execution_plan_summary(task) == ""
 
-    def test_max_messages_limit(self):
-        messages = [
-            {"author_name": f"User{i}", "author_type": "user", "content": f"msg{i}"}
-            for i in range(20)
-        ]
-        result = _build_mention_context(messages, max_messages=5)
-        # Only last 5 messages should appear
-        assert "msg19" in result
-        assert "msg15" in result
-        assert "msg0" not in result
+
+class TestBuildTaskFilesSection:
+    """Tests for _build_task_files_section()."""
+
+    def test_none_task_data(self):
+        assert _build_task_files_section(None) == ""
+
+    def test_no_files(self):
+        assert _build_task_files_section({"title": "Test"}) == ""
+
+    def test_with_files(self):
+        task = {
+            "files": [
+                {"name": "report.pdf", "description": "Q4 report", "subfolder": "output"},
+                {"name": "data.csv", "subfolder": "attachments"},
+            ]
+        }
+        result = _build_task_files_section(task)
+        assert "[Task Files]" in result
+        assert "report.pdf (output) — Q4 report" in result
+        assert "data.csv (attachments)" in result
+
+    def test_empty_files_list(self):
+        task = {"files": []}
+        assert _build_task_files_section(task) == ""
 
 
 class TestExtractMentionsEdgeCases:

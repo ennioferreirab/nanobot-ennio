@@ -18,12 +18,12 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from mc.thread_context import ThreadContextBuilder
 from mc.types import (
+    NANOBOT_AGENT_NAME,
     ActivityEventType,
     AuthorType,
     MessageType,
-    LEAD_AGENT_NAME,
-    NANOBOT_AGENT_NAME,
     is_lead_agent,
 )
 
@@ -210,39 +210,71 @@ async def handle_mention(
     if agent_name == NANOBOT_AGENT_NAME:
         agent_prompt = None
 
-    # Fetch recent thread context for the agent
+    # Fetch thread context and task data for the agent
+    thread_context = ""
+    task_data: dict[str, Any] | None = None
     try:
         thread_messages = await asyncio.to_thread(
             bridge.get_task_messages, task_id
         )
-        # Build a minimal thread context (last 10 messages)
-        thread_context = _build_mention_context(thread_messages, max_messages=10)
+        thread_context = ThreadContextBuilder().build(
+            thread_messages, max_messages=20
+        )
     except Exception:
         logger.warning(
             "[mention_handler] Failed to fetch thread context for task %s",
             task_id,
             exc_info=True,
         )
-        thread_context = ""
+
+    try:
+        task_data = await asyncio.to_thread(bridge.get_task, task_id)
+    except Exception:
+        logger.warning(
+            "[mention_handler] Failed to fetch task data for task %s",
+            task_id,
+            exc_info=True,
+        )
 
     # Build the prompt for the agent
     mention_query = query or caller_message_content
     if not mention_query.strip():
         mention_query = f"You were mentioned in task: {task_title or task_id}"
 
-    full_message = (
-        f"You were mentioned via @{agent_name} in a task thread.\n\n"
-        f"Task: {task_title or task_id}\n"
+    # Build structured sections
+    sections: list[str] = []
+
+    # [System instructions] — only if agent_prompt is set
+    if agent_prompt:
+        sections.append(f"[System instructions]\n{agent_prompt}")
+
+    # [Mention]
+    sections.append(
+        f"[Mention]\n"
+        f"You were mentioned via @{agent_name} in a task thread.\n"
         f"User message: {mention_query}"
     )
-    if thread_context:
-        full_message += f"\n\n{thread_context}"
 
-    if agent_prompt:
-        full_message = (
-            f"[System instructions]\n{agent_prompt}\n\n"
-            f"[Mention]\n{full_message}"
-        )
+    # [Task Context]
+    task_context = _build_task_context(task_data)
+    if task_context:
+        sections.append(task_context)
+
+    # [Execution Plan]
+    plan_section = _build_execution_plan_summary(task_data)
+    if plan_section:
+        sections.append(plan_section)
+
+    # [Task Files]
+    files_section = _build_task_files_section(task_data)
+    if files_section:
+        sections.append(files_section)
+
+    # Thread context from ThreadContextBuilder
+    if thread_context:
+        sections.append(thread_context)
+
+    full_message = "\n\n".join(sections)
 
     # Post a "typing" indicator to the thread
     try:
@@ -258,9 +290,10 @@ async def handle_mention(
 
     # Create provider and run agent
     try:
-        from mc.provider_factory import create_provider
         from nanobot.agent.loop import AgentLoop
         from nanobot.bus.queue import MessageBus
+
+        from mc.provider_factory import create_provider
 
         provider, resolved_model = create_provider(agent_model)
 
@@ -397,38 +430,114 @@ async def handle_all_mentions(
     return True
 
 
-def _build_mention_context(
-    messages: list[dict[str, Any]],
-    max_messages: int = 10,
-) -> str:
-    """Build a brief thread context for mention responses.
+def _build_task_context(task_data: dict[str, Any] | None) -> str:
+    """Build a [Task Context] section from task data.
 
-    Returns a compact summary of recent thread messages so the mentioned
-    agent has context about what's been discussed.
+    Includes title, description, status, assigned agent, tags, and board.
+    Omits fields that are empty or None.
+
+    Args:
+        task_data: Task dict with snake_case keys, or None.
+
+    Returns:
+        Formatted "[Task Context]" section string, or "" if no task data.
     """
-    if not messages:
+    if not task_data:
         return ""
 
-    # Take the last N messages, excluding system events
-    visible = [
-        m for m in messages
-        if m.get("author_type") != "system"
-        and m.get("message_type") != "system_event"
+    lines: list[str] = ["[Task Context]"]
+
+    field_map = [
+        ("title", "Title"),
+        ("description", "Description"),
+        ("status", "Status"),
+        ("assigned_agent", "Assigned Agent"),
     ]
-    window = visible[-max_messages:] if len(visible) > max_messages else visible
+    for key, label in field_map:
+        value = task_data.get(key)
+        if value:
+            lines.append(f"{label}: {value}")
 
-    if not window:
+    tags = task_data.get("tags")
+    if tags and isinstance(tags, list):
+        lines.append(f"Tags: {', '.join(str(t) for t in tags)}")
+
+    board_name = task_data.get("board_name") or task_data.get("board")
+    if board_name:
+        lines.append(f"Board: {board_name}")
+
+    # Only return section if we have at least one field beyond the header
+    if len(lines) <= 1:
         return ""
 
-    lines: list[str] = ["[Recent Thread Context]"]
-    for m in window:
-        author = m.get("author_name", "Unknown")
-        content = m.get("content", "")
-        if content:
-            # Truncate long messages
-            if len(content) > 300:
-                content = content[:300] + "..."
-            lines.append(f"{author}: {content}")
+    return "\n".join(lines)
+
+
+def _build_execution_plan_summary(task_data: dict[str, Any] | None) -> str:
+    """Build a concise [Execution Plan] section from task data.
+
+    Shows step title + status, one line per step.
+
+    Args:
+        task_data: Task dict with snake_case keys, or None.
+
+    Returns:
+        Formatted "[Execution Plan]" section, or "" if no plan exists.
+    """
+    if not task_data:
+        return ""
+
+    plan = task_data.get("execution_plan") or task_data.get("executionPlan")
+    if not plan or not isinstance(plan, dict):
+        return ""
+
+    steps = plan.get("steps")
+    if not steps or not isinstance(steps, list):
+        return ""
+
+    lines: list[str] = ["[Execution Plan]"]
+    for i, step in enumerate(steps, 1):
+        title = step.get("title") or step.get("name") or f"Step {i}"
+        status = step.get("status", "unknown")
+        lines.append(f"{i}. {title} — {status}")
+
+    return "\n".join(lines)
+
+
+def _build_task_files_section(task_data: dict[str, Any] | None) -> str:
+    """Build a [Task Files] section listing attached files.
+
+    Args:
+        task_data: Task dict with snake_case keys, or None.
+
+    Returns:
+        Formatted "[Task Files]" section, or "" if no files attached.
+    """
+    if not task_data:
+        return ""
+
+    files = (
+        task_data.get("files")
+        or task_data.get("file_manifest")
+        or task_data.get("fileManifest")
+    )
+    if not files or not isinstance(files, list):
+        return ""
+
+    lines: list[str] = ["[Task Files]"]
+    for f in files:
+        name = f.get("name", "unknown")
+        desc = f.get("description", "")
+        subfolder = f.get("subfolder", "")
+        entry = f"- {name}"
+        if subfolder:
+            entry += f" ({subfolder})"
+        if desc:
+            entry += f" — {desc}"
+        lines.append(entry)
+
+    if len(lines) <= 1:
+        return ""
 
     return "\n".join(lines)
 
