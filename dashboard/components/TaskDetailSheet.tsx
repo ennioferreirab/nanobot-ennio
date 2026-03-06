@@ -135,6 +135,18 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     () => taskStatus === "review" && !taskAwaitingKickoff,
     [taskStatus, taskAwaitingKickoff]
   );
+  const liveStepsList = Array.isArray(liveSteps) ? liveSteps : [];
+  const hasCrashedLiveStep = useMemo(
+    () => liveStepsList.some((step) => step.status === "crashed"),
+    [liveStepsList]
+  );
+  const canRetryTask = useMemo(
+    () =>
+      taskStatus === "crashed" ||
+      taskStatus === "failed" ||
+      hasCrashedLiveStep,
+    [taskStatus, hasCrashedLiveStep]
+  );
   const [activeTab, setActiveTab] = useState<string>(() =>
     isAwaitingKickoff ? "plan" : "thread"
   );
@@ -432,7 +444,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                         </Button>
                       </>
                     )}
-                  {task.status === "crashed" && (
+                  {canRetryTask && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -445,7 +457,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                       Retry from Beginning
                     </Button>
                   )}
-                  {task.status === "in_progress" && (
+                  {task.status === "in_progress" && !canRetryTask && (
                     <Button
                       variant="outline"
                       size="sm"
