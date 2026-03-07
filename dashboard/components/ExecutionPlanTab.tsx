@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
 import { Loader2, Plus } from "lucide-react";
 import { ReactFlow, Background, Controls, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -9,7 +9,6 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { FlowStepNode, normalizeStatus, type FlowStepNodeData } from "./FlowStepNode";
 import { StartNode, EndNode } from "./StartEndNode";
-import { PlanEditor } from "./PlanEditor";
 import { AddStepForm, type AddStepData, type ExistingStep } from "./AddStepForm";
 import { EditStepForm, type EditStepData } from "./EditStepForm";
 import { Button } from "@/components/ui/button";
@@ -209,6 +208,7 @@ export function ExecutionPlanTab({
   const [addStepError, setAddStepError] = useState<string | null>(null);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editStepError, setEditStepError] = useState<string | null>(null);
+  const editFormRef = useRef<HTMLDivElement>(null);
 
   const steps = useMemo(() => {
     if (!executionPlan?.steps || executionPlan.steps.length === 0) return [];
@@ -535,25 +535,6 @@ export function ExecutionPlanTab({
       steps, deleteStepMutation]
   );
 
-  // Edit mode: render PlanEditor
-  const canEditPlan =
-    isEditMode &&
-    executionPlan != null &&
-    (executionPlan as ExecutionPlan).steps !== undefined &&
-    (executionPlan as ExecutionPlan).generatedAt != null &&
-    taskId != null;
-
-  if (canEditPlan) {
-    const editablePlan = executionPlan as ExecutionPlan;
-    return (
-      <PlanEditor
-        plan={editablePlan}
-        taskId={taskId!}
-        onPlanChange={(updatedPlan) => onLocalPlanChange?.(updatedPlan)}
-      />
-    );
-  }
-
   if (isPlanning && !executionPlan) {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-3">
@@ -611,8 +592,15 @@ export function ExecutionPlanTab({
     );
   }
 
+  const dismissEdit = useCallback((e: React.MouseEvent) => {
+    if (!editingStepId) return;
+    if (editFormRef.current?.contains(e.target as HTMLElement)) return;
+    setEditingStepId(null);
+    setEditStepError(null);
+  }, [editingStepId]);
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" onClick={dismissEdit}>
       <div className="flex items-center justify-between mb-2 px-1">
         <span className="text-xs text-muted-foreground">
           {completedCount}/{steps.length} steps completed
@@ -648,7 +636,7 @@ export function ExecutionPlanTab({
       )}
 
       {editingStep && editingStepId && (
-        <div className="mb-2 px-1">
+        <div className="mb-2 px-1" ref={editFormRef}>
           <EditStepForm
             key={editingStepId}
             step={editingStep}
@@ -670,6 +658,7 @@ export function ExecutionPlanTab({
           nodeTypes={nodeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
           onNodeClick={handleNodeClick}
+          onPaneClick={() => { setEditingStepId(null); setEditStepError(null); }}
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={false}

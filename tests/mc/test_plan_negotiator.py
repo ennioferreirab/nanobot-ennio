@@ -115,9 +115,15 @@ class TestParseNegotiationResponse:
         result = _parse_negotiation_response(raw)
         assert result["action"] == "update_plan"
 
-    def test_invalid_json_raises(self):
-        with pytest.raises(Exception):
-            _parse_negotiation_response("not valid json at all")
+    def test_invalid_json_returns_clarify(self):
+        result = _parse_negotiation_response("not valid json at all")
+        assert result["action"] == "clarify"
+        assert result["message"] == "not valid json at all"
+
+    def test_empty_response_returns_clarify(self):
+        result = _parse_negotiation_response("")
+        assert result["action"] == "clarify"
+        assert result["message"] == "(No response from model)"
 
 
 # ---------------------------------------------------------------------------

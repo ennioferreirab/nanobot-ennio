@@ -123,6 +123,9 @@ MODIFIABLE_STEP_STATUSES = {"planned", "blocked"}
 def _parse_negotiation_response(raw: str) -> dict[str, Any]:
     """Parse LLM response JSON, handling markdown code fences."""
     text = raw.strip()
+    if not text:
+        return {"action": "clarify", "message": "(No response from model)"}
+
     # Strip markdown code fences if present
     if text.startswith("```"):
         lines = text.split("\n")
@@ -134,7 +137,11 @@ def _parse_negotiation_response(raw: str) -> dict[str, Any]:
     if match:
         text = match.group(0)
 
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # LLM returned non-JSON text — treat as a clarification message
+        return {"action": "clarify", "message": raw.strip()}
 
 
 async def handle_plan_negotiation(

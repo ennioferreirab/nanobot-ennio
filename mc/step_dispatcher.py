@@ -172,6 +172,7 @@ class StepDispatcher:
                 task_id,
             )
 
+            task_left_in_progress = False
             while True:
                 # Pre-dispatch task status check (AC 7, Story 7.4):
                 # If task is not in_progress (e.g., paused/review), skip new dispatches.
@@ -191,6 +192,7 @@ class StepDispatcher:
                         task_id,
                         current_status,
                     )
+                    task_left_in_progress = True
                     break
 
                 steps = await asyncio.to_thread(self._bridge.get_steps_by_task, task_id)
@@ -211,6 +213,11 @@ class StepDispatcher:
                 dispatched_step_ids.update(
                     str(step.get("id")) for step in group_steps if step.get("id")
                 )
+
+            # Only attempt final status transitions when the task is still in_progress.
+            # If another process (e.g. plan_negotiator) moved it to inbox/review, skip.
+            if task_left_in_progress:
+                return
 
             final_steps = await asyncio.to_thread(self._bridge.get_steps_by_task, task_id)
             any_crashed = any(
