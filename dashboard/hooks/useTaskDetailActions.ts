@@ -27,6 +27,14 @@ export interface TaskDetailActionsResult {
   ) => Promise<void>;
   isResuming: boolean;
   resumeError: string;
+  // Save plan (inbox)
+  savePlan: (taskId: Id<"tasks">, plan: ExecutionPlan) => Promise<void>;
+  isSavingPlan: boolean;
+  savePlanError: string;
+  // Start inbox task
+  startInbox: (taskId: Id<"tasks">, plan: ExecutionPlan | undefined) => Promise<void>;
+  isStartingInbox: boolean;
+  startInboxError: string;
   // Retry (crashed)
   retry: (taskId: Id<"tasks">) => Promise<void>;
   // Tags
@@ -65,6 +73,8 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
   const kickOffMutation = useMutation(api.tasks.approveAndKickOff);
   const pauseTaskMutation = useMutation(api.tasks.pauseTask);
   const resumeTaskMutation = useMutation(api.tasks.resumeTask);
+  const saveExecutionPlanMutation = useMutation(api.tasks.saveExecutionPlan);
+  const startInboxTaskMutation = useMutation(api.tasks.startInboxTask);
   const retryMutation = useMutation(api.tasks.retry);
   const updateTagsMutation = useMutation(api.tasks.updateTags);
   const updateTitleMutation = useMutation(api.tasks.updateTitle);
@@ -82,6 +92,10 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
   const [pauseError, setPauseError] = useState("");
   const [isResuming, setIsResuming] = useState(false);
   const [resumeError, setResumeError] = useState("");
+  const [isSavingPlan, setIsSavingPlan] = useState(false);
+  const [savePlanError, setSavePlanError] = useState("");
+  const [isStartingInbox, setIsStartingInbox] = useState(false);
+  const [startInboxError, setStartInboxError] = useState("");
 
   const approve = useCallback(
     async (taskId: Id<"tasks">) => {
@@ -137,6 +151,40 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
       }
     },
     [resumeTaskMutation],
+  );
+
+  const savePlan = useCallback(
+    async (taskId: Id<"tasks">, plan: ExecutionPlan) => {
+      setIsSavingPlan(true);
+      setSavePlanError("");
+      try {
+        await saveExecutionPlanMutation({ taskId, executionPlan: plan });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        setSavePlanError(`Save failed: ${message}`);
+        throw err;
+      } finally {
+        setIsSavingPlan(false);
+      }
+    },
+    [saveExecutionPlanMutation],
+  );
+
+  const startInbox = useCallback(
+    async (taskId: Id<"tasks">, plan: ExecutionPlan | undefined) => {
+      setIsStartingInbox(true);
+      setStartInboxError("");
+      try {
+        await startInboxTaskMutation({ taskId, executionPlan: plan });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        setStartInboxError(`Start failed: ${message}`);
+        throw err;
+      } finally {
+        setIsStartingInbox(false);
+      }
+    },
+    [startInboxTaskMutation],
   );
 
   const retry = useCallback(
@@ -208,6 +256,12 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
     kickOff,
     isKickingOff,
     kickOffError,
+    savePlan,
+    isSavingPlan,
+    savePlanError,
+    startInbox,
+    isStartingInbox,
+    startInboxError,
     pause,
     isPausing,
     pauseError,

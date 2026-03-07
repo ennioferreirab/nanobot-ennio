@@ -65,11 +65,13 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const {
     task, messages, liveSteps, tagsList, tagAttributesList, tagAttrValues,
     isTaskLoaded, colors, tagColorMap, taskExecutionPlan,
-    isAwaitingKickoff, isPaused,
+    isAwaitingKickoff, isPaused, taskStatus,
   } = view;
 
   const {
     approve, kickOff, isKickingOff, kickOffError,
+    savePlan, isSavingPlan, savePlanError,
+    startInbox, isStartingInbox, startInboxError,
     pause, isPausing, pauseError,
     resume, isResuming, resumeError,
     retry, updateTags, removeTagAttrValues,
@@ -173,6 +175,28 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     try {
       const planToSave = localPlan ?? taskExecutionPlan;
       await kickOff(task._id, planToSave);
+      onClose();
+    } catch {
+      // error is set in the hook
+    }
+  };
+
+  const handleSavePlan = async () => {
+    if (!task || !isTaskLoaded || !localPlan) return;
+    try {
+      await savePlan(task._id, localPlan);
+      setLocalPlan(undefined);
+    } catch {
+      // error is set in the hook
+    }
+  };
+
+  const handleStartInbox = async () => {
+    if (!task || !isTaskLoaded) return;
+    try {
+      const planToSend = localPlan ?? undefined;
+      await startInbox(task._id, planToSend);
+      setLocalPlan(undefined);
       onClose();
     } catch {
       // error is set in the hook
@@ -445,6 +469,51 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                       </Button>
                     </>
                   )}
+                  {taskStatus === "inbox" && (
+                    <>
+                      {localPlan && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-7 px-2"
+                          onClick={handleSavePlan}
+                          disabled={isSavingPlan}
+                          data-testid="save-plan-button"
+                        >
+                          {isSavingPlan ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            "Save Plan"
+                          )}
+                        </Button>
+                      )}
+                      {(localPlan || taskExecutionPlan) && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="bg-green-600 hover:bg-green-700 text-white text-xs h-7 px-2"
+                          onClick={handleStartInbox}
+                          disabled={isStartingInbox}
+                          data-testid="start-inbox-button"
+                        >
+                          {isStartingInbox ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                              Starting...
+                            </>
+                          ) : (
+                            <>
+                              <Play className="h-3.5 w-3.5 mr-1" />
+                              Start
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </>
+                  )}
                 </div>
               </SheetDescription>
               {showRejection && taskId && (
@@ -473,6 +542,16 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
               {resumeError && (
                 <div className="mt-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800" data-testid="resume-error">
                   {resumeError}
+                </div>
+              )}
+              {savePlanError && (
+                <div className="mt-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800">
+                  {savePlanError}
+                </div>
+              )}
+              {startInboxError && (
+                <div className="mt-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800">
+                  {startInboxError}
                 </div>
               )}
 
@@ -575,6 +654,8 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                     isPlanning={task!.status === "planning"}
                     isEditMode={task!.status === "review"}
                     taskId={task!._id}
+                    taskStatus={taskStatus}
+                    boardId={(task as any)?.boardId}
                     onLocalPlanChange={setLocalPlan}
                   />
                 </div>
