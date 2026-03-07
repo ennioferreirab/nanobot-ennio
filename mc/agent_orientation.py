@@ -38,13 +38,15 @@ def load_orientation(agent_name: str) -> str | None:
 
     # Interpolate {agent_roster} placeholder if present
     if "{agent_roster}" in orientation:
-        from mc.executor import build_executor_agent_roster
-        orientation = orientation.replace("{agent_roster}", build_executor_agent_roster())
+        from mc.infrastructure.orientation_helpers import build_agent_roster
+
+        orientation = orientation.replace("{agent_roster}", build_agent_roster())
 
     # Interpolate {host_timezone} placeholder if present
     if "{host_timezone}" in orientation:
-        from mc.executor import _get_iana_timezone
-        iana_tz = _get_iana_timezone() or "UTC"
+        from mc.infrastructure.orientation_helpers import get_iana_timezone
+
+        iana_tz = get_iana_timezone() or "UTC"
         orientation = orientation.replace("{host_timezone}", iana_tz)
 
     logger.info("[orientation] Global orientation loaded for agent '%s'", agent_name)

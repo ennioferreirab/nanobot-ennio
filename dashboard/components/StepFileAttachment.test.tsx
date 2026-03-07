@@ -17,6 +17,35 @@ vi.mock("../convex/_generated/api", () => ({
   },
 }));
 
+vi.mock("./FileChip", () => ({
+  FileChip: ({
+    name,
+    onRemove,
+  }: {
+    name: string;
+    onRemove?: () => void;
+  }) => {
+    const ext = name.split(".").pop()?.toLowerCase();
+    const icon =
+      ext === "pdf" ? "icon-pdf" :
+      ["png", "jpg", "jpeg", "gif", "svg", "webp"].includes(ext ?? "") ? "icon-image" :
+      ["py", "ts", "tsx", "js", "jsx", "go", "rs", "java", "sh"].includes(ext ?? "") ? "icon-code" :
+      "icon-generic";
+
+    return (
+      <div>
+        <span data-testid={icon} />
+        <span title={name}>{name}</span>
+        {onRemove ? (
+          <button aria-label={`Remove ${name}`} onClick={onRemove}>
+            remove
+          </button>
+        ) : null}
+      </div>
+    );
+  },
+}));
+
 // Mock fetch for file upload
 const fetchMock = vi.fn();
 global.fetch = fetchMock;

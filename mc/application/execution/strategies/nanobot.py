@@ -1,45 +1,29 @@
-"""Nanobot runner strategy — executes tasks via the nanobot AgentLoop.
-
-Extracts the core nanobot execution logic from mc.executor._run_agent_on_task
-into a strategy that the ExecutionEngine can invoke uniformly.
-"""
+"""Nanobot runner strategy — executes tasks via the nanobot AgentLoop."""
 
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from mc.application.execution.request import (
     ErrorCategory,
     ExecutionRequest,
     ExecutionResult,
 )
+from mc.application.execution.runtime import (
+    provider_error_types,
+    run_nanobot_task,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def _collect_provider_error_types() -> tuple[type[Exception], ...]:
-    """Collect provider-specific exception types for targeted catching."""
-    from mc.provider_factory import ProviderError
-
-    types: list[type[Exception]] = [ProviderError]
-    try:
-        from nanobot.providers.anthropic_oauth import AnthropicOAuthExpired
-
-        types.append(AnthropicOAuthExpired)
-    except ImportError:
-        pass
-    return tuple(types)
-
-
-_PROVIDER_ERRORS = _collect_provider_error_types()
+_PROVIDER_ERRORS = provider_error_types()
 
 
 class NanobotRunnerStrategy:
     """Runs agent work through the nanobot AgentLoop.
 
-    Mirrors the execution path in mc.executor._run_agent_on_task() and
-    the post-processing in mc.executor.TaskExecutor._execute_task().
+    This strategy is the runtime-facing adapter for nanobot execution.
     """
 
     async def execute(self, request: ExecutionRequest) -> ExecutionResult:
@@ -60,6 +44,7 @@ class NanobotRunnerStrategy:
                 success=False,
                 error_category=ErrorCategory.PROVIDER,
                 error_message=str(exc),
+                error_exception=exc,
             )
         except Exception as exc:
             logger.error(
@@ -71,12 +56,15 @@ class NanobotRunnerStrategy:
                 success=False,
                 error_category=ErrorCategory.RUNNER,
                 error_message=f"{type(exc).__name__}: {exc}",
+                error_exception=exc,
             )
 
         return ExecutionResult(
             success=True,
             output=result_text,
             session_id=session_key,
+            memory_workspace=getattr(loop, "memory_workspace", None),
+            session_loop=loop,
         )
 
     async def _run_agent_loop(
@@ -87,13 +75,7 @@ class NanobotRunnerStrategy:
         Returns (result_text, session_key, loop) on success.
         Raises on failure — caller handles exception categorization.
         """
-        from mc.executor import _run_agent_on_task
-
-        memory_workspace = (
-            Path(request.memory_workspace) if request.memory_workspace else None
-        )
-
-        result, session_key, loop = await _run_agent_on_task(
+        result, session_key, loop = await run_nanobot_task(
             agent_name=request.agent_name,
             agent_prompt=request.agent_prompt,
             agent_model=request.agent_model,
@@ -102,7 +84,7 @@ class NanobotRunnerStrategy:
             task_description=request.description,
             agent_skills=request.agent_skills,
             board_name=request.board_name,
-            memory_workspace=memory_workspace,
+            memory_workspace=request.memory_workspace,
             task_id=request.task_id,
         )
         return result, session_key, loop

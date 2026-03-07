@@ -305,17 +305,9 @@ def build_task_message(title: str, description: str | None) -> str:
 
 def _get_iana_timezone() -> str | None:
     """Resolve IANA timezone name from system (e.g. 'America/Vancouver')."""
-    import os
-    try:
-        resolved = str(Path("/etc/localtime").resolve())
-        if "zoneinfo/" in resolved:
-            return resolved.split("zoneinfo/")[-1]
-    except OSError:
-        pass
-    tz_env = os.environ.get("TZ")
-    if tz_env and "/" in tz_env:
-        return tz_env.lstrip(":")
-    return None
+    from mc.infrastructure.orientation_helpers import get_iana_timezone
+
+    return get_iana_timezone()
 
 
 def build_executor_agent_roster() -> str:
@@ -324,29 +316,9 @@ def build_executor_agent_roster() -> str:
     Reads ~/.nanobot/agents/*/config.yaml, excludes system agents and lead-agent.
     Returns formatted list for agent orientation interpolation.
     """
-    from mc.infrastructure.config import AGENTS_DIR
-    from mc.yaml_validator import validate_agent_file
+    from mc.infrastructure.orientation_helpers import build_agent_roster
 
-    lines: list[str] = []
-    if not AGENTS_DIR.is_dir():
-        return "(no other agents available)"
-    for agent_dir in sorted(AGENTS_DIR.iterdir()):
-        if not agent_dir.is_dir():
-            continue
-        config_path = agent_dir / "config.yaml"
-        if not config_path.exists():
-            continue
-        result = validate_agent_file(config_path)
-        if isinstance(result, list):
-            continue
-        # Skip system agents and lead-agent
-        if getattr(result, "is_system", False) or is_lead_agent(result.name):
-            continue
-        skill_str = ", ".join(result.skills) if result.skills else "general"
-        lines.append(f"- **{result.name}** — {result.role} (skills: {skill_str})")
-    if not lines:
-        return "(no other agents available)"
-    return "\n".join(lines)
+    return build_agent_roster()
 
 
 async def _run_agent_on_task(

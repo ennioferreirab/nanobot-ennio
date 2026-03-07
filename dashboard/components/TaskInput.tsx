@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +16,7 @@ import { Bot, Paperclip, User, X, Eye, Zap } from "lucide-react";
 import { TAG_COLORS } from "@/lib/constants";
 import { useBoard } from "@/components/BoardContext";
 import { useSelectableAgents } from "@/hooks/useSelectableAgents";
+import { useTaskInputData } from "@/hooks/useTaskInputData";
 
 const formatSize = (bytes: number) =>
   bytes < 1024 * 1024
@@ -42,13 +41,14 @@ export function TaskInput() {
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const { activeBoardId } = useBoard();
-  const createTask = useMutation(api.tasks.create);
   const selectableAgents = useSelectableAgents();
-  const predefinedTags = useQuery(api.taskTags.list);
-  const allAttributes = useQuery(api.tagAttributes.list);
-  const upsertAttrValue = useMutation(api.tagAttributeValues.upsert);
-  const autoTitleSetting = useQuery(api.settings.get, { key: "auto_title_enabled" });
-  const isAutoTitle = autoTitleSetting === "true";
+  const {
+    createTask,
+    predefinedTags,
+    allAttributes,
+    upsertAttrValue,
+    isAutoTitle,
+  } = useTaskInputData();
 
   useEffect(() => {
     if (isFocused && textareaRef.current) {

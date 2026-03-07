@@ -299,7 +299,10 @@ describe("getDetailView", () => {
     task: Record<string, unknown> | null,
     board: Record<string, unknown> | null = null,
     messages: Record<string, unknown>[] = [],
-    steps: Record<string, unknown>[] = []
+    steps: Record<string, unknown>[] = [],
+    tagCatalog: Record<string, unknown>[] = [],
+    tagAttributes: Record<string, unknown>[] = [],
+    tagAttributeValues: Record<string, unknown>[] = []
   ) {
     const ctx = {
       db: {
@@ -308,15 +311,24 @@ describe("getDetailView", () => {
           if (id === "board-1") return board;
           return null;
         }),
-        query: vi.fn((table: string) => ({
-          withIndex: vi.fn((_idx: string, _fn: unknown) => ({
-            collect: vi.fn(async () => {
-              if (table === "messages") return messages;
-              if (table === "steps") return steps;
-              return [];
-            }),
-          })),
-        })),
+        query: vi.fn((table: string) => {
+          const collect = vi.fn(async () => {
+            if (table === "taskTags") return tagCatalog;
+            if (table === "tagAttributes") return tagAttributes;
+            return [];
+          });
+          return {
+            collect,
+            withIndex: vi.fn((_idx: string, _fn: unknown) => ({
+              collect: vi.fn(async () => {
+                if (table === "messages") return messages;
+                if (table === "steps") return steps;
+                if (table === "tagAttributeValues") return tagAttributeValues;
+                return [];
+              }),
+            })),
+          };
+        }),
       },
     };
     return ctx;
@@ -349,8 +361,13 @@ describe("getDetailView", () => {
       { _id: "step-1", taskId: "task-1", status: "assigned", order: 2 },
       { _id: "step-2", taskId: "task-1", status: "completed", order: 1 },
     ];
+    const tagCatalog = [{ _id: "tag-1", name: "bug", color: "red" }];
+    const tagAttributes = [{ _id: "attr-1", name: "priority" }];
+    const tagAttributeValues = [
+      { _id: "tav-1", taskId: "task-1", tagName: "bug", attributeId: "attr-1", value: "high" },
+    ];
 
-    const ctx = makeCtx(task, board, messages, steps);
+    const ctx = makeCtx(task, board, messages, steps, tagCatalog, tagAttributes, tagAttributeValues);
     const result = (await handler(ctx, { taskId: "task-1" })) as Record<string, unknown>;
 
     expect(result).not.toBeNull();
@@ -362,6 +379,9 @@ describe("getDetailView", () => {
     expect((result.steps as Array<{ order: number }>)[1].order).toBe(2);
     expect(result.files).toEqual(task.files);
     expect(result.tags).toEqual(["bug"]);
+    expect(result.tagCatalog).toEqual(tagCatalog);
+    expect(result.tagAttributes).toEqual(tagAttributes);
+    expect(result.tagAttributeValues).toEqual(tagAttributeValues);
 
     // uiFlags
     const uiFlags = result.uiFlags as Record<string, boolean>;
@@ -388,6 +408,9 @@ describe("getDetailView", () => {
 
     expect(result.files).toEqual([]);
     expect(result.tags).toEqual([]);
+    expect(result.tagCatalog).toEqual([]);
+    expect(result.tagAttributes).toEqual([]);
+    expect(result.tagAttributeValues).toEqual([]);
   });
 });
 
@@ -411,34 +434,44 @@ describe("getBoardView", () => {
           if (id === "board-1") return board;
           return null;
         }),
-        query: vi.fn((table: string) => ({
-          withIndex: vi.fn((_idx: string, fn: unknown) => ({
-            collect: vi.fn(async () => {
-              if (table === "tasks") return tasks;
-              if (table === "steps") {
-                // Determine which taskId was queried via the index function
-                // In our mock, each call returns steps for the task that was requested
-                const mockEqBuilder = { _eqValue: "" as string };
-                const eqFn = (field: string) => ({
-                  eq: (_f: string, val: string) => {
-                    mockEqBuilder._eqValue = val;
-                    return mockEqBuilder;
-                  },
-                });
-                // Execute the index builder fn to extract taskId
-                if (typeof fn === "function") {
-                  try {
-                    fn(eqFn);
-                  } catch {
-                    // ignore
+        query: vi.fn((table: string) => {
+          const collect = vi.fn(async () => {
+            if (table === "taskTags") {
+              return [
+                { _id: "tag-1", name: "bug", color: "red" },
+                { _id: "tag-2", name: "feature", color: "blue" },
+              ];
+            }
+            return [];
+          });
+          return {
+            collect,
+            withIndex: vi.fn((_idx: string, fn: unknown) => ({
+              collect: vi.fn(async () => {
+                if (table === "tasks") return tasks;
+                if (table === "tagAttributeValues") return [];
+                if (table === "steps") {
+                  const mockEqBuilder = { _eqValue: "" as string };
+                  const eqFn = (_field: string) => ({
+                    eq: (_f: string, val: string) => {
+                      mockEqBuilder._eqValue = val;
+                      return mockEqBuilder;
+                    },
+                  });
+                  if (typeof fn === "function") {
+                    try {
+                      fn(eqFn);
+                    } catch {
+                      // ignore
+                    }
                   }
+                  return stepsByTaskId[mockEqBuilder._eqValue] ?? [];
                 }
-                return stepsByTaskId[mockEqBuilder._eqValue] ?? [];
-              }
-              return [];
-            }),
-          })),
-        })),
+                return [];
+              }),
+            })),
+          };
+        }),
       },
     };
     return ctx;
@@ -475,9 +508,11 @@ describe("getBoardView", () => {
       db: {
         get: vi.fn(async () => board),
         query: vi.fn((table: string) => ({
+          collect: vi.fn(async () => (table === "taskTags" ? [] : [])),
           withIndex: vi.fn(() => ({
             collect: vi.fn(async () => {
               if (table === "tasks") return tasks;
+              if (table === "tagAttributeValues") return [];
               return []; // no steps
             }),
           })),
@@ -496,9 +531,10 @@ describe("getBoardView", () => {
     expect(groupedItems.review).toHaveLength(1);
 
     // Counters
-    expect(result.favorites).toBe(1);
+    expect((result.favorites as unknown[])).toHaveLength(1);
     expect(result.deletedCount).toBe(1);
     expect(result.hitlCount).toBe(1);
+    expect((result.tasks as unknown[])).toHaveLength(4);
   });
 
   it("applies free text filter server-side", async () => {
@@ -513,9 +549,11 @@ describe("getBoardView", () => {
       db: {
         get: vi.fn(async () => board),
         query: vi.fn((table: string) => ({
+          collect: vi.fn(async () => (table === "taskTags" ? [] : [])),
           withIndex: vi.fn(() => ({
             collect: vi.fn(async () => {
               if (table === "tasks") return tasks;
+              if (table === "tagAttributeValues") return [];
               return [];
             }),
           })),
@@ -545,9 +583,11 @@ describe("getBoardView", () => {
       db: {
         get: vi.fn(async () => board),
         query: vi.fn((table: string) => ({
+          collect: vi.fn(async () => (table === "taskTags" ? [] : [])),
           withIndex: vi.fn(() => ({
             collect: vi.fn(async () => {
               if (table === "tasks") return tasks;
+              if (table === "tagAttributeValues") return [];
               return [];
             }),
           })),
@@ -571,7 +611,8 @@ describe("getBoardView", () => {
     const ctx = {
       db: {
         get: vi.fn(async () => board),
-        query: vi.fn(() => ({
+        query: vi.fn((table: string) => ({
+          collect: vi.fn(async () => (table === "taskTags" ? [] : [])),
           withIndex: vi.fn(() => ({
             collect: vi.fn(async () => []),
           })),

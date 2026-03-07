@@ -32,6 +32,20 @@ vi.mock("@/hooks/useSelectableAgents", () => ({
   useSelectableAgents: () => mockAgents,
 }));
 
+vi.mock("@/hooks/useFileUpload", () => ({
+  useFileUpload: () => ({
+    pendingFiles: [],
+    isUploading: false,
+    uploadError: "",
+    fileInputRef: { current: null },
+    addFiles: vi.fn(),
+    removePendingFile: vi.fn(),
+    uploadAll: vi.fn().mockResolvedValue([]),
+    openFilePicker: vi.fn(),
+    clearPending: vi.fn(),
+  }),
+}));
+
 // Mock AgentMentionAutocomplete
 vi.mock("./AgentMentionAutocomplete", () => ({
   AgentMentionAutocomplete: () => null,
@@ -78,6 +92,8 @@ vi.mock("lucide-react", () => ({
   SendHorizontal: () => <span>Send</span>,
   RotateCcw: () => <span>Rotate</span>,
   MessageCircle: () => <span>Comment</span>,
+  Paperclip: () => <span>Attach</span>,
+  Loader2: () => <span>Loading</span>,
 }));
 
 const baseTask = {
@@ -176,10 +192,12 @@ describe("ThreadInput @mention routing (Story 13.1)", () => {
     });
   });
 
-  it("does not render input for manual tasks", () => {
+  it("still renders input for manual tasks", () => {
     const manualTask = { ...baseTask, isManual: true };
-    const { container } = render(<ThreadInput task={manualTask} />);
-    expect(container.innerHTML).toBe("");
+    render(<ThreadInput task={manualTask} />);
+    expect(
+      screen.getByPlaceholderText("Send a message to the agent...")
+    ).toBeInTheDocument();
   });
 
   it("renders restore UI for deleted tasks", () => {

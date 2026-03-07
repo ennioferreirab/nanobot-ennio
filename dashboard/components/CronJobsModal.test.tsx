@@ -44,8 +44,36 @@ describe("CronJobsModal", () => {
     render(<CronJobsModal open={true} onClose={vi.fn()} onTaskClick={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("Check GitHub Stars")).toBeInTheDocument());
     expect(screen.getByText("every 10min")).toBeInTheDocument();
-    expect(screen.getByText("whatsapp → +1234567890")).toBeInTheDocument();
+    expect(screen.getByText("whatsapp")).toBeInTheDocument();
     expect(screen.getByText("ok")).toBeInTheDocument();
+  });
+
+  it("tolerates partial channels payloads without crashing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/cron")) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ jobs: [SAMPLE_JOB] }),
+          });
+        }
+        if (url.includes("/api/channels")) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({}),
+          });
+        }
+        return Promise.reject(new Error(`unexpected url: ${url}`));
+      }),
+    );
+
+    render(<CronJobsModal open={true} onClose={vi.fn()} onTaskClick={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Check GitHub Stars")).toBeInTheDocument(),
+    );
   });
 
   it("shows empty state when no jobs returned", async () => {
@@ -126,6 +154,7 @@ describe("CronJobsModal", () => {
   it("confirming delete calls DELETE endpoint and removes row from table", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ jobs: [SAMPLE_JOB] }) })
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ channels: ["mc"] }) })
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ success: true }) });
     vi.stubGlobal("fetch", fetchMock);
 

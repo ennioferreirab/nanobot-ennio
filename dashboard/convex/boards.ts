@@ -220,29 +220,76 @@ export const ensureDefaultBoard = internalMutation({
  */
 export const getBoardView = query({
   args: {
-    boardId: v.id("boards"),
+    boardId: v.optional(v.id("boards")),
+    includeNoBoardId: v.optional(v.boolean()),
     freeText: v.optional(v.string()),
     tagFilters: v.optional(v.array(v.string())),
+    attributeFilters: v.optional(v.array(v.object({
+      tagName: v.string(),
+      attrName: v.string(),
+      value: v.string(),
+    }))),
   },
   handler: async (ctx, args) => {
-    const board = await ctx.db.get(args.boardId);
-    if (!board || board.deletedAt) return null;
+    const board = args.boardId ? await ctx.db.get(args.boardId) : null;
+    if (args.boardId && (!board || board.deletedAt)) {
+      return null;
+    }
 
-    // Load all tasks for this board using the index
-    const boardTasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_boardId", (q) => q.eq("boardId", args.boardId))
-      .collect();
+    let boardTasks = args.boardId
+      ? await ctx.db
+          .query("tasks")
+          .withIndex("by_boardId", (q) => q.eq("boardId", args.boardId!))
+          .collect()
+      : await ctx.db.query("tasks").collect();
 
-    // Exclude deleted tasks for the main view
-    const activeTasks = boardTasks.filter((t) => t.status !== "deleted");
+    if (args.boardId && args.includeNoBoardId) {
+      const unscopedTasks = (await ctx.db.query("tasks").collect()).filter(
+        (task) => !task.boardId
+      );
+      const seen = new Set(boardTasks.map((task) => task._id));
+      for (const task of unscopedTasks) {
+        if (!seen.has(task._id)) {
+          boardTasks.push(task);
+          seen.add(task._id);
+        }
+      }
+    }
 
-    // Apply server-side filters
-    const filteredTasks = filterTasks(
-      activeTasks,
-      args.freeText,
-      args.tagFilters
-    );
+    const activeTasks = boardTasks.filter((task) => task.status !== "deleted");
+    let filteredTasks = filterTasks(activeTasks, args.freeText, args.tagFilters);
+
+    if (args.attributeFilters && args.attributeFilters.length > 0) {
+      const tagAttributes = await ctx.db.query("tagAttributes").collect();
+      const attrNameById = new Map(
+        tagAttributes.map((attr) => [attr._id, attr.name.toLowerCase()] as const)
+      );
+
+      const filteredByAttributes: typeof filteredTasks = [];
+      for (const task of filteredTasks) {
+        const values = await ctx.db
+          .query("tagAttributeValues")
+          .withIndex("by_taskId", (q) => q.eq("taskId", task._id))
+          .collect();
+
+        const matchesAllFilters = args.attributeFilters.every((filter) =>
+          values.some((entry) => {
+            const attrName = attrNameById.get(entry.attributeId)?.toLowerCase();
+            return (
+              entry.tagName.toLowerCase() === filter.tagName &&
+              attrName === filter.attrName &&
+              entry.value.toLowerCase().includes(filter.value)
+            );
+          })
+        );
+
+        if (matchesAllFilters) {
+          filteredByAttributes.push(task);
+        }
+      }
+
+      filteredTasks = filteredByAttributes;
+    }
 
     // Batch-load steps for all tasks at once (avoid N+1)
     const taskIds = new Set(filteredTasks.map((t) => t._id));
@@ -263,47 +310,51 @@ export const getBoardView = query({
       }
     }
 
-    // Compute per-task summaries (uiFlags + allowedActions + step counts)
+    // Group into columns
+    const groupedItems = groupTasksByStatus(filteredTasks);
+
+    const favorites = filteredTasks.filter((task) => task.isFavorite === true);
+    const deletedTasks = boardTasks.filter((task) => task.status === "deleted");
+    const deletedCount = deletedTasks.length;
+    const hitlCount = filteredTasks.filter(
+      (task) => task.status === "review" && task.awaitingKickoff !== true
+    ).length;
+    const allSteps = stepBatches.flat();
+    const tagCatalog = await ctx.db.query("taskTags").collect();
+    const tagColorMap = Object.fromEntries(
+      tagCatalog.map((tag) => [tag.name, tag.color] as const)
+    );
+
     const taskSummaries = filteredTasks.map((task) => {
       const steps = stepsByTaskId.get(task._id) ?? [];
       const uiFlags = computeUiFlags(task, steps);
       const allowedActions = computeAllowedActions(task, uiFlags);
-      const completedSteps = steps.filter(
-        (s) => s.status === "completed"
-      ).length;
-
       return {
         task,
         uiFlags,
         allowedActions,
         stepCount: steps.length,
-        completedStepCount: completedSteps,
+        completedStepCount: steps.filter((step) => step.status === "completed").length,
       };
     });
-
-    // Group into columns
-    const groupedItems = groupTasksByStatus(filteredTasks);
-
-    // Aggregate counters from ALL active tasks (not filtered)
-    const favorites = activeTasks.filter(
-      (t) => t.isFavorite === true
-    ).length;
-    const deletedCount = boardTasks.filter(
-      (t) => t.status === "deleted"
-    ).length;
-    const hitlCount = activeTasks.filter(
-      (t) =>
-        t.status === "review" && t.trustLevel === "human_approved"
-    ).length;
 
     return {
       board,
       columns: getBoardColumns(),
       groupedItems,
+      tasks: filteredTasks,
+      allSteps,
       taskSummaries,
       favorites,
+      deletedTasks,
       deletedCount,
       hitlCount,
+      tagColorMap,
+      searchMeta: {
+        freeText: args.freeText ?? "",
+        tagFilters: args.tagFilters ?? [],
+        attributeFilters: args.attributeFilters ?? [],
+      },
     };
   },
 });

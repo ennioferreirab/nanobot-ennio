@@ -2,6 +2,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { StepCard } from "./StepCard";
 
+vi.mock("convex/react", () => ({
+  useMutation: vi.fn(() => vi.fn()),
+}));
+
+vi.mock("../convex/_generated/api", () => ({
+  api: {
+    steps: {
+      deleteStep: "steps:deleteStep",
+      acceptHumanStep: "steps:acceptHumanStep",
+      manualMoveStep: "steps:manualMoveStep",
+    },
+  },
+}));
+
 vi.mock("motion/react-client", () => ({
   div: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => {
     const { layoutId, layout, transition, ...rest } = props;

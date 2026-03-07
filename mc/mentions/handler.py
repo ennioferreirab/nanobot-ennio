@@ -43,6 +43,25 @@ _MENTION_RE = re.compile(
 MENTION_TIMEOUT_SECONDS = 120
 
 
+class ThreadContextBuilder:
+    """Compatibility wrapper around the shared thread-context builder."""
+
+    def build(
+        self,
+        messages: list[dict[str, Any]],
+        max_messages: int = 20,
+        **kwargs: Any,
+    ) -> str:
+        from mc.application.execution.thread_context_builder import build_thread_context
+
+        predecessor_step_ids = kwargs.get("predecessor_step_ids")
+        return build_thread_context(
+            messages,
+            max_messages=max_messages,
+            predecessor_step_ids=predecessor_step_ids,
+        )
+
+
 def _known_agent_names() -> set[str]:
     """Return lowercase names of all agents with a config.yaml on disk."""
     agents_dir = Path.home() / ".nanobot" / "agents"
@@ -216,8 +235,10 @@ async def handle_mention(
         thread_messages = await asyncio.to_thread(
             bridge.get_task_messages, task_id
         )
-        from mc.application.execution.thread_context_builder import build_thread_context
-        thread_context = build_thread_context(thread_messages, max_messages=20)
+        thread_context = ThreadContextBuilder().build(
+            thread_messages,
+            max_messages=20,
+        )
     except Exception:
         logger.warning(
             "[mention_handler] Failed to fetch thread context for task %s",

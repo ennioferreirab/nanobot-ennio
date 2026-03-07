@@ -110,20 +110,19 @@ async def _drain_background_tasks() -> None:
 
 
 class TestBackendRouting:
-    """_execute_task routes to _execute_cc_task when backend == 'claude-code'.
-
-    Updated for Story 16.1: ContextBuilder is mocked at the pipeline level,
-    then _load_agent_data detects backend: claude-code for routing.
-    """
+    """_execute_task routes Claude Code work through the ExecutionEngine."""
 
     @pytest.mark.asyncio
-    async def test_claude_code_backend_routes_to_execute_cc_task(self):
+    async def test_claude_code_backend_routes_through_execution_engine(self):
         executor = _make_executor()
         agent_data = _cc_agent(backend="claude-code")
 
-        # Build a non-CC ExecutionRequest (ContextBuilder doesn't detect CC
-        # from backend field -- that's done post-pipeline by _load_agent_data)
-        from mc.application.execution.request import EntityType, ExecutionRequest
+        from mc.application.execution.request import (
+            EntityType,
+            ExecutionRequest,
+            ExecutionResult,
+            RunnerType,
+        )
 
         req = ExecutionRequest(
             entity_type=EntityType.TASK,
@@ -136,6 +135,10 @@ class TestBackendRouting:
             files_dir="/tmp/test-files",
             output_dir="/tmp/test-output",
         )
+        engine = MagicMock()
+        engine.run = AsyncMock(
+            return_value=ExecutionResult(success=True, output="cc result")
+        )
 
         with (
             patch(
@@ -145,7 +148,13 @@ class TestBackendRouting:
                 return_value=req,
             ),
             patch.object(executor, "_load_agent_data", return_value=agent_data),
-            patch.object(executor, "_execute_cc_task", new_callable=AsyncMock) as mock_cc,
+            patch.object(
+                executor,
+                "_build_execution_engine",
+                return_value=engine,
+                create=True,
+            ),
+            patch("mc.executor._collect_output_artifacts", return_value=[]),
         ):
             await executor._execute_task(
                 task_id="t1",
@@ -155,13 +164,11 @@ class TestBackendRouting:
                 trust_level="autonomous",
             )
 
-        mock_cc.assert_awaited_once()
-        call_kwargs = mock_cc.call_args
-        assert call_kwargs[0][0] == "t1"  # task_id
-        assert call_kwargs[0][3] == "my-cc-agent"  # agent_name
-        assert call_kwargs[0][4] == agent_data  # agent_data
-        # Unified pipeline already enriched, so needs_enrichment=False
-        assert call_kwargs[1]["needs_enrichment"] is False
+        engine.run.assert_awaited_once()
+        request = engine.run.await_args.args[0]
+        assert request.runner_type == RunnerType.CLAUDE_CODE
+        assert request.agent == agent_data
+        assert request.agent_name == "my-cc-agent"
 
     @pytest.mark.asyncio
     async def test_nanobot_backend_skips_cc_task(self):
@@ -821,13 +828,13 @@ class TestOnTaskCompletedCallback:
 class TestCCModelRouting:
     """Tests for cc/ model routing in _execute_task.
 
-    Updated for Story 16.1: ContextBuilder detects cc/ model prefix and sets
-    is_cc=True + model (without prefix) on the ExecutionRequest.
+    Updated for the engine cutover: ContextBuilder detects cc/ model prefix and
+    the task path normalizes agent metadata before routing through ExecutionEngine.
     """
 
     @pytest.mark.asyncio
-    async def test_cc_model_routes_to_cc_task(self):
-        """When agent_model resolves to cc/*, should route to _execute_cc_task."""
+    async def test_cc_model_routes_through_execution_engine(self):
+        """When agent_model resolves to cc/*, the engine request should be CC."""
         bridge = _make_bridge()
         executor = _make_executor(bridge)
 
@@ -840,13 +847,13 @@ class TestCCModelRouting:
             backend="nanobot",
         )
 
-        captured_agent_data: list[AgentData] = []
-
-        async def capture_cc_task(task_id, title, description, agent_name, agent_data, **kwargs):
-            captured_agent_data.append(agent_data)
-
         # ContextBuilder detects cc/ prefix and sets is_cc=True
-        from mc.application.execution.request import EntityType, ExecutionRequest
+        from mc.application.execution.request import (
+            EntityType,
+            ExecutionRequest,
+            ExecutionResult,
+            RunnerType,
+        )
 
         req = ExecutionRequest(
             entity_type=EntityType.TASK,
@@ -862,6 +869,10 @@ class TestCCModelRouting:
             files_dir="/tmp/test-files",
             output_dir="/tmp/test-output",
         )
+        engine = MagicMock()
+        engine.run = AsyncMock(
+            return_value=ExecutionResult(success=True, output="cc result")
+        )
 
         with (
             patch(
@@ -871,7 +882,13 @@ class TestCCModelRouting:
                 return_value=req,
             ),
             patch.object(executor, "_load_agent_data", return_value=nanobot_agent),
-            patch.object(executor, "_execute_cc_task", side_effect=capture_cc_task),
+            patch.object(
+                executor,
+                "_build_execution_engine",
+                return_value=engine,
+                create=True,
+            ),
+            patch("mc.executor._collect_output_artifacts", return_value=[]),
         ):
             await executor._execute_task(
                 task_id="task-123",
@@ -881,23 +898,26 @@ class TestCCModelRouting:
                 trust_level="autonomous",
             )
 
-        assert len(captured_agent_data) == 1
-        assert captured_agent_data[0].model == "claude-sonnet-4-6"
-        assert captured_agent_data[0].backend == "claude-code"
+        engine.run.assert_awaited_once()
+        request = engine.run.await_args.args[0]
+        assert request.runner_type == RunnerType.CLAUDE_CODE
+        assert request.agent is nanobot_agent
+        assert request.agent.model == "claude-sonnet-4-6"
+        assert request.agent.backend == "claude-code"
 
     @pytest.mark.asyncio
     async def test_cc_model_creates_synthetic_agent_data_when_none(self):
-        """When _load_agent_data returns None, creates synthetic AgentData for cc/ routing."""
+        """When _load_agent_data returns None, the engine gets synthetic CC agent data."""
         bridge = _make_bridge()
         executor = _make_executor(bridge)
 
-        captured_agent_data: list[AgentData] = []
-
-        async def capture_cc_task(task_id, title, description, agent_name, agent_data, **kwargs):
-            captured_agent_data.append(agent_data)
-
         # ContextBuilder detects cc/ prefix, but agent is None
-        from mc.application.execution.request import EntityType, ExecutionRequest
+        from mc.application.execution.request import (
+            EntityType,
+            ExecutionRequest,
+            ExecutionResult,
+            RunnerType,
+        )
 
         req = ExecutionRequest(
             entity_type=EntityType.TASK,
@@ -911,6 +931,10 @@ class TestCCModelRouting:
             files_dir="/tmp/test-files",
             output_dir="/tmp/test-output",
         )
+        engine = MagicMock()
+        engine.run = AsyncMock(
+            return_value=ExecutionResult(success=True, output="cc result")
+        )
 
         with (
             patch(
@@ -920,7 +944,13 @@ class TestCCModelRouting:
                 return_value=req,
             ),
             patch.object(executor, "_load_agent_data", return_value=None),
-            patch.object(executor, "_execute_cc_task", side_effect=capture_cc_task),
+            patch.object(
+                executor,
+                "_build_execution_engine",
+                return_value=engine,
+                create=True,
+            ),
+            patch("mc.executor._collect_output_artifacts", return_value=[]),
         ):
             await executor._execute_task(
                 task_id="task-456",
@@ -930,10 +960,13 @@ class TestCCModelRouting:
                 trust_level="autonomous",
             )
 
-        assert len(captured_agent_data) == 1
-        assert captured_agent_data[0].model == "claude-opus-4-6"
-        assert captured_agent_data[0].backend == "claude-code"
-        assert captured_agent_data[0].name == "unknown-agent"
+        engine.run.assert_awaited_once()
+        request = engine.run.await_args.args[0]
+        assert request.runner_type == RunnerType.CLAUDE_CODE
+        assert request.agent is not None
+        assert request.agent.model == "claude-opus-4-6"
+        assert request.agent.backend == "claude-code"
+        assert request.agent.name == "unknown-agent"
 
 
 # ---------------------------------------------------------------------------

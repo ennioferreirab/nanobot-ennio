@@ -85,6 +85,17 @@ FOUNDATION_MODULES = [
 # these must NEVER import from mc.gateway
 PROTECTED_DIRECTORIES = ["workers", "services", "domain", "infrastructure"]
 
+EXECUTION_RUNTIME_MODULES = [
+    MC_ROOT / "step_dispatcher.py",
+    MC_ROOT / "chat_handler.py",
+    MC_ROOT / "cc_executor.py",
+]
+EXECUTION_RUNTIME_MODULES.extend(
+    p
+    for p in (MC_ROOT / "application" / "execution" / "strategies").rglob("*.py")
+    if p.is_file() and p.name != "__init__.py"
+)
+
 
 @pytest.mark.parametrize("module_name", FOUNDATION_MODULES)
 def test_foundation_modules_do_not_import_gateway(module_name: str) -> None:
@@ -207,6 +218,51 @@ def test_bridge_toplevel_only_imports_types() -> None:
     assert mc_imports == [], (
         f"mc/bridge.py has top-level imports from mc modules other than mc.types — "
         f"move these to function scope. Found: {mc_imports}"
+    )
+
+
+# ── Rule 3b: Runtime entrypoints must not import executor internals ────────
+
+
+@pytest.mark.parametrize("filepath", EXECUTION_RUNTIME_MODULES)
+def test_runtime_modules_do_not_import_executor(filepath: Path) -> None:
+    """Runtime-facing modules must depend on execution adapters, not executor.
+
+    The legacy executor remains a compatibility layer. Step dispatch, chat,
+    CC execution, and runner strategies should route through the stabilized
+    execution modules instead of importing mc.executor internals directly.
+    """
+    if not filepath.exists():
+        pytest.skip(f"{filepath} does not exist")
+
+    imports = _get_all_imports(filepath)
+    executor_imports = [
+        m for m in imports
+        if m == "mc.executor" or m.startswith("mc.executor.")
+    ]
+    relative = filepath.relative_to(MC_ROOT.parent)
+    assert executor_imports == [], (
+        f"{relative} imports from mc.executor — "
+        "use mc.application.execution runtime adapters instead. "
+        f"Found: {executor_imports}"
+    )
+
+
+def test_agent_orientation_does_not_import_executor() -> None:
+    """Orientation loading should depend on infrastructure helpers, not executor."""
+    filepath = MC_ROOT / "agent_orientation.py"
+    if not filepath.exists():
+        pytest.skip("agent_orientation.py does not exist")
+
+    imports = _get_all_imports(filepath)
+    executor_imports = [
+        m for m in imports
+        if m == "mc.executor" or m.startswith("mc.executor.")
+    ]
+    assert executor_imports == [], (
+        "mc/agent_orientation.py imports from mc.executor — "
+        "use mc.infrastructure.orientation_helpers instead. "
+        f"Found: {executor_imports}"
     )
 
 

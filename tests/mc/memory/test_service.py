@@ -26,7 +26,7 @@ class TestCreateMemoryStore:
         store = create_memory_store(tmp_path)
         assert isinstance(store, HybridMemoryStore)
 
-    def test_quarantines_invalid_files_before_returning(self, tmp_path):
+    def test_does_not_mutate_workspace_when_creating_store(self, tmp_path):
         memory_dir = tmp_path / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
         rogue = memory_dir / "rogue.txt"
@@ -35,8 +35,8 @@ class TestCreateMemoryStore:
         store = create_memory_store(tmp_path)
 
         assert isinstance(store, HybridMemoryStore)
-        assert not rogue.exists()
-        assert (tmp_path / ".memory-quarantine" / "rogue.txt").exists()
+        assert rogue.exists()
+        assert not (tmp_path / ".memory-quarantine").exists()
 
     def test_passes_embedding_model(self, tmp_path):
         store = create_memory_store(tmp_path, embedding_model="test-embed")

@@ -50,6 +50,47 @@ function isReasoningTier(tier: TierName): boolean {
   return tier.startsWith("reasoning-");
 }
 
+function parseStringArray(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseStringRecord(value: unknown): Record<string, string> {
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function parseTierRecord(value: unknown): Record<string, string | null> {
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string | null] =>
+          typeof entry[1] === "string" || entry[1] === null,
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
 export function ModelTierSettings() {
   const rawTiers = useQuery(api.settings.get, { key: "model_tiers" });
   const rawModels = useQuery(api.settings.get, { key: "connected_models" });
@@ -62,13 +103,13 @@ export function ModelTierSettings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const connectedModels: string[] = rawModels ? JSON.parse(rawModels) : [];
-  const reasoningLevels: Record<string, string> = rawReasoningLevels ? JSON.parse(rawReasoningLevels) : {};
+  const connectedModels = parseStringArray(rawModels);
+  const reasoningLevels = parseStringRecord(rawReasoningLevels);
 
   useEffect(() => {
-    if (rawTiers) {
-      setEditedTiers(JSON.parse(rawTiers));
-      setEditedReasoningLevels(rawReasoningLevels ? JSON.parse(rawReasoningLevels) : {});
+    if (rawTiers !== undefined) {
+      setEditedTiers(parseTierRecord(rawTiers));
+      setEditedReasoningLevels(parseStringRecord(rawReasoningLevels));
       setIsDirty(false);
     }
   }, [rawTiers, rawReasoningLevels]);

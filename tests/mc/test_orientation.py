@@ -55,7 +55,10 @@ class TestLoadOrientation:
         )
 
         with patch("mc.agent_orientation.Path") as mock_path_cls, \
-             patch("mc.executor.build_executor_agent_roster", return_value="- **bot** — helper"):
+             patch(
+                 "mc.infrastructure.orientation_helpers.build_agent_roster",
+                 return_value="- **bot** — helper",
+             ):
             mock_path_cls.home.return_value = tmp_path
             result = load_orientation("test-agent")
 
@@ -72,7 +75,10 @@ class TestLoadOrientation:
         )
 
         with patch("mc.agent_orientation.Path") as mock_path_cls, \
-             patch("mc.executor._get_iana_timezone", return_value="America/Vancouver"):
+             patch(
+                 "mc.infrastructure.orientation_helpers.get_iana_timezone",
+                 return_value="America/Vancouver",
+             ):
             mock_path_cls.home.return_value = tmp_path
             result = load_orientation("test-agent")
 
@@ -81,7 +87,7 @@ class TestLoadOrientation:
         assert "{host_timezone}" not in result
 
     def test_host_timezone_fallback_to_utc(self, tmp_path: Path) -> None:
-        """When _get_iana_timezone returns None, falls back to UTC."""
+        """When get_iana_timezone returns None, falls back to UTC."""
         mc_dir = tmp_path / ".nanobot" / "mc"
         mc_dir.mkdir(parents=True)
         (mc_dir / "agent-orientation.md").write_text(
@@ -89,7 +95,10 @@ class TestLoadOrientation:
         )
 
         with patch("mc.agent_orientation.Path") as mock_path_cls, \
-             patch("mc.executor._get_iana_timezone", return_value=None):
+             patch(
+                 "mc.infrastructure.orientation_helpers.get_iana_timezone",
+                 return_value=None,
+             ):
             mock_path_cls.home.return_value = tmp_path
             result = load_orientation("test-agent")
 

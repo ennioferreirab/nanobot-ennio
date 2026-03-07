@@ -111,8 +111,6 @@ class TestNanobotRunnerStrategy:
         async def fake_run(*args, **kwargs):
             return ("Report written.", "session_key_1", FakeLoop())
 
-        monkeypatch.setattr(nanobot_mod, "_collect_provider_error_types", lambda: ())
-        # Need to patch _PROVIDER_ERRORS at module level
         monkeypatch.setattr(nanobot_mod, "_PROVIDER_ERRORS", ())
 
         from mc.application.execution.strategies.nanobot import NanobotRunnerStrategy

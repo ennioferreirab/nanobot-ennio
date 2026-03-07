@@ -55,8 +55,13 @@ DEFAULT_TASK_CONSOLIDATION_SYSTEM_PROMPT = (
 
 
 def create_memory_store(workspace: Path, embedding_model: str | None = None) -> HybridMemoryStore:
-    """Return the canonical memory store implementation for a workspace."""
-    quarantine_invalid_memory_files(workspace)
+    """Return the canonical memory store implementation for a workspace.
+
+    This constructor must be read-safe: callers such as workspace preparation
+    and prompt context assembly should not mutate the workspace just by opening
+    the memory store. Invalid-memory cleanup remains available via the explicit
+    quarantine helper for maintenance/repair flows.
+    """
     return HybridMemoryStore(workspace, embedding_model=embedding_model)
 
 

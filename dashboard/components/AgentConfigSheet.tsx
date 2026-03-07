@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../convex/_generated/api";
 import {
   Sheet,
   SheetContent,
@@ -47,6 +45,7 @@ import { SkillsSelector } from "@/components/SkillsSelector";
 import { PromptEditModal, type PromptVariable } from "@/components/PromptEditModal";
 import { AgentTextViewerModal } from "@/components/AgentTextViewerModal";
 import { getAvatarColor, getInitials } from "@/components/AgentSidebarItem";
+import { useAgentConfigSheetData } from "@/hooks/useAgentConfigSheetData";
 import type { AgentStatus } from "@/lib/constants";
 import { SYSTEM_AGENT_NAMES } from "@/lib/constants";
 
@@ -106,36 +105,8 @@ interface FormErrors {
 }
 
 export function AgentConfigSheet({ agentName, onClose }: AgentConfigSheetProps) {
-  const agent = useQuery(
-    api.agents.getByName,
-    agentName ? { name: agentName } : "skip",
-  );
-  const updateConfig = useMutation(api.agents.updateConfig);
-  const setEnabled = useMutation(api.agents.setEnabled);
-
-  // Settings queries for model selector
-  const rawConnectedModels = useQuery(api.settings.get, { key: "connected_models" });
-  const rawModelTiers = useQuery(api.settings.get, { key: "model_tiers" });
-
-  const connectedModels: string[] = useMemo(() => {
-    if (!rawConnectedModels) return [];
-    try {
-      const parsed = JSON.parse(rawConnectedModels);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }, [rawConnectedModels]);
-
-  const modelTiers: Record<string, string | null> = useMemo(() => {
-    if (!rawModelTiers) return {};
-    try {
-      const parsed = JSON.parse(rawModelTiers);
-      return typeof parsed === "object" && parsed !== null ? parsed : {};
-    } catch {
-      return {};
-    }
-  }, [rawModelTiers]);
+  const { agent, updateConfig, setEnabled, connectedModels, modelTiers } =
+    useAgentConfigSheetData(agentName);
 
   // Form state
   const [displayName, setDisplayName] = useState("");

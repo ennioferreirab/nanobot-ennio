@@ -1,13 +1,12 @@
 "use client";
 
 import { Doc } from "../convex/_generated/dataModel";
-import { useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
 import { useSidebar } from "@/components/ui/sidebar";
 import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from "@/components/ui/sidebar";
+import { useAgentSidebarItemState } from "@/hooks/useAgentSidebarItemState";
 import { RotateCcw, Trash2, Terminal } from "lucide-react";
 import type { AgentStatus } from "@/lib/constants";
 import { useBoard } from "@/components/BoardContext";
@@ -66,9 +65,9 @@ export function AgentSidebarItem({ agent, onClick, onDelete, onRestore }: AgentS
   const { toggleTerminal, openTerminals } = useBoard();
 
   // Query for active terminal sessions only when this is a remote-terminal agent
-  const terminalSessions = useQuery(
-    api.terminalSessions.listSessions,
-    isRemoteTerminal ? { agentName: agent.name } : "skip"
+  const { terminalSessions } = useAgentSidebarItemState(
+    agent.name,
+    isRemoteTerminal,
   );
 
   const isSleeping = isRemoteTerminal && terminalSessions?.some((s) => s.sleepMode === true);
@@ -112,11 +111,9 @@ export function AgentSidebarItem({ agent, onClick, onDelete, onRestore }: AgentS
             >
               {isRemoteTerminal ? <Terminal className="h-4 w-4" /> : initials}
             </div>
-            {isRemoteTerminal && (
-              <span
-                className={`absolute bottom-0 right-0 h-2 w-2 rounded-full ring-2 ring-sidebar transition-colors duration-200 ${statusStyle}`}
-              />
-            )}
+            <span
+              className={`absolute bottom-0 right-0 h-2 w-2 rounded-full ring-2 ring-sidebar transition-colors duration-200 ${statusStyle}`}
+            />
           </div>
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -158,7 +155,7 @@ export function AgentSidebarItem({ agent, onClick, onDelete, onRestore }: AgentS
             </>
           )}
         </div>
-        {!onDelete && !onRestore && isRemoteTerminal && (
+        {!onDelete && !onRestore && (
           <span
             className={`h-2 w-2 shrink-0 rounded-full transition-colors duration-200 ${statusStyle}`}
           />

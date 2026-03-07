@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../convex/_generated/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +8,7 @@ import { X, Plus } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ConvexError } from "convex/values";
 import { TAG_COLORS } from "@/lib/constants";
+import { useTagsPanelData } from "@/hooks/useTagsPanelData";
 
 const COLOR_KEYS = Object.keys(TAG_COLORS) as Array<keyof typeof TAG_COLORS>;
 
@@ -24,14 +23,15 @@ const ATTR_TYPE_LABELS: Record<AttrType, string> = {
 };
 
 export function TagsPanel() {
-  const tags = useQuery(api.taskTags.list);
-  const createTag = useMutation(api.taskTags.create);
-  const removeTag = useMutation(api.taskTags.remove);
-
-  const attributes = useQuery(api.tagAttributes.list);
-  const createAttribute = useMutation(api.tagAttributes.create);
-  const removeAttribute = useMutation(api.tagAttributes.remove);
-  const updateTagAttributeIds = useMutation(api.taskTags.updateAttributeIds);
+  const {
+    tags,
+    createTag,
+    removeTag,
+    attributes,
+    createAttribute,
+    removeAttribute,
+    updateTagAttributeIds,
+  } = useTagsPanelData();
   const [openTagId, setOpenTagId] = useState<string | null>(null);
   const [attrPickerSearch, setAttrPickerSearch] = useState("");
 

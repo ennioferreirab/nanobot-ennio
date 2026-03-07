@@ -15,6 +15,12 @@ vi.mock("../../convex/_generated/api", () => ({
       list: "taskTags:list",
       create: "taskTags:create",
       remove: "taskTags:remove",
+      updateAttributeIds: "taskTags:updateAttributeIds",
+    },
+    tagAttributes: {
+      list: "tagAttributes:list",
+      create: "tagAttributes:create",
+      remove: "tagAttributes:remove",
     },
   },
 }));
@@ -36,12 +42,19 @@ describe("TagsPanel", () => {
       if (String(ref).includes("remove")) return mockRemoveTag;
       return vi.fn();
     });
+    mockUseQuery.mockImplementation((ref) => {
+      if (String(ref).includes("taskTags")) return [];
+      if (String(ref).includes("tagAttributes")) return [];
+      return undefined;
+    });
     mockCreateTag.mockResolvedValue(undefined);
     mockRemoveTag.mockResolvedValue(undefined);
   });
 
   it("shows empty state when no tags exist", () => {
-    mockUseQuery.mockReturnValue([]);
+    mockUseQuery.mockImplementation((ref) =>
+      String(ref).includes("tagAttributes") ? [] : []
+    );
     render(<TagsPanel />);
     expect(
       screen.getByText("No tags yet. Add your first tag below.")
@@ -49,7 +62,9 @@ describe("TagsPanel", () => {
   });
 
   it("shows no list when tags are loading (undefined)", () => {
-    mockUseQuery.mockReturnValue(undefined);
+    mockUseQuery.mockImplementation((ref) =>
+      String(ref).includes("tagAttributes") ? [] : undefined
+    );
     render(<TagsPanel />);
     expect(screen.queryByRole("list")).not.toBeInTheDocument();
     expect(
@@ -58,10 +73,16 @@ describe("TagsPanel", () => {
   });
 
   it("renders existing tags with name and delete button", () => {
-    mockUseQuery.mockReturnValue([
-      { _id: "id1", name: "Bug", color: "red" },
-      { _id: "id2", name: "Feature", color: "blue" },
-    ]);
+    mockUseQuery.mockImplementation((ref) => {
+      if (String(ref).includes("taskTags")) {
+        return [
+          { _id: "id1", name: "Bug", color: "red" },
+          { _id: "id2", name: "Feature", color: "blue" },
+        ];
+      }
+      if (String(ref).includes("tagAttributes")) return [];
+      return undefined;
+    });
     render(<TagsPanel />);
     expect(screen.getByText("Bug")).toBeInTheDocument();
     expect(screen.getByText("Feature")).toBeInTheDocument();
@@ -69,7 +90,6 @@ describe("TagsPanel", () => {
   });
 
   it("disables Add button when name input is empty", () => {
-    mockUseQuery.mockReturnValue([]);
     const { getByRole } = render(<TagsPanel />);
     // Get the "Add" button specifically (not the color swatches)
     const addButton = getByRole("button", { name: /^Add$/ });
@@ -77,17 +97,15 @@ describe("TagsPanel", () => {
   });
 
   it("enables Add button when name is entered", async () => {
-    mockUseQuery.mockReturnValue([]);
     const { getByRole, getByPlaceholderText } = render(<TagsPanel />);
-    const input = getByPlaceholderText("Tag name…");
+    const input = getByPlaceholderText("Tag name...");
     await userEvent.type(input, "MyTag");
     expect(getByRole("button", { name: /^Add$/ })).not.toBeDisabled();
   });
 
   it("calls createTag and clears input on successful add", async () => {
-    mockUseQuery.mockReturnValue([]);
     const { getByRole, getByPlaceholderText } = render(<TagsPanel />);
-    const input = getByPlaceholderText("Tag name…");
+    const input = getByPlaceholderText("Tag name...");
     await userEvent.type(input, "NewTag");
     await userEvent.click(getByRole("button", { name: /^Add$/ }));
     expect(mockCreateTag).toHaveBeenCalledWith({
@@ -98,10 +116,9 @@ describe("TagsPanel", () => {
   });
 
   it("shows 'Tag already exists' error for ConvexError duplicate", async () => {
-    mockUseQuery.mockReturnValue([]);
     mockCreateTag.mockRejectedValue(new ConvexError("Tag already exists"));
     const { getByRole, getByPlaceholderText } = render(<TagsPanel />);
-    await userEvent.type(getByPlaceholderText("Tag name…"), "Duplicate");
+    await userEvent.type(getByPlaceholderText("Tag name..."), "Duplicate");
     await userEvent.click(getByRole("button", { name: /^Add$/ }));
     await waitFor(() => {
       expect(screen.getByText("Tag already exists")).toBeInTheDocument();
@@ -109,10 +126,9 @@ describe("TagsPanel", () => {
   });
 
   it("shows generic error for non-duplicate failures", async () => {
-    mockUseQuery.mockReturnValue([]);
     mockCreateTag.mockRejectedValue(new Error("Network error"));
     const { getByRole, getByPlaceholderText } = render(<TagsPanel />);
-    await userEvent.type(getByPlaceholderText("Tag name…"), "SomeTag");
+    await userEvent.type(getByPlaceholderText("Tag name..."), "SomeTag");
     await userEvent.click(getByRole("button", { name: /^Add$/ }));
     await waitFor(() => {
       expect(
@@ -122,10 +138,9 @@ describe("TagsPanel", () => {
   });
 
   it("clears error when user starts typing again", async () => {
-    mockUseQuery.mockReturnValue([]);
     mockCreateTag.mockRejectedValue(new ConvexError("Tag already exists"));
     const { getByRole, getByPlaceholderText } = render(<TagsPanel />);
-    const input = getByPlaceholderText("Tag name…");
+    const input = getByPlaceholderText("Tag name...");
     await userEvent.type(input, "Dup");
     await userEvent.click(getByRole("button", { name: /^Add$/ }));
     await waitFor(() => screen.getByText("Tag already exists"));
@@ -134,7 +149,13 @@ describe("TagsPanel", () => {
   });
 
   it("calls removeTag when delete button is clicked", async () => {
-    mockUseQuery.mockReturnValue([{ _id: "id1", name: "Bug", color: "red" }]);
+    mockUseQuery.mockImplementation((ref) => {
+      if (String(ref).includes("taskTags")) {
+        return [{ _id: "id1", name: "Bug", color: "red" }];
+      }
+      if (String(ref).includes("tagAttributes")) return [];
+      return undefined;
+    });
     render(<TagsPanel />);
     await userEvent.click(
       screen.getByRole("button", { name: /Delete tag Bug/i })
@@ -143,7 +164,6 @@ describe("TagsPanel", () => {
   });
 
   it("renders 8 color swatches in the color picker", () => {
-    mockUseQuery.mockReturnValue([]);
     render(<TagsPanel />);
     expect(
       screen.getAllByRole("button", { name: /Select color/i })

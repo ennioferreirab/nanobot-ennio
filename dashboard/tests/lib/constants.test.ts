@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { TAG_COLORS } from "../../lib/constants";
 
 describe("TAG_COLORS", () => {
+  const STATIC_CLASS_PATTERN =
+    /^(bg|text)-[a-z]+-\d+(?: (?:bg|text)-[a-z]+-\d+| dark:(?:bg|text)-[a-z]+-\d+)*$/;
+
   const EXPECTED_COLORS = [
     "blue",
     "green",
@@ -37,29 +40,29 @@ describe("TAG_COLORS", () => {
   it("bg classes use static Tailwind patterns (no dynamic interpolation)", () => {
     for (const [name, entry] of Object.entries(TAG_COLORS)) {
       expect(entry.bg, `${name}.bg must be static Tailwind class`).toMatch(
-        /^bg-[a-z]+-\d+$/
+        STATIC_CLASS_PATTERN
       );
       expect(entry.text, `${name}.text must be static Tailwind class`).toMatch(
-        /^text-[a-z]+-\d+$/
+        STATIC_CLASS_PATTERN
       );
       expect(entry.dot, `${name}.dot must be static Tailwind class`).toMatch(
-        /^bg-[a-z]+-\d+$/
+        STATIC_CLASS_PATTERN
       );
     }
   });
 
   it("blue color maps to correct Tailwind classes", () => {
     expect(TAG_COLORS.blue).toEqual({
-      bg: "bg-blue-100",
-      text: "text-blue-700",
+      bg: "bg-blue-100 dark:bg-blue-950",
+      text: "text-blue-700 dark:text-blue-300",
       dot: "bg-blue-500",
     });
   });
 
   it("teal color maps to correct Tailwind classes", () => {
     expect(TAG_COLORS.teal).toEqual({
-      bg: "bg-teal-100",
-      text: "text-teal-700",
+      bg: "bg-teal-100 dark:bg-teal-950",
+      text: "text-teal-700 dark:text-teal-300",
       dot: "bg-teal-500",
     });
   });
