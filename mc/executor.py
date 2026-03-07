@@ -16,8 +16,10 @@ import logging
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from mc.cc_executor import CCExecutorMixin
 from mc.crash_handler import AgentGateway
 from mc.planner import TaskPlanner
 from mc.types import (
@@ -31,9 +33,6 @@ from mc.types import (
     TaskStatus,
     TrustLevel,
     is_lead_agent,
-    is_tier_reference,
-    is_cc_model,
-    extract_cc_model_name,
     task_safe_id,
 )
 
@@ -95,17 +94,9 @@ _PROVIDER_ERRORS = _collect_provider_error_types()
 
 def _get_iana_timezone() -> str | None:
     """Resolve IANA timezone name from system (e.g. 'America/Vancouver')."""
-    import os
-    try:
-        resolved = str(Path("/etc/localtime").resolve())
-        if "zoneinfo/" in resolved:
-            return resolved.split("zoneinfo/")[-1]
-    except OSError:
-        pass
-    tz_env = os.environ.get("TZ")
-    if tz_env and "/" in tz_env:
-        return tz_env.lstrip(":")
-    return None
+    from mc.infrastructure.orientation_helpers import get_iana_timezone
+
+    return get_iana_timezone()
 
 
 def build_executor_agent_roster() -> str:
@@ -114,29 +105,9 @@ def build_executor_agent_roster() -> str:
     Reads ~/.nanobot/agents/*/config.yaml, excludes system agents and lead-agent.
     Returns formatted list for agent orientation interpolation.
     """
-    from mc.infrastructure.config import AGENTS_DIR
-    from mc.yaml_validator import validate_agent_file
+    from mc.infrastructure.orientation_helpers import build_agent_roster
 
-    lines: list[str] = []
-    if not AGENTS_DIR.is_dir():
-        return "(no other agents available)"
-    for agent_dir in sorted(AGENTS_DIR.iterdir()):
-        if not agent_dir.is_dir():
-            continue
-        config_path = agent_dir / "config.yaml"
-        if not config_path.exists():
-            continue
-        result = validate_agent_file(config_path)
-        if isinstance(result, list):
-            continue
-        # Skip system agents and lead-agent
-        if getattr(result, "is_system", False) or is_lead_agent(result.name):
-            continue
-        skill_str = ", ".join(result.skills) if result.skills else "general"
-        lines.append(f"- **{result.name}** — {result.role} (skills: {skill_str})")
-    if not lines:
-        return "(no other agents available)"
-    return "\n".join(lines)
+    return build_agent_roster()
 
 
 def _provider_error_action(exc: Exception) -> str:
@@ -506,7 +477,7 @@ def _build_tag_attributes_context(
     return build_tag_attributes_context(tags, attr_values, attr_catalog)
 
 
-class TaskExecutor:
+class TaskExecutor(CCExecutorMixin):
     """Picks up assigned tasks and runs agent execution."""
 
     def __init__(self, bridge: ConvexBridge, cron_service: Any | None = None,
@@ -526,6 +497,16 @@ class TaskExecutor:
             from mc.tier_resolver import TierResolver
             self._tier_resolver = TierResolver(self._bridge)
         return self._tier_resolver
+
+    def _build_execution_engine(self) -> Any:
+        """Build the canonical execution engine for production task execution."""
+        from mc.application.execution.post_processing import build_execution_engine
+
+        return build_execution_engine(
+            bridge=self._bridge,
+            cron_service=self._cron_service,
+            ask_user_registry=self._ask_user_registry,
+        )
 
     async def _handle_tier_error(
         self,
@@ -936,34 +917,6 @@ class TaskExecutor:
         agent_data = self._load_agent_data(agent_name)
         is_cc_backend = agent_data and agent_data.backend == "claude-code"
 
-        if req.is_cc or is_cc_backend:
-            cc_model_name = req.model if req.is_cc else agent_model
-            if not is_cc_backend:
-                agent_data = req.agent
-            if agent_data is None:
-                agent_data = AgentData(
-                    name=agent_name,
-                    display_name=agent_name,
-                    role="agent",
-                    model=cc_model_name,
-                    backend="claude-code",
-                )
-            elif req.is_cc:
-                agent_data.model = cc_model_name
-                agent_data.backend = "claude-code"
-            await self._execute_cc_task(
-                task_id,
-                title,
-                description,
-                agent_name,
-                agent_data,
-                trust_level=trust_level,
-                task_data=task_data,
-                reasoning_level=reasoning_level,
-                needs_enrichment=False,  # unified pipeline already enriched
-            )
-            return
-
         if agent_skills is not None:
             logger.info(
                 "[executor] Agent '%s' allowed_skills=%s (only these + always-on skills visible)",
@@ -987,32 +940,139 @@ class TaskExecutor:
             )
 
         try:
-            result, session_key, loop = await _run_agent_on_task(
-                agent_name=agent_name,
-                agent_prompt=agent_prompt,
-                agent_model=agent_model,
-                reasoning_level=reasoning_level,
-                task_title=title,
-                task_description=description,
-                agent_skills=agent_skills,
-                board_name=board_name,
-                memory_workspace=memory_workspace,
-                cron_service=self._cron_service,
-                task_id=task_id,
-                bridge=self._bridge,
-                ask_user_registry=self._ask_user_registry,
+            from mc.application.execution.request import (
+                ErrorCategory,
+                RunnerType,
             )
 
-            await asyncio.to_thread(
-                _relocate_invalid_memory_files,
-                task_id,
-                loop.memory_workspace,
-            )
+            if req.is_cc or is_cc_backend:
+                req.runner_type = RunnerType.CLAUDE_CODE
+                if agent_data is None:
+                    cc_model_name = req.model if req.is_cc else agent_model
+                    agent_data = AgentData(
+                        name=agent_name,
+                        display_name=agent_name,
+                        role="agent",
+                        model=cc_model_name,
+                        backend="claude-code",
+                    )
+                else:
+                    agent_data.backend = "claude-code"
+                    if req.is_cc and req.model:
+                        agent_data.model = req.model
+                req.agent = agent_data
+                req.is_cc = True
+            else:
+                req.runner_type = RunnerType.NANOBOT
+
+            engine = self._build_execution_engine()
+            execution_result = await engine.run(req)
+
+            if not execution_result.success:
+                if execution_result.error_category == ErrorCategory.PROVIDER:
+                    provider_exc = execution_result.error_exception or RuntimeError(
+                        execution_result.error_message or "Provider error"
+                    )
+                    await self._handle_provider_error(task_id, title, agent_name, provider_exc)
+                elif req.runner_type == RunnerType.CLAUDE_CODE:
+                    try:
+                        await asyncio.to_thread(
+                            self._bridge.sync_task_output_files,
+                            task_id,
+                            task_data or {},
+                            agent_name,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "[executor] CC: output sync failed for errored task '%s'",
+                            title,
+                            exc_info=True,
+                        )
+                    await self._crash_task(
+                        task_id,
+                        title,
+                        execution_result.error_message or "Claude Code execution failed",
+                        agent_name,
+                    )
+                else:
+                    crash_exc = execution_result.error_exception or RuntimeError(
+                        execution_result.error_message or "Execution failed"
+                    )
+                    logger.error(
+                        "[executor] Agent '%s' crashed on task '%s': %s",
+                        agent_name,
+                        title,
+                        crash_exc,
+                    )
+                    await self._agent_gateway.handle_agent_crash(
+                        agent_name,
+                        task_id,
+                        crash_exc,
+                    )
+                if self._on_task_completed:
+                    try:
+                        await self._on_task_completed(task_id, "")
+                    except Exception:
+                        pass
+                return
+
+            result = execution_result.output
 
             # Collect file artifacts produced during agent execution.
             artifacts = await asyncio.to_thread(
                 _collect_output_artifacts, task_id, pre_snapshot
             )
+
+            if req.runner_type == RunnerType.CLAUDE_CODE:
+                cc_result = SimpleNamespace(
+                    output=result,
+                    cost_usd=execution_result.cost_usd,
+                    session_id=execution_result.session_id or "",
+                    is_error=False,
+                )
+                await self._complete_cc_task(
+                    task_id,
+                    title,
+                    agent_name,
+                    cc_result,
+                    trust_level=trust_level,
+                )
+                try:
+                    if artifacts:
+                        logger.info(
+                            "[executor] CC: %d artifact(s) detected for task '%s'",
+                            len(artifacts),
+                            title,
+                        )
+                    await asyncio.to_thread(
+                        self._bridge.sync_task_output_files,
+                        task_id,
+                        task_data or {},
+                        agent_name,
+                    )
+                except Exception:
+                    logger.warning(
+                        "[executor] CC: artifact sync failed for '%s'",
+                        title,
+                        exc_info=True,
+                    )
+                if self._on_task_completed:
+                    try:
+                        await self._on_task_completed(task_id, result or "")
+                    except Exception:
+                        logger.exception(
+                            "[executor] on_task_completed failed for CC task '%s'",
+                            title,
+                        )
+                if execution_result.memory_workspace is not None:
+                    self._schedule_cc_consolidation(
+                        _background_tasks,
+                        title,
+                        task_id,
+                        cc_result,
+                        execution_result.memory_workspace,
+                    )
+                return
 
             if step_id:
                 # Post structured completion message with step context (Story 2.5).
@@ -1086,22 +1146,6 @@ class TaskExecutor:
                 title, agent_name, final_status,
             )
 
-            # Fire-and-forget memory consolidation after task status is updated.
-            # Runs async so user sees completion immediately.
-            async def _post_task_consolidate():
-                try:
-                    await loop.end_task_session(session_key)
-                    logger.info("[executor] Post-task memory consolidation done for '%s'", title)
-                except Exception:
-                    logger.warning(
-                        "[executor] Post-task memory consolidation failed for '%s'",
-                        title, exc_info=True,
-                    )
-
-            _task = asyncio.create_task(_post_task_consolidate())
-            _background_tasks.add(_task)
-            _task.add_done_callback(_background_tasks.discard)
-
             # Write completion to global HEARTBEAT.md for the main agent (Owl) to pick up
             try:
                 from filelock import FileLock
@@ -1134,16 +1178,6 @@ class TaskExecutor:
                 except Exception:
                     logger.exception("[executor] on_task_completed failed for task '%s'", title)
 
-        except _PROVIDER_ERRORS as exc:
-            # Provider/OAuth errors get surfaced with clear actionable message
-            await self._handle_provider_error(task_id, title, agent_name, exc)
-            # Pop pending delivery entry to prevent dict leak (empty → skips actual send)
-            if self._on_task_completed:
-                try:
-                    await self._on_task_completed(task_id, "")
-                except Exception:
-                    pass
-
         except Exception as exc:
             logger.error(
                 "[executor] Agent '%s' crashed on task '%s': %s",
@@ -1159,725 +1193,3 @@ class TaskExecutor:
         finally:
             # Allow re-pickup if task returns to assigned (e.g. after retry)
             self._known_assigned_ids.discard(task_id)
-
-    # ── Claude Code backend methods ────────────────────────────────────────
-
-    async def _enrich_cc_description(
-        self, task_id: str, description: str | None, task_data: dict | None,
-    ) -> str:
-        """Enrich CC task description with file manifest, thread context, and tag attributes.
-
-        Mirrors the enrichment done for nanobot tasks (lines 840-931) but adapted
-        for the CC task path. Each enrichment is wrapped in try/except so partial
-        failures don't block execution.
-        """
-        description = description or ""
-
-        # File manifest (mirrors lines 840-879)
-        try:
-            safe_id = task_safe_id(task_id)
-            files_dir = str(Path.home() / ".nanobot" / "tasks" / safe_id)
-            try:
-                fresh_task = await asyncio.to_thread(
-                    self._bridge.query, "tasks:getById", {"task_id": task_id}
-                )
-                raw_files = (fresh_task or {}).get("files") or []
-            except Exception:
-                logger.warning(
-                    "[executor] CC enrich: failed to fetch fresh task for '%s', using snapshot",
-                    task_id,
-                )
-                raw_files = (task_data or {}).get("files") or []
-
-            file_manifest = [
-                {
-                    "name": f.get("name", "unknown"),
-                    "type": f.get("type", "application/octet-stream"),
-                    "size": f.get("size", 0),
-                    "subfolder": f.get("subfolder", "attachments"),
-                }
-                for f in raw_files
-            ]
-
-            output_dir = str(Path.home() / ".nanobot" / "tasks" / safe_id / "output")
-            task_instruction = (
-                f"Task workspace: {files_dir}\n"
-                f"Save ALL output files (reports, summaries, generated content) to: {output_dir}\n"
-                f"Do NOT save output files outside this directory."
-            )
-            if file_manifest:
-                manifest_summary = ", ".join(
-                    f"{f['name']} ({f['subfolder']}, {_human_size(f['size'])})"
-                    for f in file_manifest
-                )
-                task_instruction += (
-                    f"\nTask has {len(file_manifest)} attached file(s) at {files_dir}/attachments. "
-                    f"File manifest: {manifest_summary}"
-                )
-            description += f"\n\n{task_instruction}"
-        except Exception:
-            logger.warning("[executor] CC enrich: file manifest failed for '%s'", task_id, exc_info=True)
-
-        # Thread context (mirrors lines 882-899)
-        try:
-            thread_messages = await asyncio.to_thread(
-                self._bridge.get_task_messages, task_id
-            )
-            thread_context = _build_thread_context(thread_messages)
-            if thread_context:
-                description += f"\n{thread_context}"
-                injected_count = min(len(thread_messages), 20)
-                logger.info(
-                    "[executor] CC enrich: injected thread context (%d of %d messages) for task '%s'",
-                    injected_count, len(thread_messages), task_id,
-                )
-        except Exception:
-            logger.warning(
-                "[executor] CC enrich: thread context failed for '%s'", task_id, exc_info=True,
-            )
-
-        # Tag attributes (mirrors lines 901-931)
-        try:
-            task_tags = (task_data or {}).get("tags") or []
-            if task_tags:
-                tag_attr_values = await asyncio.to_thread(
-                    self._bridge.query,
-                    "tagAttributeValues:getByTask",
-                    {"task_id": task_id},
-                )
-                tag_attr_catalog = await asyncio.to_thread(
-                    self._bridge.query,
-                    "tagAttributes:list",
-                    {},
-                )
-                tag_attrs_context = _build_tag_attributes_context(
-                    task_tags,
-                    tag_attr_values if isinstance(tag_attr_values, list) else [],
-                    tag_attr_catalog if isinstance(tag_attr_catalog, list) else [],
-                )
-                if tag_attrs_context:
-                    description += f"\n\n{tag_attrs_context}"
-                    logger.info(
-                        "[executor] CC enrich: injected tag attributes for task '%s'", task_id,
-                    )
-        except Exception:
-            logger.warning(
-                "[executor] CC enrich: tag attributes failed for '%s'", task_id, exc_info=True,
-            )
-
-        return description
-
-    async def _execute_cc_task(
-        self,
-        task_id: str,
-        title: str,
-        description: str | None,
-        agent_name: str,
-        agent_data: "AgentData",
-        trust_level: str = "autonomous",
-        task_data: dict | None = None,
-        reasoning_level: str | None = None,
-        needs_enrichment: bool = True,
-    ) -> None:
-        """Execute a task using the Claude Code CLI backend.
-
-        Orchestrates workspace preparation, IPC server startup, CC provider
-        execution, and result posting.  Any phase failure crashes the task.
-        Session resume (CC-6 AC2): looks up a stored session_id before executing.
-        """
-        from claude_code.workspace import CCWorkspaceManager
-        from claude_code.provider import ClaudeCodeProvider
-        from claude_code.ipc_server import MCSocketServer
-
-        # 0a. Enrich description if caller hasn't already done it
-        if needs_enrichment:
-            description = await self._enrich_cc_description(task_id, description, task_data)
-
-        # 0b. Sync Convex prompt, variables, and model into agent_data
-        # Both call sites need this — agent_data.prompt is never set from Convex at either site
-        convex_agent: dict | None = None
-        try:
-            convex_agent = await asyncio.to_thread(self._bridge.get_agent_by_name, agent_name)
-            if convex_agent:
-                if cp := convex_agent.get("prompt"):
-                    agent_data.prompt = cp
-                if cm := convex_agent.get("model"):
-                    if is_cc_model(cm):
-                        agent_data.model = extract_cc_model_name(cm)
-                        logger.info(
-                            "[executor] CC: Convex model synced for '%s': %s → %s",
-                            agent_name, cm, agent_data.model,
-                        )
-                    else:
-                        logger.info(
-                            "[executor] CC: Convex model '%s' is not cc/ prefixed, keeping agent_data model",
-                            cm,
-                        )
-                # Interpolate variables into prompt
-                for var in (convex_agent.get("variables") or []):
-                    if agent_data.prompt:
-                        agent_data.prompt = agent_data.prompt.replace(
-                            "{{" + var["name"] + "}}", var["value"])
-                # Sync skills from Convex
-                convex_skills = convex_agent.get("skills")
-                if convex_skills is not None:
-                    agent_data.skills = convex_skills
-        except Exception:
-            logger.warning("[executor] CC: Convex agent sync failed for '%s'", agent_name)
-
-        # Sync claudeCodeOpts from Convex if YAML/local opts are not set.
-        if agent_data.claude_code_opts is None and convex_agent:
-            cc_raw = convex_agent.get("claude_code_opts")  # bridge converts camelCase → snake_case
-            if cc_raw and isinstance(cc_raw, dict):
-                from claude_code.types import ClaudeCodeOpts
-
-                agent_data.claude_code_opts = ClaudeCodeOpts(
-                    permission_mode=cc_raw.get("permission_mode", "acceptEdits"),
-                    max_budget_usd=cc_raw.get("max_budget_usd"),
-                    max_turns=cc_raw.get("max_turns"),
-                )
-                logger.info(
-                    "[executor] CC: claudeCodeOpts loaded from Convex for %s: permission_mode=%s",
-                    agent_name,
-                    agent_data.claude_code_opts.permission_mode,
-                )
-
-        # 0c. Map reasoning level to effort level
-        if reasoning_level:
-            effort_map = {"low": "low", "medium": "medium", "high": "high", "max": "high"}
-            effort = effort_map.get(reasoning_level, "high")
-            if agent_data.claude_code_opts is None:
-                from claude_code.types import ClaudeCodeOpts
-                agent_data.claude_code_opts = ClaudeCodeOpts()
-            agent_data.claude_code_opts.effort_level = effort
-            logger.info(
-                "[executor] CC: effort level set to '%s' (from reasoning '%s') for '%s'",
-                effort,
-                reasoning_level,
-                agent_name,
-            )
-
-        # 0d. Resolve board-scoped workspace for CC (mirrors nanobot board resolution)
-        _cc_board_name: str | None = None
-        _cc_memory_mode: str = "clean"
-        _board_id = (task_data or {}).get("board_id")
-        if _board_id:
-            try:
-                _board = await asyncio.to_thread(
-                    self._bridge.get_board_by_id, _board_id
-                )
-                if _board:
-                    _cc_board_name = _board.get("name")
-                    if _cc_board_name:
-                        from mc.board_utils import get_agent_memory_mode
-
-                        _cc_memory_mode = get_agent_memory_mode(_board, agent_name)
-                        logger.info(
-                            "[executor] CC: board-scoped workspace for agent '%s' on board '%s' (mode=%s)",
-                            agent_name, _cc_board_name, _cc_memory_mode,
-                        )
-            except Exception:
-                logger.warning(
-                    "[executor] CC: failed to resolve board workspace for task '%s', using global workspace",
-                    title,
-                    exc_info=True,
-                )
-
-        # 0e. Snapshot output dir for artifact detection
-        pre_snapshot = await asyncio.to_thread(_snapshot_output_dir, task_id)
-
-        # 1. Prepare workspace
-        try:
-            ws_mgr = CCWorkspaceManager()
-            from mc.agent_orientation import load_orientation
-            orientation = load_orientation(agent_name)
-            ws_ctx = ws_mgr.prepare(
-                agent_name,
-                agent_data,
-                task_id,
-                orientation=orientation,
-                task_prompt=title,
-                board_name=_cc_board_name,
-                memory_mode=_cc_memory_mode,
-            )
-        except Exception as exc:
-            await self._crash_task(task_id, title, f"Workspace preparation failed: {exc}", agent_name)
-            return
-
-        # 2. Start IPC server (MCSocketServer.start() already removes stale socket)
-        # bus=None: MCP bridge tools use IPC, not the in-process MessageBus
-        from mc.ask_user.handler import AskUserHandler
-
-        ask_handler = AskUserHandler()
-        ipc_server = MCSocketServer(self._bridge, None, cron_service=self._cron_service)
-        ipc_server.set_ask_user_handler(ask_handler)
-        if self._ask_user_registry is not None:
-            self._ask_user_registry.register(task_id, ask_handler)
-        try:
-            await ipc_server.start(ws_ctx.socket_path)
-        except Exception as exc:
-            await self._crash_task(task_id, title, f"MCP IPC server failed: {exc}", agent_name)
-            return
-
-        # 3. Look up existing session for resume (CC-6 AC2)
-        session_id: str | None = None
-        try:
-            stored = await asyncio.to_thread(
-                self._bridge.query,
-                "settings:get",
-                {"key": f"cc_session:{agent_name}:{task_id}"},
-            )
-            if stored and isinstance(stored, str):
-                session_id = stored
-                logger.info(
-                    "[executor] Resuming CC session %s for %s", session_id, agent_name
-                )
-        except Exception:
-            logger.debug(
-                "[executor] No stored CC session for %s:%s", agent_name, task_id
-            )  # No session stored — start fresh
-
-        # 4. Execute via CC provider
-        try:
-            from nanobot.config.loader import load_config
-            _cfg = load_config()
-            provider = ClaudeCodeProvider(
-                cli_path=_cfg.claude_code.cli_path,
-                defaults=_cfg.claude_code,
-            )
-            prompt = f"{title}\n\n{description}" if description else title
-
-            def on_stream(msg: dict) -> None:
-                if msg.get("type") == "text":
-                    task = asyncio.create_task(
-                        self._post_cc_activity(task_id, agent_name, msg["text"])
-                    )
-                    _background_tasks.add(task)
-                    task.add_done_callback(_background_tasks.discard)
-
-            result = await provider.execute_task(
-                prompt=prompt,
-                agent_config=agent_data,
-                task_id=task_id,
-                workspace_ctx=ws_ctx,
-                session_id=session_id,
-                on_stream=on_stream,
-            )
-        except _PROVIDER_ERRORS as exc:
-            await self._handle_provider_error(task_id, title, agent_name, exc)
-            return
-        except Exception as exc:
-            await self._crash_task(task_id, title, f"Claude Code execution failed: {exc}", agent_name)
-            return
-        finally:
-            if self._ask_user_registry is not None:
-                self._ask_user_registry.unregister(task_id)
-            await ipc_server.stop()
-
-        # 5. Process result
-        await asyncio.to_thread(
-            _relocate_invalid_memory_files,
-            task_id,
-            ws_ctx.cwd,
-        )
-
-        if result.is_error:
-            try:
-                await asyncio.to_thread(
-                    self._bridge.sync_task_output_files, task_id, task_data or {}, agent_name
-                )
-            except Exception:
-                logger.warning("[executor] CC: output sync failed for errored task '%s'", title, exc_info=True)
-            await self._crash_task(task_id, title, f"Claude Code error: {result.output[:1000]}", agent_name)
-        else:
-            await self._complete_cc_task(
-                task_id,
-                title,
-                agent_name,
-                result,
-                trust_level=trust_level,
-            )
-            # Collect and sync output artifacts (best-effort)
-            try:
-                artifacts = await asyncio.to_thread(
-                    _collect_output_artifacts, task_id, pre_snapshot
-                )
-                if artifacts:
-                    logger.info(
-                        "[executor] CC: %d artifact(s) detected for task '%s'",
-                        len(artifacts),
-                        title,
-                    )
-                await asyncio.to_thread(
-                    self._bridge.sync_task_output_files, task_id, task_data or {}, agent_name
-                )
-            except Exception:
-                logger.warning("[executor] CC: artifact sync failed for '%s'", title, exc_info=True)
-            if self._on_task_completed:
-                try:
-                    await self._on_task_completed(task_id, result.output or "")
-                except Exception:
-                    logger.exception("[executor] on_task_completed failed for CC task '%s'", title)
-
-        # Fire-and-forget post-CC memory consolidation (best-effort, non-blocking).
-        # Mirrors nanobot's end_task_session() — runs for both success and error tasks.
-        _cc_task_status = "error" if result.is_error else "completed"
-        _cc_ws_cwd = ws_ctx.cwd  # capture before ws_ctx goes out of scope
-
-        async def _post_cc_consolidate():
-            try:
-                from claude_code.memory_consolidator import CCMemoryConsolidator
-                from mc.types import is_tier_reference
-                from mc.tier_resolver import TierResolver
-                _model = "tier:standard-low"
-                if is_tier_reference(_model):
-                    _model = TierResolver(self._bridge).resolve_model(_model) or _model
-                consolidator = CCMemoryConsolidator(_cc_ws_cwd)
-                await consolidator.consolidate(
-                    task_title=title,
-                    task_output=result.output or "",
-                    task_status=_cc_task_status,
-                    task_id=task_id,
-                    model=_model,
-                )
-                logger.info("[executor] CC memory consolidation done for '%s'", title)
-            except Exception:
-                logger.warning(
-                    "[executor] CC memory consolidation failed for '%s'", title, exc_info=True
-                )
-
-        _t = asyncio.create_task(_post_cc_consolidate())
-        _background_tasks.add(_t)
-        _t.add_done_callback(_background_tasks.discard)
-
-    async def _post_cc_activity(
-        self,
-        task_id: str,
-        agent_name: str,
-        text: str,
-    ) -> None:
-        """Post a streaming text chunk as a step_started activity (best-effort)."""
-        try:
-            await asyncio.to_thread(
-                self._bridge.create_activity,
-                ActivityEventType.STEP_STARTED,
-                text[:500],
-                task_id,
-                agent_name,
-            )
-        except Exception:
-            pass  # Non-critical — streaming activity failures must not crash the task
-
-    async def _complete_cc_task(
-        self,
-        task_id: str,
-        title: str,
-        agent_name: str,
-        result: "CCTaskResult",
-        trust_level: str = "autonomous",
-    ) -> None:
-        """Post completion message, cost activity, store session, and transition task status."""
-        from mc.types import CCTaskResult  # noqa: F401 — type annotation only
-
-        # Post agent work message to thread (M5: include truncation notice)
-        _output = result.output
-        if len(_output) > 2000:
-            _output = _output[:2000] + f"\n\n... [truncated, full output: {len(result.output)} chars]"
-        await asyncio.to_thread(
-            self._bridge.send_message,
-            task_id,
-            agent_name,
-            AuthorType.AGENT,
-            _output,
-            MessageType.WORK,
-        )
-
-        # Post cost summary as activity
-        await asyncio.to_thread(
-            self._bridge.create_activity,
-            ActivityEventType.TASK_COMPLETED,
-            f"Task completed. Cost: ${result.cost_usd:.4f}",
-            task_id,
-            agent_name,
-        )
-
-        # Store session_id for future resume (CC-6 AC1)
-        if result.session_id:
-            try:
-                await asyncio.to_thread(
-                    self._bridge.mutation,
-                    "settings:set",
-                    {
-                        "key": f"cc_session:{agent_name}:{task_id}",
-                        "value": result.session_id,
-                    },
-                )
-                await asyncio.to_thread(
-                    self._bridge.mutation,
-                    "settings:set",
-                    {
-                        "key": f"cc_session:{agent_name}:latest",
-                        "value": result.session_id,
-                    },
-                )
-                logger.info(
-                    "[executor] Stored CC session %s for agent %s task %s",
-                    result.session_id, agent_name, task_id,
-                )
-            except Exception:
-                logger.warning(
-                    "[executor] Failed to store CC session ID for %s",
-                    agent_name,
-                    exc_info=True,
-                )
-
-        final_status = (
-            TaskStatus.DONE if trust_level == TrustLevel.AUTONOMOUS else TaskStatus.REVIEW
-        )
-        await asyncio.to_thread(
-            self._bridge.update_task_status,
-            task_id,
-            final_status,
-            agent_name,
-            f"Agent {agent_name} completed task '{title}'",
-        )
-
-        # NOTE: Session is intentionally NOT deleted here (CC-6 AC1).
-        # The session_id must persist after task completion so that follow-up
-        # messages can resume the CC session. Cleanup happens only when the
-        # agent is deleted (see _cleanup_deleted_agents in gateway.py).
-
-        # Write completion to global HEARTBEAT.md (mirrors nanobot path)
-        try:
-            from filelock import FileLock
-            result_snippet = (result.output or "Task completed.").strip()
-            if len(result_snippet) > 1000:
-                result_snippet = result_snippet[:1000] + "\n...(truncated)..."
-
-            heartbeat_content = (
-                f"\n## Mission Control Update\n\n"
-                f"The task **'{title}'** (ID: `{task_id}`) assigned to **{agent_name}** "
-                f"has finished with status: `{final_status}`.\n\n"
-                f"### Agent's Result:\n```\n{result_snippet}\n```\n\n"
-                f"Please summarize this naturally and notify the user that the task is complete.\n"
-            )
-
-            heartbeat_file = Path.home() / ".nanobot" / "workspace" / "HEARTBEAT.md"
-
-            def _write_heartbeat() -> None:
-                lock = FileLock(str(heartbeat_file) + ".lock", timeout=10)
-                with lock:
-                    with open(heartbeat_file, "a", encoding="utf-8") as f:
-                        f.write(heartbeat_content)
-
-            await asyncio.to_thread(_write_heartbeat)
-            logger.info("[executor] CC: Written task '%s' completion to HEARTBEAT.md", title)
-        except Exception as hb_exc:
-            logger.warning("[executor] CC: Failed to write HEARTBEAT.md for task '%s': %s", title, hb_exc)
-
-        # Clear retry count on success
-        self._agent_gateway.clear_retry_count(task_id)
-
-        logger.info(
-            "[executor] CC task '%s' done (cost=$%.4f)", title, result.cost_usd
-        )
-
-    async def _crash_task(
-        self,
-        task_id: str,
-        title: str,
-        error: str,
-        agent_name: str = "System",
-    ) -> None:
-        """Post a crash message and transition the task to CRASHED."""
-        logger.error("[executor] CC task crashed: %s — %s", title, error)
-
-        try:
-            await asyncio.to_thread(
-                self._bridge.send_message,
-                task_id,
-                agent_name,
-                AuthorType.SYSTEM,
-                f"Task crashed: {error}",
-                MessageType.SYSTEM_EVENT,
-            )
-        except Exception:
-            logger.exception("[executor] Failed to post crash message for task '%s'", title)
-
-        try:
-            await asyncio.to_thread(
-                self._bridge.update_task_status,
-                task_id,
-                TaskStatus.CRASHED,
-                agent_name,
-                f"Task crashed: {error}",
-            )
-        except Exception:
-            logger.exception("[executor] Failed to crash task '%s'", title)
-
-    async def handle_cc_thread_reply(
-        self,
-        task_id: str,
-        agent_name: str,
-        user_message: str,
-        agent_data: "AgentData",
-    ) -> str | None:
-        """Handle a user follow-up message in a CC agent's task thread (CC-6 AC3).
-
-        Resumes the latest CC session for this agent+task with the user's
-        message as a new prompt.  Returns the CC response text, or None on
-        failure.
-
-        This is a helper intended to be called from the thread reply handler
-        when a user sends a message to a task assigned to a claude-code agent.
-        Integration with the message routing layer is handled separately.
-        """
-        from claude_code.workspace import CCWorkspaceManager
-        from claude_code.provider import ClaudeCodeProvider
-        from claude_code.ipc_server import MCSocketServer
-
-        # Look up stored session for resume
-        session_id: str | None = None
-        try:
-            stored = await asyncio.to_thread(
-                self._bridge.query,
-                "settings:get",
-                {"key": f"cc_session:{agent_name}:{task_id}"},
-            )
-            if stored and isinstance(stored, str):
-                session_id = stored
-                logger.info(
-                    "[executor] CC thread reply: resuming session %s for %s task %s",
-                    session_id, agent_name, task_id,
-                )
-        except Exception:
-            logger.warning(
-                "[executor] CC thread reply: could not look up session for %s task %s",
-                agent_name, task_id,
-            )
-
-        # Resolve board-scoped workspace for thread reply (same logic as _execute_cc_task).
-        # Best-effort: falls back to global workspace on any bridge failure.
-        _tr_board_name: str | None = None
-        _tr_memory_mode: str = "clean"
-        try:
-            _tr_task_data = await asyncio.to_thread(
-                self._bridge.query, "tasks:getById", {"task_id": task_id}
-            )
-            _tr_board_id = (_tr_task_data or {}).get("board_id")
-            if _tr_board_id:
-                _tr_board = await asyncio.to_thread(
-                    self._bridge.get_board_by_id, _tr_board_id
-                )
-                if _tr_board:
-                    _tr_board_name = _tr_board.get("name")
-                    if _tr_board_name:
-                        from mc.board_utils import get_agent_memory_mode
-                        _tr_memory_mode = get_agent_memory_mode(_tr_board, agent_name)
-                        logger.info(
-                            "[executor] CC thread reply: board-scoped workspace for agent '%s' on board '%s' (mode=%s)",
-                            agent_name, _tr_board_name, _tr_memory_mode,
-                        )
-        except Exception:
-            logger.warning(
-                "[executor] CC thread reply: failed to resolve board workspace for task '%s', using global workspace",
-                task_id,
-                exc_info=True,
-            )
-
-        # Prepare workspace and IPC server
-        try:
-            ws_mgr = CCWorkspaceManager()
-            from mc.agent_orientation import load_orientation
-            orientation = load_orientation(agent_name)
-            ws_ctx = ws_mgr.prepare(
-                agent_name, agent_data, task_id,
-                orientation=orientation,
-                task_prompt=user_message,
-                board_name=_tr_board_name,
-                memory_mode=_tr_memory_mode,
-            )
-        except Exception as exc:
-            logger.error("[executor] CC thread reply: workspace prep failed: %s", exc)
-            return None
-
-        from mc.ask_user.handler import AskUserHandler
-
-        ask_handler = AskUserHandler()
-        ipc_server = MCSocketServer(self._bridge, None, cron_service=self._cron_service)
-        ipc_server.set_ask_user_handler(ask_handler)
-        if self._ask_user_registry is not None:
-            self._ask_user_registry.register(task_id, ask_handler)
-        try:
-            await ipc_server.start(ws_ctx.socket_path)
-        except Exception as exc:
-            logger.error("[executor] CC thread reply: IPC server failed: %s", exc)
-            return None
-
-        try:
-            from nanobot.config.loader import load_config
-            _cfg = load_config()
-            provider = ClaudeCodeProvider(
-                cli_path=_cfg.claude_code.cli_path,
-                defaults=_cfg.claude_code,
-            )
-            result = await provider.execute_task(
-                prompt=user_message,
-                agent_config=agent_data,
-                task_id=task_id,
-                workspace_ctx=ws_ctx,
-                session_id=session_id,
-            )
-        except Exception as exc:
-            logger.error("[executor] CC thread reply: execution failed: %s", exc)
-            return None
-        finally:
-            if self._ask_user_registry is not None:
-                self._ask_user_registry.unregister(task_id)
-            await ipc_server.stop()
-
-        # Update stored session with the new session_id from this turn (CC-6 AC3)
-        if result.session_id:
-            try:
-                await asyncio.to_thread(
-                    self._bridge.mutation,
-                    "settings:set",
-                    {
-                        "key": f"cc_session:{agent_name}:{task_id}",
-                        "value": result.session_id,
-                    },
-                )
-                # Also update the :latest key (L1 — keep latest in sync)
-                await asyncio.to_thread(
-                    self._bridge.mutation,
-                    "settings:set",
-                    {
-                        "key": f"cc_session:{agent_name}:latest",
-                        "value": result.session_id,
-                    },
-                )
-            except Exception:
-                logger.warning(
-                    "[executor] CC thread reply: failed to update session for %s", agent_name
-                )
-
-        # Post response back to the task thread (M3, M5: include truncation notice)
-        if result and not result.is_error:
-            _reply_output = result.output
-            if len(_reply_output) > 2000:
-                _reply_output = _reply_output[:2000] + f"\n\n... [truncated, full output: {len(result.output)} chars]"
-            try:
-                await asyncio.to_thread(
-                    self._bridge.send_message,
-                    task_id,
-                    agent_name,
-                    AuthorType.AGENT,
-                    _reply_output,
-                    MessageType.WORK,
-                )
-            except Exception:
-                logger.warning(
-                    "[executor] CC thread reply: failed to post response for %s", agent_name
-                )
-
-        return result.output if not result.is_error else None

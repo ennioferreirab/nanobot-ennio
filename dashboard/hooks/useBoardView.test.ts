@@ -6,32 +6,14 @@ import { BoardFilters } from "./useBoardFilters";
 let mockQueryValues: Record<string, unknown> = {};
 const mockUseQuery = vi.fn();
 const mockClearAllDone = vi.fn();
-const mockConvexQuery = vi.fn();
-const mockConvexClient = { query: mockConvexQuery };
 
 vi.mock("../convex/_generated/api", () => ({
   api: {
+    boards: {
+      getBoardView: { name: "boards.getBoardView" },
+    },
     tasks: {
-      list: { name: "tasks.list" },
-      search: { name: "tasks.search" },
-      listByBoard: { name: "tasks.listByBoard" },
-      countHitlPending: { name: "tasks.countHitlPending" },
-      listDeleted: { name: "tasks.listDeleted" },
       clearAllDone: { name: "tasks.clearAllDone" },
-    },
-    steps: {
-      listAll: { name: "steps.listAll" },
-      listByBoard: { name: "steps.listByBoard" },
-    },
-    taskTags: {
-      list: { name: "taskTags.list" },
-    },
-    tagAttributes: {
-      list: { name: "tagAttributes.list" },
-    },
-    tagAttributeValues: {
-      getByTask: { name: "tagAttributeValues.getByTask" },
-      searchByValue: { name: "tagAttributeValues.searchByValue" },
     },
   },
 }));
@@ -42,7 +24,6 @@ vi.mock("convex/react", () => ({
     args?: unknown
   ) => mockUseQuery(queryRef, args),
   useMutation: () => mockClearAllDone,
-  useConvex: () => mockConvexClient,
 }));
 
 vi.mock("@/components/BoardContext", () => ({
@@ -51,15 +32,25 @@ vi.mock("@/components/BoardContext", () => ({
 
 function setDefaultQueryValues() {
   mockQueryValues = {
-    "tasks.list": [],
-    "tasks.search": undefined,
-    "tasks.listByBoard": undefined,
-    "tasks.countHitlPending": 0,
-    "tasks.listDeleted": [],
-    "taskTags.list": [],
-    "tagAttributes.list": [],
-    "steps.listAll": [],
-    "steps.listByBoard": undefined,
+    "boards.getBoardView": {
+      board: null,
+      columns: [],
+      groupedItems: {
+        inbox: [],
+        assigned: [],
+        in_progress: [],
+        review: [],
+        done: [],
+      },
+      favorites: [],
+      deletedTasks: [],
+      deletedCount: 0,
+      hitlCount: 0,
+      searchMeta: { freeText: "", tagFilters: [], attributeFilters: [] },
+      tagColorMap: {},
+      allSteps: [],
+      tasks: [],
+    },
   };
 }
 
@@ -98,8 +89,6 @@ describe("useBoardView", () => {
       }
     );
     mockClearAllDone.mockReset();
-    mockConvexQuery.mockReset();
-    mockConvexQuery.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -107,22 +96,28 @@ describe("useBoardView", () => {
   });
 
   it("returns isLoading=true while tasks query is pending", () => {
-    mockQueryValues["tasks.list"] = undefined;
+    mockQueryValues["boards.getBoardView"] = undefined;
     const { result } = renderHook(() => useBoardView(inactiveFilters()));
     expect(result.current.isLoading).toBe(true);
     expect(result.current.tasks).toBeUndefined();
   });
 
   it("returns isLoading=true while steps query is pending", () => {
-    mockQueryValues["tasks.list"] = [makeTask()];
-    mockQueryValues["steps.listAll"] = undefined;
+    mockQueryValues["boards.getBoardView"] = {
+      ...(mockQueryValues["boards.getBoardView"] as any),
+      tasks: [makeTask()],
+      allSteps: undefined,
+    };
     const { result } = renderHook(() => useBoardView(inactiveFilters()));
     expect(result.current.isLoading).toBe(true);
   });
 
   it("returns tasks and isLoading=false when data is available", () => {
     const task = makeTask({ _id: "t1" });
-    mockQueryValues["tasks.list"] = [task];
+    mockQueryValues["boards.getBoardView"] = {
+      ...(mockQueryValues["boards.getBoardView"] as any),
+      tasks: [task],
+    };
     const { result } = renderHook(() => useBoardView(inactiveFilters()));
     expect(result.current.isLoading).toBe(false);
     expect(result.current.tasks).toHaveLength(1);
@@ -130,43 +125,57 @@ describe("useBoardView", () => {
   });
 
   it("extracts favorites from tasks", () => {
-    mockQueryValues["tasks.list"] = [
-      makeTask({ _id: "t1", isFavorite: true }),
-      makeTask({ _id: "t2", isFavorite: false }),
-      makeTask({ _id: "t3" }),
-    ];
+    mockQueryValues["boards.getBoardView"] = {
+      ...(mockQueryValues["boards.getBoardView"] as any),
+      tasks: [
+        makeTask({ _id: "t1", isFavorite: true }),
+        makeTask({ _id: "t2", isFavorite: false }),
+        makeTask({ _id: "t3" }),
+      ],
+      favorites: [makeTask({ _id: "t1", isFavorite: true })],
+    };
     const { result } = renderHook(() => useBoardView(inactiveFilters()));
     expect(result.current.favorites).toHaveLength(1);
     expect(result.current.favorites[0]._id).toBe("t1");
   });
 
   it("returns hitlCount from the countHitlPending query", () => {
-    mockQueryValues["tasks.list"] = [makeTask()];
-    mockQueryValues["tasks.countHitlPending"] = 5;
+    mockQueryValues["boards.getBoardView"] = {
+      ...(mockQueryValues["boards.getBoardView"] as any),
+      tasks: [makeTask()],
+      hitlCount: 5,
+    };
     const { result } = renderHook(() => useBoardView(inactiveFilters()));
     expect(result.current.hitlCount).toBe(5);
   });
 
   it("returns deletedTasks and count", () => {
-    mockQueryValues["tasks.list"] = [makeTask()];
-    mockQueryValues["tasks.listDeleted"] = [makeTask(), makeTask()];
+    mockQueryValues["boards.getBoardView"] = {
+      ...(mockQueryValues["boards.getBoardView"] as any),
+      tasks: [makeTask()],
+      deletedTasks: [makeTask(), makeTask()],
+      deletedCount: 2,
+    };
     const { result } = renderHook(() => useBoardView(inactiveFilters()));
     expect(result.current.deletedCount).toBe(2);
     expect(result.current.deletedTasks).toHaveLength(2);
   });
 
   it("builds tagColorMap from taskTags.list", () => {
-    mockQueryValues["tasks.list"] = [makeTask()];
-    mockQueryValues["taskTags.list"] = [
-      { name: "bug", color: "red" },
-      { name: "feature", color: "blue" },
-    ];
+    mockQueryValues["boards.getBoardView"] = {
+      ...(mockQueryValues["boards.getBoardView"] as any),
+      tasks: [makeTask()],
+      tagColorMap: { bug: "red", feature: "blue" },
+    };
     const { result } = renderHook(() => useBoardView(inactiveFilters()));
     expect(result.current.tagColorMap).toEqual({ bug: "red", feature: "blue" });
   });
 
   it("uses tasks.search when hasFreeText is true", () => {
-    mockQueryValues["tasks.search"] = [makeTask({ _id: "s1" })];
+    mockQueryValues["boards.getBoardView"] = {
+      ...(mockQueryValues["boards.getBoardView"] as any),
+      tasks: [makeTask({ _id: "s1" })],
+    };
     const filters: BoardFilters = {
       search: { freeText: "test", tagFilters: [], attributeFilters: [] },
       isSearchActive: true,
@@ -181,11 +190,13 @@ describe("useBoardView", () => {
   });
 
   it("applies tag filters to tasks", () => {
-    mockQueryValues["tasks.list"] = [
-      makeTask({ _id: "t1", tags: ["bug", "urgent"] }),
-      makeTask({ _id: "t2", tags: ["feature"] }),
-      makeTask({ _id: "t3", tags: ["bug"] }),
-    ];
+    mockQueryValues["boards.getBoardView"] = {
+      ...(mockQueryValues["boards.getBoardView"] as any),
+      tasks: [
+        makeTask({ _id: "t1", tags: ["bug", "urgent"] }),
+        makeTask({ _id: "t3", tags: ["bug"] }),
+      ],
+    };
     const filters: BoardFilters = {
       search: { freeText: "", tagFilters: ["bug"], attributeFilters: [] },
       isSearchActive: true,
@@ -202,10 +213,11 @@ describe("useBoardView", () => {
   });
 
   it("returns allSteps from the steps query", () => {
-    mockQueryValues["tasks.list"] = [makeTask()];
-    mockQueryValues["steps.listAll"] = [
-      { _id: "s1", taskId: "t1", status: "assigned" },
-    ];
+    mockQueryValues["boards.getBoardView"] = {
+      ...(mockQueryValues["boards.getBoardView"] as any),
+      tasks: [makeTask()],
+      allSteps: [{ _id: "s1", taskId: "t1", status: "assigned" }],
+    };
     const { result } = renderHook(() => useBoardView(inactiveFilters()));
     expect(result.current.allSteps).toHaveLength(1);
   });

@@ -323,44 +323,6 @@ export const acceptHumanStep = mutation({
       timestamp,
     });
 
-    // Unblock dependent steps that were waiting on this human step.
-    const allTaskSteps = await ctx.db
-      .query("steps")
-      .withIndex("by_taskId", (q) => q.eq("taskId", step.taskId))
-      .collect();
-
-    const unblockedIds = findBlockedStepsReadyToUnblock(allTaskSteps);
-    const stepsById = new Map(
-      allTaskSteps.map((s) => [s._id, s] as const)
-    );
-
-    for (const unblockedStepId of unblockedIds) {
-      const blockedStep = stepsById.get(unblockedStepId);
-      if (!blockedStep) continue;
-
-      await ctx.db.patch(unblockedStepId, {
-        status: "assigned",
-        errorMessage: undefined,
-      });
-
-      await logStepStatusChange(ctx, {
-        taskId: blockedStep.taskId,
-        stepTitle: blockedStep.title,
-        previousStatus: blockedStep.status,
-        nextStatus: "assigned",
-        assignedAgent: blockedStep.assignedAgent,
-        timestamp,
-      });
-
-      await logActivity(ctx, {
-        taskId: blockedStep.taskId,
-        agentName: blockedStep.assignedAgent,
-        eventType: "step_unblocked",
-        description: `Step unblocked and assigned: "${blockedStep.title}"`,
-        timestamp,
-      });
-    }
-
     return step.taskId;
   },
 });

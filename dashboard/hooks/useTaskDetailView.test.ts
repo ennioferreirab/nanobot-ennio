@@ -11,12 +11,7 @@ vi.mock("convex/react", () => ({
 
 vi.mock("../convex/_generated/api", () => ({
   api: {
-    tasks: { getById: "tasks:getById" },
-    messages: { listByTask: "messages:listByTask" },
-    steps: { getByTask: "steps:getByTask" },
-    taskTags: { list: "taskTags:list" },
-    tagAttributes: { list: "tagAttributes:list" },
-    tagAttributeValues: { getByTask: "tagAttributeValues:getByTask" },
+    tasks: { getDetailView: "tasks:getDetailView" },
   },
 }));
 
@@ -47,21 +42,30 @@ describe("useTaskDetailView", () => {
   });
 
   it("returns isTaskLoaded=true when task is loaded", () => {
-    mockUseQuery.mockImplementation((_query: unknown, args: unknown) => {
-      if (args === "skip") return undefined;
-      if (typeof args === "object" && args !== null && "taskId" in (args as any)) {
-        // Return task for getById, empty arrays for listByTask/getByTask/getByTask
-        return undefined;
-      }
-      return [];
+    mockUseQuery.mockReturnValue({
+      task: baseTask,
+      messages: [],
+      steps: [],
+      tagCatalog: [],
+      tagAttributes: [],
+      tagAttributeValues: [],
+      uiFlags: {
+        isAwaitingKickoff: false,
+        isPaused: false,
+        isManual: false,
+        isPlanEditable: false,
+      },
+      allowedActions: {
+        approve: false,
+        kickoff: false,
+        pause: true,
+        resume: false,
+        retry: false,
+        savePlan: false,
+        startInbox: false,
+        sendMessage: true,
+      },
     });
-    mockUseQuery
-      .mockReturnValueOnce(baseTask)     // getById
-      .mockReturnValueOnce([])           // listByTask
-      .mockReturnValueOnce([])           // getByTask (steps)
-      .mockReturnValueOnce([])           // taskTags.list
-      .mockReturnValueOnce([])           // tagAttributes.list
-      .mockReturnValueOnce([]);          // tagAttributeValues.getByTask
 
     const { result } = renderHook(() => useTaskDetailView("task1" as any));
     expect(result.current.isTaskLoaded).toBe(true);
@@ -75,13 +79,30 @@ describe("useTaskDetailView", () => {
       status: "review",
       awaitingKickoff: true,
     };
-    mockUseQuery
-      .mockReturnValueOnce(awaitingTask)
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([]);
+    mockUseQuery.mockReturnValue({
+      task: awaitingTask,
+      messages: [],
+      steps: [],
+      tagCatalog: [],
+      tagAttributes: [],
+      tagAttributeValues: [],
+      uiFlags: {
+        isAwaitingKickoff: true,
+        isPaused: false,
+        isManual: false,
+        isPlanEditable: true,
+      },
+      allowedActions: {
+        approve: true,
+        kickoff: true,
+        pause: false,
+        resume: false,
+        retry: false,
+        savePlan: true,
+        startInbox: false,
+        sendMessage: true,
+      },
+    });
 
     const { result } = renderHook(() => useTaskDetailView("task1" as any));
     expect(result.current.isAwaitingKickoff).toBe(true);
@@ -90,13 +111,30 @@ describe("useTaskDetailView", () => {
 
   it("computes isPaused correctly for review without awaitingKickoff", () => {
     const pausedTask = { ...baseTask, status: "review" };
-    mockUseQuery
-      .mockReturnValueOnce(pausedTask)
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([]);
+    mockUseQuery.mockReturnValue({
+      task: pausedTask,
+      messages: [],
+      steps: [],
+      tagCatalog: [],
+      tagAttributes: [],
+      tagAttributeValues: [],
+      uiFlags: {
+        isAwaitingKickoff: false,
+        isPaused: true,
+        isManual: false,
+        isPlanEditable: true,
+      },
+      allowedActions: {
+        approve: true,
+        kickoff: false,
+        pause: false,
+        resume: true,
+        retry: false,
+        savePlan: true,
+        startInbox: false,
+        sendMessage: true,
+      },
+    });
 
     const { result } = renderHook(() => useTaskDetailView("task1" as any));
     expect(result.current.isPaused).toBe(true);
@@ -108,13 +146,30 @@ describe("useTaskDetailView", () => {
       { _id: "t1", name: "frontend", color: "blue" },
       { _id: "t2", name: "backend", color: "green" },
     ];
-    mockUseQuery
-      .mockReturnValueOnce(baseTask)
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce(tags)
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([]);
+    mockUseQuery.mockReturnValue({
+      task: baseTask,
+      messages: [],
+      steps: [],
+      tagCatalog: tags,
+      tagAttributes: [],
+      tagAttributeValues: [],
+      uiFlags: {
+        isAwaitingKickoff: false,
+        isPaused: false,
+        isManual: false,
+        isPlanEditable: false,
+      },
+      allowedActions: {
+        approve: false,
+        kickoff: false,
+        pause: true,
+        resume: false,
+        retry: false,
+        savePlan: false,
+        startInbox: false,
+        sendMessage: true,
+      },
+    });
 
     const { result } = renderHook(() => useTaskDetailView("task1" as any));
     expect(result.current.tagColorMap).toEqual({
@@ -124,13 +179,30 @@ describe("useTaskDetailView", () => {
   });
 
   it("returns correct status colors for in_progress", () => {
-    mockUseQuery
-      .mockReturnValueOnce(baseTask) // status: in_progress
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([]);
+    mockUseQuery.mockReturnValue({
+      task: baseTask,
+      messages: [],
+      steps: [],
+      tagCatalog: [],
+      tagAttributes: [],
+      tagAttributeValues: [],
+      uiFlags: {
+        isAwaitingKickoff: false,
+        isPaused: false,
+        isManual: false,
+        isPlanEditable: false,
+      },
+      allowedActions: {
+        approve: false,
+        kickoff: false,
+        pause: true,
+        resume: false,
+        retry: false,
+        savePlan: false,
+        startInbox: false,
+        sendMessage: true,
+      },
+    });
 
     const { result } = renderHook(() => useTaskDetailView("task1" as any));
     expect(result.current.colors).toBeDefined();
@@ -146,13 +218,30 @@ describe("useTaskDetailView", () => {
         generatedBy: "lead-agent",
       },
     };
-    mockUseQuery
-      .mockReturnValueOnce(planTask)
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([])
-      .mockReturnValueOnce([]);
+    mockUseQuery.mockReturnValue({
+      task: planTask,
+      messages: [],
+      steps: [],
+      tagCatalog: [],
+      tagAttributes: [],
+      tagAttributeValues: [],
+      uiFlags: {
+        isAwaitingKickoff: false,
+        isPaused: false,
+        isManual: false,
+        isPlanEditable: true,
+      },
+      allowedActions: {
+        approve: false,
+        kickoff: false,
+        pause: false,
+        resume: false,
+        retry: false,
+        savePlan: true,
+        startInbox: false,
+        sendMessage: true,
+      },
+    });
 
     const { result } = renderHook(() => useTaskDetailView("task1" as any));
     expect(result.current.taskExecutionPlan).toBeDefined();

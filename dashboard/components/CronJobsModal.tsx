@@ -65,6 +65,20 @@ interface Props {
   onTaskClick: (taskId: string) => void;
 }
 
+function normalizeChannelsPayload(data: unknown): string[] {
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    "channels" in data &&
+    Array.isArray((data as { channels?: unknown }).channels)
+  ) {
+    return (data as { channels: unknown[] }).channels.filter(
+      (channel): channel is string => typeof channel === "string" && channel.length > 0,
+    );
+  }
+  return ["mc"];
+}
+
 function formatSchedule(schedule: CronSchedule): string {
   const tz = schedule.tz ? ` (${schedule.tz})` : "";
   if (schedule.kind === "every" && schedule.everyMs) {
@@ -161,11 +175,21 @@ export function CronJobsModal({ open, onClose, onTaskClick }: Props) {
         }
       });
     fetch("/api/channels")
-      .then((res) => res.ok ? res.json() as Promise<{ channels: string[] }> : { channels: ["mc"] })
+      .then((res) =>
+        res.ok
+          ? (res.json() as Promise<unknown>)
+          : ({ channels: ["mc"] } satisfies { channels: string[] }),
+      )
       .then((data) => {
-        if (!cancelled) setEnabledChannels(data.channels);
+        if (!cancelled) {
+          setEnabledChannels(normalizeChannelsPayload(data));
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) {
+          setEnabledChannels(["mc"]);
+        }
+      });
     return () => {
       cancelled = true;
     };

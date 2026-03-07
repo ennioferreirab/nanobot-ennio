@@ -2,12 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, SlidersHorizontal } from "lucide-react";
-import { useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useSearchBarFilters } from "@/hooks/useSearchBarFilters";
 import { cn } from "@/lib/utils";
 import { parseSearch } from "@/lib/searchParser";
 import { TAG_COLORS } from "@/lib/constants";
@@ -21,28 +20,7 @@ export function SearchBar({ onSearchChange, className }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState("");
   const [attrValues, setAttrValues] = useState<Record<string, string>>({});
-
-  const tags = useQuery(api.taskTags.list);
-  const allAttributes = useQuery(api.tagAttributes.list);
-
-  const attrById = useMemo(() => {
-    if (!allAttributes) return new Map();
-    return new Map(allAttributes.map((a) => [a._id, a]));
-  }, [allAttributes]);
-
-  // Tags that have at least one attribute defined
-  const tagsWithAttrs = useMemo(() => {
-    if (!tags) return [];
-    return tags
-      .filter((t) => t.attributeIds && t.attributeIds.length > 0)
-      .map((t) => ({
-        ...t,
-        attrs: (t.attributeIds ?? [])
-          .map((id) => attrById.get(id))
-          .filter((a): a is NonNullable<typeof a> => a != null),
-      }))
-      .filter((t) => t.attrs.length > 0);
-  }, [tags, attrById]);
+  const { tags, tagsWithAttrs } = useSearchBarFilters();
 
   const parsed = useMemo(() => parseSearch(value), [value]);
   const hasValue = value.trim().length > 0;

@@ -13,7 +13,7 @@ vi.mock("convex/react", () => ({
 vi.mock("../../convex/_generated/api", () => ({
   api: {
     tasks: {
-      getById: "tasks:getById",
+      getDetailView: "tasks:getDetailView",
       approve: "tasks:approve",
       approveAndKickOff: "tasks:approveAndKickOff",
       pauseTask: "tasks:pauseTask",
@@ -25,13 +25,8 @@ vi.mock("../../convex/_generated/api", () => ({
       addTaskFiles: "tasks:addTaskFiles",
       removeTaskFile: "tasks:removeTaskFile",
     },
-    messages: { listByTask: "messages:listByTask" },
-    steps: { getByTask: "steps:getByTask" },
     activities: { create: "activities:create" },
-    taskTags: { list: "taskTags:list" },
-    tagAttributes: { list: "tagAttributes:list" },
     tagAttributeValues: {
-      getByTask: "tagAttributeValues:getByTask",
       removeByTaskAndTag: "tagAttributeValues:removeByTaskAndTag",
     },
   },
@@ -153,6 +148,36 @@ function makeTask(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeDetailView(task: ReturnType<typeof makeTask>, tagCatalog = SAMPLE_TAGS_CATALOG) {
+  return {
+    task,
+    board: null,
+    messages: [],
+    steps: [],
+    files: [],
+    tags: task.tags ?? [],
+    tagCatalog,
+    tagAttributes: [],
+    tagAttributeValues: [],
+    uiFlags: {
+      isAwaitingKickoff: false,
+      isPaused: task.status === "review",
+      isManual: false,
+      isPlanEditable: true,
+    },
+    allowedActions: {
+      approve: task.status === "review",
+      kickoff: task.status === "review" || task.status === "ready",
+      pause: task.status === "in_progress",
+      resume: task.status === "review",
+      retry: task.status === "crashed" || task.status === "failed",
+      savePlan: true,
+      startInbox: task.status === "inbox",
+      sendMessage: true,
+    },
+  };
+}
+
 describe("TaskDetailSheet — tag editing (Story 9-3)", () => {
   const mockUpdateTags = vi.fn();
   const noop = vi.fn();
@@ -169,10 +194,7 @@ describe("TaskDetailSheet — tag editing (Story 9-3)", () => {
   function renderSheet(taskOverrides: Record<string, unknown> = {}) {
     const task = makeTask(taskOverrides);
     mockUseQuery.mockImplementation((ref: string) => {
-      if (String(ref).includes("getById")) return task;
-      if (String(ref).includes("listByTask")) return [];
-      if (String(ref).includes("getByTask")) return [];
-      if (String(ref).includes("taskTags")) return SAMPLE_TAGS_CATALOG;
+      if (String(ref).includes("getDetailView")) return makeDetailView(task);
       return undefined;
     });
     render(<TaskDetailSheet taskId={"task1" as any} onClose={vi.fn()} />);
@@ -242,10 +264,7 @@ describe("TaskDetailSheet — tag editing (Story 9-3)", () => {
   it("shows empty catalog message when no tags are defined", () => {
     const task = makeTask({ tags: undefined });
     mockUseQuery.mockImplementation((ref: string) => {
-      if (String(ref).includes("getById")) return task;
-      if (String(ref).includes("listByTask")) return [];
-      if (String(ref).includes("getByTask")) return [];
-      if (String(ref).includes("taskTags")) return [];
+      if (String(ref).includes("getDetailView")) return makeDetailView(task, []);
       return undefined;
     });
     render(<TaskDetailSheet taskId={"task1" as any} onClose={vi.fn()} />);

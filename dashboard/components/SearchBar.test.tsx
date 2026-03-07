@@ -3,6 +3,21 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
 import { SearchBar } from "./SearchBar";
 
+vi.mock("convex/react", () => ({
+  useQuery: vi.fn((ref: string) => {
+    if (ref === "taskTags:list") return [];
+    if (ref === "tagAttributes:list") return [];
+    return undefined;
+  }),
+}));
+
+vi.mock("../convex/_generated/api", () => ({
+  api: {
+    taskTags: { list: "taskTags:list" },
+    tagAttributes: { list: "tagAttributes:list" },
+  },
+}));
+
 describe("SearchBar", () => {
   beforeEach(() => {
     vi.useFakeTimers();

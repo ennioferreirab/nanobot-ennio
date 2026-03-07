@@ -155,6 +155,7 @@ class ExecutionEngine:
                 success=False,
                 error_category=category,
                 error_message=f"{type(exc).__name__}: {exc}",
+                error_exception=exc,
             )
 
         # 3. Run post-execution hooks

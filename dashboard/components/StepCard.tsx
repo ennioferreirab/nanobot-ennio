@@ -4,11 +4,10 @@ import { useState } from "react";
 import * as motion from "motion/react-client";
 import { useReducedMotion } from "motion/react";
 import type { KeyboardEvent } from "react";
-import { useMutation } from "convex/react";
-import { api } from "../convex/_generated/api";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useStepCardActions } from "@/hooks/useStepCardActions";
 import { AlertTriangle, CheckCircle, Lock, Paperclip, Trash2, User } from "lucide-react";
 import { Doc } from "../convex/_generated/dataModel";
 import { STEP_STATUS_COLORS, type StepStatus } from "@/lib/constants";
@@ -21,9 +20,7 @@ interface StepCardProps {
 
 export function StepCard({ step, parentTaskTitle, onClick }: StepCardProps) {
   const shouldReduceMotion = useReducedMotion();
-  const deleteStepMutation = useMutation(api.steps.deleteStep);
-  const acceptHumanStep = useMutation(api.steps.acceptHumanStep);
-  const manualMoveStep = useMutation(api.steps.manualMoveStep);
+  const { deleteStep, acceptHumanStep, manualMoveStep } = useStepCardActions();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isActioning, setIsActioning] = useState(false);
@@ -204,7 +201,7 @@ export function StepCard({ step, parentTaskTitle, onClick }: StepCardProps) {
                   className="h-6 px-2 text-xs"
                   onClick={async (e) => {
                     e.stopPropagation();
-                    await deleteStepMutation({ stepId: step._id });
+                    await deleteStep({ stepId: step._id });
                   }}
                 >
                   Yes

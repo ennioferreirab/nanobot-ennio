@@ -4,8 +4,36 @@ import { useQuery } from "convex/react";
 import { useMemo } from "react";
 import { api } from "../convex/_generated/api";
 import type { Id, Doc } from "../convex/_generated/dataModel";
-import { STATUS_COLORS, TAG_COLORS, type TaskStatus } from "@/lib/constants";
+import { STATUS_COLORS, type TaskStatus } from "@/lib/constants";
 import type { ExecutionPlan } from "@/lib/types";
+
+type TaskDetailReadModel = {
+  task: Doc<"tasks">;
+  board: Doc<"boards"> | null;
+  messages: Doc<"messages">[];
+  steps: Doc<"steps">[];
+  files: NonNullable<Doc<"tasks">["files"]>;
+  tags: string[];
+  tagCatalog: Doc<"taskTags">[];
+  tagAttributes: Doc<"tagAttributes">[];
+  tagAttributeValues: Doc<"tagAttributeValues">[];
+  uiFlags: {
+    isAwaitingKickoff: boolean;
+    isPaused: boolean;
+    isManual: boolean;
+    isPlanEditable: boolean;
+  };
+  allowedActions: {
+    approve: boolean;
+    kickoff: boolean;
+    pause: boolean;
+    resume: boolean;
+    retry: boolean;
+    savePlan: boolean;
+    startInbox: boolean;
+    sendMessage: boolean;
+  };
+};
 
 export interface TaskDetailViewData {
   task: Doc<"tasks"> | null;
@@ -24,45 +52,32 @@ export interface TaskDetailViewData {
   isPaused: boolean;
 }
 
-/**
- * Wraps all read queries needed by the TaskDetailSheet into a single hook.
- * Returns typed view data with derived state (isAwaitingKickoff, isPaused, colors, etc.).
- */
 export function useTaskDetailView(taskId: Id<"tasks"> | null): TaskDetailViewData {
-  const task = useQuery(api.tasks.getById, taskId ? { taskId } : "skip") ?? null;
-  const messages = useQuery(api.messages.listByTask, taskId ? { taskId } : "skip");
-  const liveSteps = useQuery(api.steps.getByTask, taskId ? { taskId } : "skip");
-  const tagsList = useQuery(api.taskTags.list, taskId ? {} : "skip");
-  const tagAttributesList = useQuery(api.tagAttributes.list, taskId ? {} : "skip");
-  const tagAttrValues = useQuery(
-    api.tagAttributeValues.getByTask,
+  const detailView = useQuery(
+    api.tasks.getDetailView,
     taskId ? { taskId } : "skip",
-  );
+  ) as TaskDetailReadModel | null | undefined;
+
+  const task = detailView?.task ?? null;
+  const messages = detailView?.messages;
+  const liveSteps = detailView?.steps;
+  const tagsList = detailView?.tagCatalog;
+  const tagAttributesList = detailView?.tagAttributes;
+  const tagAttrValues = detailView?.tagAttributeValues;
 
   const isTaskLoaded = task != null && typeof task === "object" && "status" in task;
-
-  const taskAny = task as any;
-  const taskExecutionPlan: ExecutionPlan | undefined = taskAny?.executionPlan;
-  const taskAwaitingKickoff: boolean = taskAny?.awaitingKickoff === true;
-  const taskStatus: string | undefined = taskAny?.status;
+  const taskExecutionPlan: ExecutionPlan | undefined = (task as any)?.executionPlan;
+  const taskAwaitingKickoff: boolean =
+    detailView?.uiFlags.isAwaitingKickoff === true;
+  const taskStatus: string | undefined = task?.status;
 
   const colors = isTaskLoaded
-    ? STATUS_COLORS[task!.status as TaskStatus] ?? STATUS_COLORS.inbox
+    ? STATUS_COLORS[task.status as TaskStatus] ?? STATUS_COLORS.inbox
     : null;
 
   const tagColorMap: Record<string, string> = useMemo(
-    () => Object.fromEntries(tagsList?.map((t) => [t.name, t.color]) ?? []),
+    () => Object.fromEntries(tagsList?.map((tag) => [tag.name, tag.color]) ?? []),
     [tagsList],
-  );
-
-  const isAwaitingKickoff = useMemo(
-    () => taskStatus === "review" && taskAwaitingKickoff,
-    [taskStatus, taskAwaitingKickoff],
-  );
-
-  const isPaused = useMemo(
-    () => taskStatus === "review" && !taskAwaitingKickoff,
-    [taskStatus, taskAwaitingKickoff],
   );
 
   return {
@@ -78,7 +93,7 @@ export function useTaskDetailView(taskId: Id<"tasks"> | null): TaskDetailViewDat
     taskExecutionPlan,
     taskAwaitingKickoff,
     taskStatus,
-    isAwaitingKickoff,
-    isPaused,
+    isAwaitingKickoff: detailView?.uiFlags.isAwaitingKickoff ?? false,
+    isPaused: detailView?.uiFlags.isPaused ?? false,
   };
 }

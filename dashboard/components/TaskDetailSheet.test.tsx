@@ -63,6 +63,36 @@ const baseMessage = {
   timestamp: "2026-01-01T12:00:00Z",
 };
 
+function buildDetailView(task: typeof baseTask, messages: unknown[] = []) {
+  return {
+    task,
+    board: null,
+    messages,
+    steps: [],
+    files: [],
+    tags: task.tags ?? [],
+    tagCatalog: [],
+    tagAttributes: [],
+    tagAttributeValues: [],
+    uiFlags: {
+      isAwaitingKickoff: task.status === "review" && (task as any).awaitingKickoff === true,
+      isPaused: task.status === "review" && (task as any).awaitingKickoff !== true,
+      isManual: false,
+      isPlanEditable: task.status === "review" || task.status === "planning" || task.status === "ready",
+    },
+    allowedActions: {
+      approve: task.status === "review",
+      kickoff: task.status === "review" || task.status === "ready",
+      pause: task.status === "in_progress",
+      resume: task.status === "review" && (task as any).awaitingKickoff !== true,
+      retry: task.status === "crashed" || task.status === "failed",
+      savePlan: task.status === "review" || task.status === "planning" || task.status === "ready",
+      startInbox: task.status === "inbox",
+      sendMessage: true,
+    },
+  };
+}
+
 describe("TaskDetailSheet", () => {
   afterEach(() => {
     cleanup();
@@ -70,57 +100,34 @@ describe("TaskDetailSheet", () => {
     mockMutationFn.mockClear();
   });
 
-  // Helper: set up useQuery to return task + empty arrays for all other queries.
-  // Now there are 6 useQuery calls in useTaskDetailView:
-  //   getById, listByTask, getByTask (steps), taskTags.list, tagAttributes.list, tagAttributeValues.getByTask
-  // Plus ThreadInput adds: boards.getById, agents.list
   function setupQueryMock(task: typeof baseTask, messages: unknown[] = []) {
     mockUseQuery.mockImplementation((_query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (typeof args === "object" && args !== null && !("taskId" in (args as Record<string, unknown>))) return [];
-      return undefined;
+      if (args === undefined) return [];
+      if (typeof args === "object" && args !== null && "taskId" in (args as Record<string, unknown>)) {
+        return buildDetailView(task, messages);
+      }
+      return [];
     });
-    mockUseQuery
-      .mockReturnValueOnce(task)      // getById
-      .mockReturnValueOnce(messages)   // listByTask
-      .mockReturnValueOnce([])         // getByTask (steps)
-      .mockReturnValueOnce([])         // taskTags.list
-      .mockReturnValueOnce([])         // tagAttributes.list
-      .mockReturnValueOnce([]);        // tagAttributeValues.getByTask
   }
 
-  // One render pass provides 6 useQuery values (useTaskDetailView) + ThreadInput hooks
   function oneRenderPass(task: typeof baseTask, messages: unknown[] = []) {
-    mockUseQuery
-      .mockReturnValueOnce(task)
-      .mockReturnValueOnce(messages)
-      .mockReturnValueOnce([])  // steps
-      .mockReturnValueOnce([])  // taskTags.list
-      .mockReturnValueOnce([])  // tagAttributes.list
-      .mockReturnValueOnce([]); // tagAttributeValues.getByTask
-  }
-
-  // Stable mock that survives any number of re-renders (for interactive tests).
-  // The useTaskDetailView hook calls useQuery 6 times per render in this exact order:
-  //   0: getById -> task, 1: listByTask -> messages, 2: getByTask -> [],
-  //   3: taskTags.list -> [], 4: tagAttributes.list -> [], 5: tagAttributeValues.getByTask -> []
-  // ThreadInput's useSelectableAgents also calls useQuery (agents.list) but with no skip arg.
-  // boards.getById is skipped (returns undefined).
-  // We cycle through positions 0-5 using a global counter.
-  function stableQueryMock(task: typeof baseTask, messages: unknown[] = []) {
-    let callCount = 0;
     mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      // agents.list has undefined args
       if (args === undefined) return [];
-      // taskTags.list / tagAttributes.list pass {} with no taskId
+      if (typeof args === "object" && args !== null && "taskId" in (args as Record<string, unknown>)) {
+        return buildDetailView(task, messages);
+      }
+      return [];
+    });
+  }
+
+  function stableQueryMock(task: typeof baseTask, messages: unknown[] = []) {
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
       if (typeof args === "object" && args !== null && !("taskId" in (args as Record<string, unknown>))) return [];
-      // { taskId } queries cycle through positions
-      const pos = callCount % 4;  // 4 queries with { taskId } per render
-      callCount++;
-      if (pos === 0) return task;     // getById
-      if (pos === 1) return messages;  // listByTask
-      return [];                       // getByTask, tagAttributeValues.getByTask
+      return buildDetailView(task, messages);
     });
   }
 

@@ -70,7 +70,7 @@ def _make_mock_config(prompt="You are a helpful researcher."):
 def _mock_agent_env():
     """Mock all external dependencies used inside handle_mention.
 
-    Since handle_mention uses local imports (from mc.gateway import AGENTS_DIR, etc.),
+    Since handle_mention uses local imports for config and validation,
     we must patch the source modules, not mc.mentions.handler attributes.
     """
     mock_config = _make_mock_config()
@@ -89,7 +89,7 @@ def _mock_agent_env():
             "mc.mentions.handler._known_agent_names",
             return_value={"researcher"},
         ),
-        patch("mc.gateway.AGENTS_DIR", mock_agents_dir),
+        patch("mc.infrastructure.config.AGENTS_DIR", mock_agents_dir),
         patch(
             "mc.yaml_validator.validate_agent_file",
             return_value=mock_config,

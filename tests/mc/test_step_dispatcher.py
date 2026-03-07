@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -169,6 +170,31 @@ def _patch_context_builder(bridge_or_query_return=None):
     )
 
 
+def _patch_context_builder_cc():
+    """Return a patch that mocks ContextBuilder.build_step_context for CC steps."""
+
+    async def _mock_build_step_context(self, task_id, step):
+        req = _make_step_execution_request(step)
+        from mc.types import AgentData
+
+        req.is_cc = True
+        req.model = "claude-sonnet-4-6"
+        req.agent_model = "cc/claude-sonnet-4-6"
+        req.agent = AgentData(
+            name=step.get("assigned_agent") or "cc-agent",
+            display_name="CC Agent",
+            role="developer",
+            backend="claude-code",
+            model="claude-sonnet-4-6",
+        )
+        return req
+
+    return patch(
+        "mc.application.execution.context_builder.ContextBuilder.build_step_context",
+        new=_mock_build_step_context,
+    )
+
+
 def _patch_context_builder_with_files(query_return):
     """Return a patch that mocks ContextBuilder.build_step_context with file data.
 
@@ -205,6 +231,40 @@ def _patch_context_builder_with_files(query_return):
 
 
 class TestStepDispatcher:
+    @pytest.mark.asyncio
+    async def test_dispatch_cc_step_routes_through_execution_engine(self) -> None:
+        bridge, _state = _make_stateful_bridge(
+            [_step("step-cc-1", "Implement via CC", assigned_agent="cc-agent")]
+        )
+        dispatcher = StepDispatcher(bridge)
+
+        from mc.application.execution.request import ExecutionResult, RunnerType
+
+        engine = MagicMock()
+        engine.run = AsyncMock(
+            return_value=ExecutionResult(success=True, output="cc step output")
+        )
+        snap_patch, collect_patch = _patch_executor_helpers()
+
+        with (
+            patch("mc.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
+            _patch_context_builder_cc(),
+            patch.object(
+                dispatcher,
+                "_build_execution_engine",
+                return_value=engine,
+                create=True,
+            ),
+            snap_patch,
+            collect_patch,
+        ):
+            await dispatcher.dispatch_steps("task-1", ["step-cc-1"])
+
+        engine.run.assert_awaited_once()
+        request = engine.run.await_args.args[0]
+        assert request.runner_type == RunnerType.CLAUDE_CODE
+        assert request.agent_name == "cc-agent"
+
     @pytest.mark.asyncio
     async def test_dispatch_single_step_completes_task(self) -> None:
         bridge, state = _make_stateful_bridge([_step("step-1", "Analyze", order=1)])

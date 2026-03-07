@@ -13,8 +13,9 @@ vi.mock("../../convex/_generated/api", () => ({
     messages: {
       sendThreadMessage: "messages:sendThreadMessage",
       postUserPlanMessage: "messages:postUserPlanMessage",
+      postMentionMessage: "messages:postMentionMessage",
+      postComment: "messages:postComment",
     },
-    agents: { list: "agents:list" },
     boards: { getById: "boards:getById" },
     tasks: { restore: "tasks:restore" },
   },
@@ -29,10 +30,27 @@ const mockUseMutation = useMutation as ReturnType<typeof vi.fn>;
 const MOCK_AGENTS = [
   { _id: "a1", name: "security-agent", displayName: "Security Agent", role: "security", enabled: true, isSystem: false },
   { _id: "a2", name: "dev-agent", displayName: "Dev Agent", role: "developer", enabled: true, isSystem: false },
-  { _id: "a3", name: "lead-agent", displayName: "Lead Agent", role: "lead", enabled: true, isSystem: true },
 ];
 
 const MOCK_BOARD = { _id: "b1", enabledAgents: [] };
+
+vi.mock("@/hooks/useSelectableAgents", () => ({
+  useSelectableAgents: () => MOCK_AGENTS,
+}));
+
+vi.mock("@/hooks/useFileUpload", () => ({
+  useFileUpload: () => ({
+    pendingFiles: [],
+    isUploading: false,
+    uploadError: "",
+    fileInputRef: { current: null },
+    addFiles: vi.fn(),
+    removePendingFile: vi.fn(),
+    uploadAll: vi.fn().mockResolvedValue([]),
+    openFilePicker: vi.fn(),
+    clearPending: vi.fn(),
+  }),
+}));
 
 function makeTask(overrides: Record<string, any> = {}) {
   return {
@@ -48,6 +66,7 @@ function makeTask(overrides: Record<string, any> = {}) {
 describe("AgentMentionAutocomplete (via ThreadInput)", () => {
   const mockSendMessage = vi.fn().mockResolvedValue(undefined);
   const mockPostPlanMessage = vi.fn().mockResolvedValue(undefined);
+  const mockPostMentionMessage = vi.fn().mockResolvedValue(undefined);
   const mockRestoreTask = vi.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
@@ -56,14 +75,13 @@ describe("AgentMentionAutocomplete (via ThreadInput)", () => {
       const s = String(ref);
       if (s.includes("sendThread")) return mockSendMessage;
       if (s.includes("postUserPlan")) return mockPostPlanMessage;
+      if (s.includes("postMention")) return mockPostMentionMessage;
       if (s.includes("restore")) return mockRestoreTask;
       return vi.fn();
     });
 
-    // Default: return agents first, board second
     mockUseQuery.mockImplementation((ref: any, args: any) => {
       const s = String(ref);
-      if (s.includes("agents")) return MOCK_AGENTS;
       if (s.includes("boards") && args !== "skip") return MOCK_BOARD;
       return undefined;
     });
@@ -165,7 +183,7 @@ describe("AgentMentionAutocomplete (via ThreadInput)", () => {
 
   it("does NOT show autocomplete in plan-chat mode", async () => {
     const user = userEvent.setup();
-    render(<ThreadInput task={makeTask({ status: "in_progress" })} />);
+    render(<ThreadInput task={makeTask({ status: "review", awaitingKickoff: true })} />);
     const textarea = screen.getByPlaceholderText(/Add a step to write tests/i);
     await user.click(textarea);
     await user.type(textarea, "@");
@@ -204,10 +222,10 @@ describe("AgentMentionAutocomplete (via ThreadInput)", () => {
     // Submit with Enter
     await user.keyboard("{Enter}");
     await waitFor(() => {
-      expect(mockSendMessage).toHaveBeenCalledWith({
+      expect(mockPostMentionMessage).toHaveBeenCalledWith({
         taskId: "t1",
         content: "@dev-agent please review this",
-        agentName: "dev-agent",
+        mentionedAgent: "dev-agent",
       });
     });
   });
@@ -221,13 +239,13 @@ describe("AgentMentionAutocomplete (via ThreadInput)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("mention-autocomplete")).toBeInTheDocument();
     });
-    // ArrowUp from first item wraps to last
+    // ArrowUp from first item wraps to the last visible selectable agent.
     await user.keyboard("{ArrowUp}");
-    // Enter selects last agent (lead-agent)
+    // Enter selects dev-agent because lead-agent is hidden from mentions.
     await user.keyboard("{Enter}");
     await waitFor(() => {
       expect(screen.queryByTestId("mention-autocomplete")).not.toBeInTheDocument();
     });
-    expect(textarea).toHaveValue("@lead-agent ");
+    expect(textarea).toHaveValue("@dev-agent ");
   });
 });

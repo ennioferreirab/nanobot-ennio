@@ -13,7 +13,7 @@ def test_hybrid_store_is_memory_store(tmp_path):
     assert isinstance(HybridMemoryStore(tmp_path), MemoryStore)
 
 
-def test_create_memory_store_quarantines_invalid_files(tmp_path):
+def test_create_memory_store_is_read_safe(tmp_path):
     memory_dir = tmp_path / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
     rogue = memory_dir / "rogue.md"
@@ -22,9 +22,8 @@ def test_create_memory_store_quarantines_invalid_files(tmp_path):
     store = create_memory_store(tmp_path)
 
     assert isinstance(store, HybridMemoryStore)
-    assert not rogue.exists()
-    quarantined = tmp_path / ".memory-quarantine" / "rogue.md"
-    assert quarantined.read_text(encoding="utf-8") == "artifact"
+    assert rogue.exists()
+    assert not (tmp_path / ".memory-quarantine").exists()
 
 
 def test_create_memory_store_keeps_archive_and_legacy_files(tmp_path):

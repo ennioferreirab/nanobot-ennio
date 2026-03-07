@@ -27,16 +27,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from mc.application.execution.background_tasks import create_background_task
+from mc.application.execution.runtime import relocate_invalid_memory_files
+
 if TYPE_CHECKING:
     from mc.bridge import ConvexBridge
 
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 2
-
-# Strong references to fire-and-forget consolidation tasks (prevents GC before completion).
-_chat_background_tasks: set[asyncio.Task[None]] = set()
-
 
 class ChatHandler:
     """Polls for pending chat messages and dispatches them to agents."""
@@ -267,10 +266,8 @@ class ChatHandler:
                     await ipc_server.stop()
 
                     try:
-                        from mc.executor import _relocate_invalid_memory_files
-
                         await asyncio.to_thread(
-                            _relocate_invalid_memory_files,
+                            relocate_invalid_memory_files,
                             task_id,
                             _cc_ws_cwd_chat,
                         )
@@ -311,9 +308,7 @@ class ChatHandler:
                                     "[chat] CC memory consolidation failed for @%s", agent_name, exc_info=True
                                 )
 
-                        _ct = asyncio.create_task(_post_chat_consolidate())
-                        _chat_background_tasks.add(_ct)
-                        _ct.add_done_callback(_chat_background_tasks.discard)
+                        create_background_task(_post_chat_consolidate())
 
                 # Send response and mark done
                 await asyncio.to_thread(

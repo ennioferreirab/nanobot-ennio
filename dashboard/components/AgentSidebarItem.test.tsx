@@ -2,6 +2,25 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { AgentSidebarItem, getInitials, getAvatarColor } from "./AgentSidebarItem";
 
+vi.mock("convex/react", () => ({
+  useQuery: vi.fn(() => []),
+}));
+
+vi.mock("../convex/_generated/api", () => ({
+  api: {
+    terminalSessions: {
+      listSessions: "terminalSessions:listSessions",
+    },
+  },
+}));
+
+vi.mock("@/components/BoardContext", () => ({
+  useBoard: () => ({
+    toggleTerminal: vi.fn(),
+    openTerminals: [],
+  }),
+}));
+
 // Track the mock state so tests can control collapsed/expanded
 let mockSidebarState: "expanded" | "collapsed" = "expanded";
 
@@ -167,8 +186,6 @@ describe("AgentSidebarItem", () => {
     render(
       <AgentSidebarItem agent={{ ...baseAgent, enabled: false }} />
     );
-    const button = screen.getByTestId("menu-button");
-    // Expanded mode does not use tooltip prop, but let's check the text renders
     expect(screen.getByText("Code Monkey")).toBeInTheDocument();
   });
 

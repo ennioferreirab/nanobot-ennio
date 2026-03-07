@@ -1271,7 +1271,7 @@ export const getDetailView = query({
     if (!task) return null;
 
     // Batch-load related data in parallel
-    const [board, messages, steps] = await Promise.all([
+    const [board, messages, steps, tagCatalog, tagAttributes, tagAttributeValues] = await Promise.all([
       task.boardId ? ctx.db.get(task.boardId) : Promise.resolve(null),
       ctx.db
         .query("messages")
@@ -1279,6 +1279,12 @@ export const getDetailView = query({
         .collect(),
       ctx.db
         .query("steps")
+        .withIndex("by_taskId", (q) => q.eq("taskId", args.taskId))
+        .collect(),
+      ctx.db.query("taskTags").collect(),
+      ctx.db.query("tagAttributes").collect(),
+      ctx.db
+        .query("tagAttributeValues")
         .withIndex("by_taskId", (q) => q.eq("taskId", args.taskId))
         .collect(),
     ]);
@@ -1297,6 +1303,9 @@ export const getDetailView = query({
       steps: sortedSteps,
       files: task.files ?? [],
       tags: task.tags ?? [],
+      tagCatalog,
+      tagAttributes,
+      tagAttributeValues,
       uiFlags,
       allowedActions,
     };

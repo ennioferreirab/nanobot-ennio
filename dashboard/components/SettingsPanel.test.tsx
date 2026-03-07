@@ -2,6 +2,8 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import { SettingsPanel } from "./SettingsPanel";
 
+vi.mock("@/components/ui/select", async () => import("../tests/mocks/select-mock"));
+
 const mockSetMutation = vi.fn().mockResolvedValue(undefined);
 let mockQueryResult: Array<{ key: string; value: string }> | undefined = [];
 
@@ -15,6 +17,7 @@ describe("SettingsPanel", () => {
     vi.useFakeTimers();
     mockQueryResult = [];
     mockSetMutation.mockClear();
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   afterEach(() => {
@@ -118,10 +121,10 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel />);
 
     // Open the select and pick a model
-    const trigger = screen.getByRole("combobox");
+    const trigger = screen.getAllByRole("combobox")[0];
     fireEvent.click(trigger);
 
-    const option = screen.getByText("Claude Opus 4.6");
+    const option = screen.getAllByRole("option", { name: "High" })[0];
     fireEvent.click(option);
 
     await act(async () => {
@@ -130,7 +133,7 @@ describe("SettingsPanel", () => {
 
     expect(mockSetMutation).toHaveBeenCalledWith({
       key: "default_llm_model",
-      value: "claude-opus-4-6",
+      value: "tier:standard-high",
     });
   });
 });

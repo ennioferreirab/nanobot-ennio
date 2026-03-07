@@ -174,6 +174,9 @@ class ExecutionResult:
     cost_usd: float = 0.0
     session_id: str | None = None
     artifacts: list[dict[str, Any]] = field(default_factory=list)
+    memory_workspace: Path | None = None
+    session_loop: Any | None = None
+    error_exception: Exception | None = None
 
     # For human strategy: the target status transition
     transition_status: str | None = None

@@ -9,20 +9,28 @@ from claude_code.memory_consolidator import CCMemoryConsolidator
 
 
 def _make_llm_response(history_entry: str, memory_update: str) -> MagicMock:
+    response = MagicMock()
     tool_call = MagicMock()
-    tool_call.function.arguments = json.dumps(
+    tool_call.arguments = json.dumps(
         {
             "history_entry": history_entry,
             "memory_update": memory_update,
         }
     )
-    msg = MagicMock()
-    msg.tool_calls = [tool_call]
-    choice = MagicMock()
-    choice.message = msg
-    response = MagicMock()
-    response.choices = [choice]
+    response.tool_calls = [tool_call]
     return response
+
+
+def _mock_provider(response: object | Exception):
+    provider = MagicMock()
+    if isinstance(response, Exception):
+        provider.chat = AsyncMock(side_effect=response)
+    else:
+        provider.chat = AsyncMock(return_value=response)
+    return patch(
+        "mc.memory.service.create_provider",
+        return_value=(provider, "resolved-model"),
+    )
 
 
 @pytest.mark.asyncio
@@ -33,7 +41,7 @@ async def test_consolidate_writes_history(tmp_path):
         "Known facts.",
     )
 
-    with patch("mc.memory.service.litellm.acompletion", new=AsyncMock(return_value=response)):
+    with _mock_provider(response):
         ok = await consolidator.consolidate(
             task_title="Fix parser",
             task_output="Patched parser and tests",
@@ -60,7 +68,7 @@ async def test_consolidate_updates_memory(tmp_path):
         "New memory content",
     )
 
-    with patch("mc.memory.service.litellm.acompletion", new=AsyncMock(return_value=response)):
+    with _mock_provider(response):
         ok = await consolidator.consolidate(
             task_title="Deploy",
             task_output="Deployment finished",
@@ -86,7 +94,7 @@ async def test_consolidate_skips_memory_if_unchanged(tmp_path):
         "Same memory",
     )
 
-    with patch("mc.memory.service.litellm.acompletion", new=AsyncMock(return_value=response)):
+    with _mock_provider(response):
         ok = await consolidator.consolidate(
             task_title="No-op task",
             task_output="No changes",
@@ -103,7 +111,7 @@ async def test_consolidate_skips_memory_if_unchanged(tmp_path):
 async def test_consolidate_returns_false_on_llm_failure(tmp_path):
     consolidator = CCMemoryConsolidator(tmp_path)
 
-    with patch("mc.memory.service.litellm.acompletion", new=AsyncMock(side_effect=RuntimeError("boom"))):
+    with _mock_provider(RuntimeError("boom")):
         ok = await consolidator.consolidate(
             task_title="Crashy task",
             task_output="whatever",
@@ -119,9 +127,9 @@ async def test_consolidate_returns_false_on_llm_failure(tmp_path):
 async def test_consolidate_returns_false_on_no_tool_call(tmp_path):
     consolidator = CCMemoryConsolidator(tmp_path)
     response = MagicMock()
-    response.choices = [MagicMock(message=MagicMock(tool_calls=[]))]
+    response.tool_calls = []
 
-    with patch("mc.memory.service.litellm.acompletion", new=AsyncMock(return_value=response)):
+    with _mock_provider(response):
         ok = await consolidator.consolidate(
             task_title="Bad response",
             task_output="none",
@@ -141,7 +149,7 @@ async def test_consolidate_error_status_task(tmp_path):
         "Captured: parser crash when input empty.",
     )
 
-    with patch("mc.memory.service.litellm.acompletion", new=AsyncMock(return_value=response)):
+    with _mock_provider(response):
         ok = await consolidator.consolidate(
             task_title="Failing task",
             task_output="Traceback ...",
@@ -170,7 +178,7 @@ async def test_consolidate_skips_memory_if_unchanged_with_trailing_whitespace(tm
         "Same memory\n",
     )
 
-    with patch("mc.memory.service.litellm.acompletion", new=AsyncMock(return_value=response)):
+    with _mock_provider(response):
         ok = await consolidator.consolidate(
             task_title="No-op trailing-ws task",
             task_output="No changes",
@@ -191,7 +199,7 @@ async def test_consolidate_creates_memory_dir(tmp_path):
         "Initial memory facts.",
     )
 
-    with patch("mc.memory.service.litellm.acompletion", new=AsyncMock(return_value=response)):
+    with _mock_provider(response):
         ok = await consolidator.consolidate(
             task_title="First task",
             task_output="output",

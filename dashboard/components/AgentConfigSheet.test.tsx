@@ -22,9 +22,24 @@ const mockUpdateConfig = vi.fn();
 const mockSetEnabled = vi.fn();
 
 vi.mock("convex/react", () => ({
-  useQuery: (_fn: unknown, args: unknown) => {
+  useQuery: (fn: unknown, args: unknown) => {
     if (args === "skip") return undefined;
-    return mockQueryResult;
+    if (fn === "agents:getByName") return mockQueryResult;
+    if (fn === "skills:list") return [];
+    if (fn === "settings:get") {
+      if ((args as { key?: string })?.key === "connected_models") {
+        return JSON.stringify(["claude-sonnet-4-6"]);
+      }
+      if ((args as { key?: string })?.key === "model_tiers") {
+        return JSON.stringify({
+          low: "claude-haiku-4-5",
+          medium: "claude-sonnet-4-6",
+          high: "claude-opus-4-6",
+        });
+      }
+      return undefined;
+    }
+    return undefined;
   },
   useMutation: (fn: unknown) => {
     if (fn === "agents:setEnabled") return mockSetEnabled;
@@ -40,6 +55,7 @@ vi.mock("../convex/_generated/api", () => ({
       setEnabled: "agents:setEnabled",
     },
     skills: { list: "skills:list" },
+    settings: { get: "settings:get" },
   },
 }));
 

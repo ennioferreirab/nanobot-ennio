@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Any
 from mc.types import (
     NANOBOT_AGENT_NAME,
     ActivityEventType,
-    AgentData,
     AuthorType,
     MessageType,
     StepStatus,
@@ -43,10 +42,32 @@ def _coerce_step_run_result(value: Any) -> tuple[str, bool, str | None]:
     """Normalize legacy string results and structured execution results."""
     if isinstance(value, str):
         return value, False, None
-    content = getattr(value, "content", "") or ""
-    is_error = bool(getattr(value, "is_error", False))
+    content = (
+        getattr(value, "content", None)
+        or getattr(value, "output", "")
+        or ""
+    )
+    is_error = bool(
+        getattr(value, "is_error", False)
+        or (hasattr(value, "success") and not getattr(value, "success"))
+    )
     error_message = getattr(value, "error_message", None)
     return content, is_error, error_message
+
+
+def _maybe_inject_orientation(
+    agent_name: str,
+    agent_prompt: str | None,
+) -> str | None:
+    """Compatibility shim for older planner/executor orientation tests."""
+    from mc.agent_orientation import load_orientation
+
+    orientation = load_orientation(agent_name)
+    if not orientation:
+        return agent_prompt
+    if agent_prompt:
+        return f"{orientation}\n\n---\n\n{agent_prompt}"
+    return orientation
 
 
 async def _run_step_agent(
@@ -64,56 +85,47 @@ async def _run_step_agent(
     cron_service: Any | None = None,
     bridge: Any | None = None,
     ask_user_registry: Any | None = None,
-) -> str:
-    """Lazily delegate step execution to executor helper."""
-    from mc.executor import (
-        _background_tasks,
-        _coerce_agent_run_result,
-        _relocate_invalid_memory_files,
-        _run_agent_on_task,
+    request: Any | None = None,
+    runner_type: Any | None = None,
+    engine_builder: Any | None = None,
+) -> Any:
+    """Execute a step through the shared execution engine."""
+    from mc.application.execution.post_processing import build_execution_engine
+    from mc.application.execution.request import (
+        EntityType,
+        ExecutionRequest,
+        RunnerType,
     )
 
-    result, session_key, loop = await _run_agent_on_task(
-        agent_name=agent_name,
-        agent_prompt=agent_prompt,
-        agent_model=agent_model,
-        reasoning_level=reasoning_level,
-        task_title=task_title,
-        task_description=task_description,
-        agent_skills=agent_skills,
-        board_name=board_name,
-        memory_workspace=memory_workspace,
-        task_id=task_id,
-        cron_service=cron_service,
-        bridge=bridge,
-        ask_user_registry=ask_user_registry,
-    )
+    execution_request = request
+    if execution_request is None:
+        execution_request = ExecutionRequest(
+            entity_type=EntityType.STEP,
+            entity_id=task_id,
+            task_id=task_id,
+            title=task_title,
+            description=task_description,
+            agent_name=agent_name,
+            agent_prompt=agent_prompt,
+            agent_model=agent_model,
+            agent_skills=agent_skills,
+            reasoning_level=reasoning_level,
+            board_name=board_name,
+            memory_workspace=memory_workspace,
+            runner_type=runner_type or RunnerType.NANOBOT,
+        )
+    elif runner_type is not None:
+        execution_request.runner_type = runner_type
 
-    await asyncio.to_thread(
-        _relocate_invalid_memory_files,
-        task_id,
-        loop.memory_workspace,
-    )
-
-    # Fire-and-forget memory consolidation after step completion.
-    # Runs async so the caller sees the result immediately.
-    async def _post_step_consolidate():
-        try:
-            await loop.end_task_session(session_key)
-            logger.info(
-                "[dispatcher] Post-step memory consolidation done for agent '%s' session '%s'",
-                agent_name, session_key,
-            )
-        except Exception:
-            logger.warning(
-                "[dispatcher] Post-step memory consolidation failed for agent '%s' session '%s'",
-                agent_name, session_key, exc_info=True,
-            )
-
-    _task = asyncio.create_task(_post_step_consolidate())
-    _background_tasks.add(_task)
-    _task.add_done_callback(_background_tasks.discard)
-    return _coerce_agent_run_result(result)
+    if engine_builder is None:
+        engine = build_execution_engine(
+            bridge=bridge,
+            cron_service=cron_service,
+            ask_user_registry=ask_user_registry,
+        )
+    else:
+        engine = engine_builder()
+    return await engine.run(execution_request)
 
 
 class StepDispatcher:
@@ -132,6 +144,16 @@ class StepDispatcher:
             from mc.tier_resolver import TierResolver
             self._tier_resolver = TierResolver(self._bridge)
         return self._tier_resolver
+
+    def _build_execution_engine(self) -> Any:
+        """Build the canonical execution engine with dispatcher dependencies."""
+        from mc.application.execution.post_processing import build_execution_engine
+
+        return build_execution_engine(
+            bridge=self._bridge,
+            cron_service=self._cron_service,
+            ask_user_registry=self._ask_user_registry,
+        )
 
     async def dispatch_steps(self, task_id: str, step_ids: list[str]) -> None:
         """Dispatch assigned steps for a task until no runnable work remains."""
@@ -280,12 +302,9 @@ class StepDispatcher:
 
     async def _execute_step(self, task_id: str, step: dict[str, Any]) -> list[str]:
         """Execute one assigned step and return any newly unblocked step IDs."""
-        # Deferred imports to break circular dependency:
-        # step_dispatcher -> executor -> gateway -> orchestrator -> step_dispatcher
-        from mc.executor import (
-            _collect_output_artifacts,
-            _relocate_invalid_memory_files,
-            _snapshot_output_dir,
+        from mc.application.execution.runtime import (
+            collect_output_artifacts,
+            snapshot_output_dir,
         )
 
         step_id = step.get("id")
@@ -360,167 +379,13 @@ class StepDispatcher:
 
             # Snapshot output dir before agent execution for artifact detection
             # (Story 2.5).
-            pre_snapshot = await asyncio.to_thread(_snapshot_output_dir, task_id)
+            pre_snapshot = await asyncio.to_thread(snapshot_output_dir, task_id)
 
-            # Route to Claude Code backend when model starts with cc/
-            if req.is_cc:
-                cc_model_name = req.model
+            from mc.application.execution.request import RunnerType
 
-                # Use AgentData from unified pipeline, or build a fallback
-                if req.agent:
-                    agent_data_for_cc = req.agent
-                    agent_data_for_cc.model = cc_model_name
-                    agent_data_for_cc.backend = "claude-code"
-                else:
-                    agent_data_for_cc = AgentData(
-                        name=agent_name,
-                        display_name=agent_name,
-                        role="agent",
-                        model=cc_model_name,
-                        backend="claude-code",
-                    )
-
-                # Try to enrich from Convex agent data
-                # (for claude_code_opts not in config.yaml)
-                try:
-                    convex_agent_raw = await asyncio.to_thread(
-                        self._bridge.get_agent_by_name, agent_name
-                    )
-                    if convex_agent_raw:
-                        agent_data_for_cc.display_name = convex_agent_raw.get(
-                            "display_name", agent_name
-                        )
-                        agent_data_for_cc.role = convex_agent_raw.get(
-                            "role", "agent"
-                        )
-                        convex_skills = convex_agent_raw.get("skills")
-                        if convex_skills is not None:
-                            agent_data_for_cc.skills = convex_skills
-                        cc_opts_raw = convex_agent_raw.get("claude_code_opts")
-                        if cc_opts_raw and isinstance(cc_opts_raw, dict):
-                            from mc.types import ClaudeCodeOpts
-                            agent_data_for_cc.claude_code_opts = ClaudeCodeOpts(
-                                max_budget_usd=cc_opts_raw.get("max_budget_usd"),
-                                max_turns=cc_opts_raw.get("max_turns"),
-                                permission_mode=cc_opts_raw.get(
-                                    "permission_mode", "acceptEdits"
-                                ),
-                                allowed_tools=cc_opts_raw.get("allowed_tools"),
-                                disallowed_tools=cc_opts_raw.get(
-                                    "disallowed_tools"
-                                ),
-                            )
-                except Exception:
-                    logger.warning(
-                        "[dispatcher] Could not enrich agent data for CC"
-                    )
-
-                # Execute step via CC backend
-                from claude_code.ipc_server import MCSocketServer
-                from claude_code.provider import ClaudeCodeProvider
-                from claude_code.workspace import CCWorkspaceManager
-
-                try:
-                    ws_mgr = CCWorkspaceManager()
-                    from mc.agent_orientation import load_orientation
-                    orientation = load_orientation(agent_name)
-                    ws_ctx = ws_mgr.prepare(agent_name, agent_data_for_cc, task_id, orientation=orientation,
-                                            task_prompt=step_title)
-                except Exception as exc:
-                    error_msg = f"CC workspace preparation failed for step '{step_title}': {exc}"
-                    logger.error("[dispatcher] %s", error_msg)
-                    raise
-
-                from mc.ask_user.handler import AskUserHandler
-
-                ask_handler = AskUserHandler()
-                ipc_server = MCSocketServer(self._bridge, None)
-                ipc_server.set_ask_user_handler(ask_handler)
-                if self._ask_user_registry is not None:
-                    self._ask_user_registry.register(task_id, ask_handler)
-                try:
-                    await ipc_server.start(ws_ctx.socket_path)
-                except Exception as exc:
-                    error_msg = f"MCP IPC server failed for step '{step_title}': {exc}"
-                    logger.error("[dispatcher] %s", error_msg)
-                    raise
-
-                try:
-                    from nanobot.config.loader import load_config
-                    _cfg = load_config()
-                    provider = ClaudeCodeProvider(
-                        cli_path=_cfg.claude_code.cli_path,
-                        defaults=_cfg.claude_code,
-                    )
-
-                    prompt = f"{step_title}\n\n{execution_description}"
-
-                    result_obj = await provider.execute_task(
-                        prompt=prompt,
-                        agent_config=agent_data_for_cc,
-                        task_id=task_id,
-                        workspace_ctx=ws_ctx,
-                        session_id=None,
-                    )
-                    if result_obj.is_error:
-                        raise RuntimeError(
-                            f"Claude Code error: {result_obj.output[:1000]}"
-                        )
-                    result = result_obj.output
-                except Exception as exc:
-                    error_msg = f"CC execution failed for step '{step_title}': {exc}"
-                    logger.error("[dispatcher] %s", error_msg)
-                    raise
-                finally:
-                    if self._ask_user_registry is not None:
-                        self._ask_user_registry.unregister(task_id)
-                    await ipc_server.stop()
-
-                # Post completion — same as nanobot path
-                await asyncio.to_thread(
-                    _relocate_invalid_memory_files,
-                    task_id,
-                    ws_ctx.cwd,
-                )
-                artifacts = await asyncio.to_thread(
-                    _collect_output_artifacts, task_id, pre_snapshot
-                )
-                try:
-                    await asyncio.to_thread(
-                        self._bridge.sync_task_output_files,
-                        task_id,
-                        task_data,
-                        agent_name,
-                    )
-                except Exception:
-                    logger.exception(
-                        "[dispatcher] Failed to sync output files for step %s", step_id
-                    )
-
-                await asyncio.to_thread(
-                    self._bridge.post_step_completion,
-                    task_id,
-                    step_id,
-                    agent_name,
-                    result,
-                    artifacts or None,
-                )
-                await asyncio.to_thread(
-                    self._bridge.update_step_status,
-                    step_id,
-                    StepStatus.COMPLETED,
-                )
-                await asyncio.to_thread(
-                    self._bridge.create_activity,
-                    ActivityEventType.STEP_COMPLETED,
-                    f"Agent {agent_name} completed step: {step_title}",
-                    task_id,
-                    agent_name,
-                )
-                unblocked_ids = await asyncio.to_thread(
-                    self._bridge.check_and_unblock_dependents, step_id
-                )
-                return unblocked_ids if isinstance(unblocked_ids, list) else []
+            req.runner_type = (
+                RunnerType.CLAUDE_CODE if req.is_cc else RunnerType.NANOBOT
+            )
 
             result = await _run_step_agent(
                 agent_name=agent_name,
@@ -536,6 +401,9 @@ class StepDispatcher:
                 cron_service=self._cron_service,
                 bridge=self._bridge,
                 ask_user_registry=self._ask_user_registry,
+                request=req,
+                runner_type=req.runner_type,
+                engine_builder=self._build_execution_engine,
             )
             result_content, is_error_result, error_message = _coerce_step_run_result(result)
             if is_error_result:
@@ -547,7 +415,7 @@ class StepDispatcher:
 
             # Collect artifacts and post structured completion message (Story 2.5).
             artifacts = await asyncio.to_thread(
-                _collect_output_artifacts, task_id, pre_snapshot
+                collect_output_artifacts, task_id, pre_snapshot
             )
 
             # Sync output file manifest to Convex (best-effort, non-blocking) (Story 6.2).

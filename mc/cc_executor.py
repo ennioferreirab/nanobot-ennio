@@ -13,6 +13,18 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from mc.application.execution.background_tasks import (
+    create_background_task,
+    get_background_tasks,
+)
+from mc.application.execution.runtime import (
+    build_tag_attributes_context,
+    build_thread_context,
+    collect_output_artifacts,
+    provider_error_types,
+    relocate_invalid_memory_files,
+    snapshot_output_dir,
+)
 from mc.types import (
     ActivityEventType,
     AuthorType,
@@ -29,17 +41,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Lazy reference to the shared background tasks set from executor.
-_background_tasks: set[asyncio.Task[None]] | None = None
 
-
-def _get_background_tasks() -> set[asyncio.Task[None]]:
-    """Lazily import the shared background tasks set from executor."""
-    global _background_tasks
-    if _background_tasks is None:
-        from mc.executor import _background_tasks as _bt
-        _background_tasks = _bt
-    return _background_tasks
+def _human_size(bytes_count: int) -> str:
+    """Convert a byte count to a compact human-readable string."""
+    if bytes_count < 1024 * 1024:
+        return f"{bytes_count // 1024} KB"
+    return f"{bytes_count / (1024 * 1024):.1f} MB"
 
 
 class CCExecutorMixin:
@@ -59,13 +66,6 @@ class CCExecutorMixin:
         self, task_id: str, description: str | None, task_data: dict | None,
     ) -> str:
         """Enrich CC task description with file manifest, thread context, and tag attributes."""
-        # Import through mc.executor to ensure test patches on
-        # "mc.executor._build_thread_context" etc. take effect.
-        import mc.executor as _exe
-        _build_thread_context = _exe._build_thread_context
-        _build_tag_attributes_context = _exe._build_tag_attributes_context
-        _human_size = _exe._human_size
-
         description = description or ""
         try:
             safe_id = task_safe_id(task_id)
@@ -95,7 +95,7 @@ class CCExecutorMixin:
             logger.warning("[executor] CC enrich: file manifest failed for '%s'", task_id, exc_info=True)
         try:
             thread_messages = await asyncio.to_thread(self._bridge.get_task_messages, task_id)
-            thread_context = _build_thread_context(thread_messages)
+            thread_context = build_thread_context(thread_messages)
             if thread_context:
                 description += f"\n{thread_context}"
         except Exception:
@@ -105,7 +105,7 @@ class CCExecutorMixin:
             if task_tags:
                 tag_attr_values = await asyncio.to_thread(self._bridge.query, "tagAttributeValues:getByTask", {"task_id": task_id})
                 tag_attr_catalog = await asyncio.to_thread(self._bridge.query, "tagAttributes:list", {})
-                tag_attrs_context = _build_tag_attributes_context(
+                tag_attrs_context = build_tag_attributes_context(
                     task_tags,
                     tag_attr_values if isinstance(tag_attr_values, list) else [],
                     tag_attr_catalog if isinstance(tag_attr_catalog, list) else [],
@@ -127,15 +127,8 @@ class CCExecutorMixin:
         from claude_code.provider import ClaudeCodeProvider
         from claude_code.workspace import CCWorkspaceManager
 
-        # Import from mc.executor (which re-exports from output_enricher) so that
-        # test patches on "mc.executor._snapshot_output_dir" etc. take effect.
-        import mc.executor as _exe
-        _snapshot_output_dir = _exe._snapshot_output_dir
-        _collect_output_artifacts = _exe._collect_output_artifacts
-        _relocate_invalid_memory_files = _exe._relocate_invalid_memory_files
-        _PROVIDER_ERRORS = _exe._PROVIDER_ERRORS
-
-        bg_tasks = _get_background_tasks()
+        provider_errors = provider_error_types()
+        bg_tasks = get_background_tasks()
 
         # 0a. Enrich description if caller hasn't already done it
         if needs_enrichment:
@@ -170,7 +163,7 @@ class CCExecutorMixin:
         _cc_board_name, _cc_memory_mode = await self._resolve_cc_board(task_data, agent_name, title)
 
         # 0e. Snapshot output dir for artifact detection
-        pre_snapshot = await asyncio.to_thread(_snapshot_output_dir, task_id)
+        pre_snapshot = await asyncio.to_thread(snapshot_output_dir, task_id)
 
         # 1. Prepare workspace
         try:
@@ -210,15 +203,15 @@ class CCExecutorMixin:
 
             def on_stream(msg: dict) -> None:
                 if msg.get("type") == "text":
-                    task = asyncio.create_task(self._post_cc_activity(task_id, agent_name, msg["text"]))
-                    bg_tasks.add(task)
-                    task.add_done_callback(bg_tasks.discard)
+                    create_background_task(
+                        self._post_cc_activity(task_id, agent_name, msg["text"])
+                    )
 
             result = await provider.execute_task(
                 prompt=prompt, agent_config=agent_data, task_id=task_id,
                 workspace_ctx=ws_ctx, session_id=session_id, on_stream=on_stream,
             )
-        except _PROVIDER_ERRORS as exc:
+        except provider_errors as exc:
             await self._handle_provider_error(task_id, title, agent_name, exc)
             return
         except Exception as exc:
@@ -230,7 +223,7 @@ class CCExecutorMixin:
             await ipc_server.stop()
 
         # 5. Process result
-        await asyncio.to_thread(_relocate_invalid_memory_files, task_id, ws_ctx.cwd)
+        await asyncio.to_thread(relocate_invalid_memory_files, task_id, ws_ctx.cwd)
 
         if result.is_error:
             try:
@@ -241,7 +234,7 @@ class CCExecutorMixin:
         else:
             await self._complete_cc_task(task_id, title, agent_name, result, trust_level=trust_level)
             try:
-                artifacts = await asyncio.to_thread(_collect_output_artifacts, task_id, pre_snapshot)
+                artifacts = await asyncio.to_thread(collect_output_artifacts, task_id, pre_snapshot)
                 if artifacts:
                     logger.info("[executor] CC: %d artifact(s) detected for task '%s'", len(artifacts), title)
                 await asyncio.to_thread(self._bridge.sync_task_output_files, task_id, task_data or {}, agent_name)
@@ -346,9 +339,7 @@ class CCExecutorMixin:
             except Exception:
                 logger.warning("[executor] CC memory consolidation failed for '%s'", title, exc_info=True)
 
-        _t = asyncio.create_task(_post_cc_consolidate())
-        bg_tasks.add(_t)
-        _t.add_done_callback(bg_tasks.discard)
+        create_background_task(_post_cc_consolidate())
 
     async def _post_cc_activity(self, task_id: str, agent_name: str, text: str) -> None:
         """Post a streaming text chunk as a step_started activity (best-effort)."""
