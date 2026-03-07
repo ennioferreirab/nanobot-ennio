@@ -144,6 +144,30 @@ export const toggleFavorite = mutation({
   },
 });
 
+export const listByStatus = query({
+  args: {
+    status: v.union(
+      v.literal("planning"),
+      v.literal("ready"),
+      v.literal("failed"),
+      v.literal("inbox"),
+      v.literal("assigned"),
+      v.literal("in_progress"),
+      v.literal("review"),
+      v.literal("done"),
+      v.literal("retrying"),
+      v.literal("crashed"),
+      v.literal("deleted"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("tasks")
+      .withIndex("by_status", (q) => q.eq("status", args.status))
+      .collect();
+  },
+});
+
 export const listDeleted = query({
   args: {},
   handler: async (ctx) => {
