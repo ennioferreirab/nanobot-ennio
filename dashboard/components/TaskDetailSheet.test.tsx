@@ -18,7 +18,9 @@ vi.mock("convex/react", () => ({
 // Mock ExecutionPlanTab to prevent it from calling useQuery internally
 vi.mock("./ExecutionPlanTab", () => ({
   ExecutionPlanTab: ({
+    executionPlan,
     isEditMode,
+    readOnly,
     taskId,
     onLocalPlanChange,
   }: {
@@ -26,15 +28,51 @@ vi.mock("./ExecutionPlanTab", () => ({
     liveSteps?: unknown;
     isPlanning?: boolean;
     isEditMode?: boolean;
+    readOnly?: boolean;
     taskId?: string;
     onLocalPlanChange?: (plan: unknown) => void;
   }) => (
     <div
       data-testid="execution-plan-tab"
       data-edit-mode={isEditMode ? "true" : "false"}
+      data-read-only={readOnly ? "true" : "false"}
       data-task-id={taskId}
     >
-      {isEditMode ? "PlanEditor (edit mode)" : "ReadOnly Plan"}
+      {(() => {
+        const firstStepTitle =
+          executionPlan &&
+          typeof executionPlan === "object" &&
+          "steps" in executionPlan &&
+          Array.isArray((executionPlan as { steps?: Array<{ title?: string }> }).steps)
+            ? ((executionPlan as { steps?: Array<{ title?: string }> }).steps?.[0]?.title ?? "")
+            : "";
+        return firstStepTitle || (isEditMode ? "PlanEditor (edit mode)" : "ReadOnly Plan");
+      })()}
+      {onLocalPlanChange && (
+        <button
+          type="button"
+          data-testid="mock-local-plan-change"
+          onClick={() =>
+            onLocalPlanChange({
+              generatedAt: "2026-03-10T00:00:00.000Z",
+              generatedBy: "lead-agent",
+              steps: [
+                {
+                  tempId: "step_2",
+                  title: "Added step",
+                  description: "Local edit",
+                  assignedAgent: "nanobot",
+                  blockedBy: [],
+                  parallelGroup: 0,
+                  order: 2,
+                },
+              ],
+            })
+          }
+        >
+          Mock local plan change
+        </button>
+      )}
     </div>
   ),
 }));
@@ -70,6 +108,10 @@ function buildDetailView(task: typeof baseTask, messages: unknown[] = []) {
     messages,
     steps: [],
     files: [],
+    mergedIntoTask: null,
+    mergeSources: [],
+    mergeSourceThreads: [],
+    mergeSourceFiles: [],
     tags: task.tags ?? [],
     tagCatalog: [],
     tagAttributes: [],
@@ -182,6 +224,306 @@ describe("TaskDetailSheet", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows merge lock banner and hides thread input for source tasks merged into task C", () => {
+    const mergedSourceTask = {
+      ...baseTask,
+      status: "done" as const,
+      mergedIntoTaskId: "task-c" as never,
+    };
+
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
+      if (typeof args === "object" && args !== null && "taskId" in (args as Record<string, unknown>)) {
+        return {
+          ...buildDetailView(mergedSourceTask),
+          mergedIntoTask: {
+            _id: "task-c",
+            title: "Merged Task C",
+          },
+        };
+      }
+      return [];
+    });
+
+    render(<TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />);
+
+    expect(screen.getByText(/Merged into/i)).toBeInTheDocument();
+    expect(screen.getByText("Merged Task C")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Send a message to the agent...")).not.toBeInTheDocument();
+  });
+
+  it("renders source thread sections and source file badges for merge task C", async () => {
+    const mergeTask = {
+      ...baseTask,
+      _id: "task-c" as never,
+      title: "Merged Task C",
+      status: "review" as const,
+      isMergeTask: true,
+      files: [],
+    };
+
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
+      if (typeof args === "object" && args !== null && "taskId" in (args as Record<string, unknown>)) {
+        return {
+          ...buildDetailView(mergeTask, [baseMessage]),
+          mergeSources: [
+            { taskId: "task-a", taskTitle: "Task A", label: "A" },
+            { taskId: "task-b", taskTitle: "Task B", label: "B" },
+          ],
+          mergeSourceThreads: [
+            {
+              taskId: "task-a",
+              taskTitle: "Task A",
+              label: "A",
+              messages: [
+                {
+                  ...baseMessage,
+                  _id: "msg-a1",
+                  taskId: "task-a",
+                  content: "Source thread A message",
+                },
+              ],
+            },
+            {
+              taskId: "task-b",
+              taskTitle: "Task B",
+              label: "B",
+              messages: [
+                {
+                  ...baseMessage,
+                  _id: "msg-b1",
+                  taskId: "task-b",
+                  content: "Source thread B message",
+                },
+              ],
+            },
+          ],
+          mergeSourceFiles: [
+            {
+              name: "source-a.pdf",
+              type: "application/pdf",
+              size: 1024,
+              subfolder: "attachments",
+              sourceTaskId: "task-a",
+              sourceTaskTitle: "Task A",
+              sourceLabel: "A",
+            },
+            {
+              name: "source-b.md",
+              type: "text/markdown",
+              size: 512,
+              subfolder: "output",
+              sourceTaskId: "task-b",
+              sourceTaskTitle: "Task B",
+              sourceLabel: "B",
+            },
+          ],
+        };
+      }
+      return [];
+    });
+
+    render(<TaskDetailSheet taskId={"task-c" as never} onClose={() => {}} />);
+
+    expect(screen.getByText("Thread A")).toBeInTheDocument();
+    expect(screen.getByText("Thread B")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: /Config/i }));
+
+    expect(screen.getByRole("button", { name: "Open merge source A" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open merge source B" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: /Files \(2\)/i }));
+
+    expect(screen.getByText("source-a.pdf")).toBeInTheDocument();
+    expect(screen.getByText("source-b.md")).toBeInTheDocument();
+    expect(screen.getAllByText("A").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("B").length).toBeGreaterThan(0);
+  });
+
+  it("shows an editable visual merge step for manual merged tasks in review", async () => {
+    const manualMergeTask = {
+      ...baseTask,
+      _id: "task-c" as never,
+      title: "Merged Task C",
+      status: "review" as const,
+      isMergeTask: true,
+      isManual: true,
+      tags: ["merged"],
+      executionPlan: {
+        generatedAt: "2026-03-10T00:00:00.000Z",
+        generatedBy: "lead-agent",
+        steps: [
+          {
+            tempId: "merge-step",
+            title: "Merge task A with task B",
+            description: "Merged context from both source tasks.",
+            assignedAgent: "nanobot",
+            blockedBy: [],
+            parallelGroup: 0,
+            order: 1,
+          },
+        ],
+      },
+    };
+
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
+      if (typeof args === "object" && args !== null && "taskId" in (args as Record<string, unknown>)) {
+        return {
+          ...buildDetailView(manualMergeTask),
+          mergeSources: [
+            { taskId: "task-a", taskTitle: "Pensar na evolucao da memoria", label: "A" },
+            {
+              taskId: "task-b",
+              taskTitle:
+                "Precisa de criar um parse , ou teste para o CC identificar as skills compativeis com os agentes do nanobot",
+              label: "B",
+            },
+          ],
+        };
+      }
+      return [];
+    });
+
+    render(<TaskDetailSheet taskId={"task-c" as never} onClose={() => {}} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: /Plan/i }));
+
+    const planTab = screen.getByTestId("execution-plan-tab");
+    expect(planTab).toHaveAttribute("data-edit-mode", "true");
+    expect(planTab).toHaveAttribute("data-read-only", "false");
+    expect(planTab).toHaveTextContent("Merge task A with task B");
+  });
+
+  it("shows Save Plan for manual merged tasks in review after local plan edits", async () => {
+    const manualMergeTask = {
+      ...baseTask,
+      _id: "task-c" as never,
+      title: "Merged Task C",
+      status: "review" as const,
+      isMergeTask: true,
+      isManual: true,
+      tags: ["merged"],
+      executionPlan: {
+        generatedAt: "2026-03-10T00:00:00.000Z",
+        generatedBy: "lead-agent",
+        steps: [
+          {
+            tempId: "merge-step",
+            title: "Merge task A with task B",
+            description: "Merged context from both source tasks.",
+            assignedAgent: "nanobot",
+            blockedBy: [],
+            parallelGroup: 0,
+            order: 1,
+          },
+        ],
+      },
+    };
+
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
+      if (typeof args === "object" && args !== null && "taskId" in (args as Record<string, unknown>)) {
+        return {
+          ...buildDetailView(manualMergeTask),
+          mergeSources: [
+            { taskId: "task-a", taskTitle: "Task A", label: "A" },
+            { taskId: "task-b", taskTitle: "Task B", label: "B" },
+          ],
+        };
+      }
+      return [];
+    });
+
+    render(<TaskDetailSheet taskId={"task-c" as never} onClose={() => {}} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: /Plan/i }));
+    await userEvent.click(screen.getByTestId("mock-local-plan-change"));
+
+    expect(screen.getByTestId("save-plan-button")).toBeInTheDocument();
+  });
+
+  it("shows a start button for manual merged tasks in review with a plan", async () => {
+    const manualMergeTask = {
+      ...baseTask,
+      _id: "task-c" as never,
+      title: "Merged Task C",
+      status: "review" as const,
+      isMergeTask: true,
+      isManual: true,
+      tags: ["merged"],
+      executionPlan: {
+        generatedAt: "2026-03-10T00:00:00.000Z",
+        generatedBy: "lead-agent",
+        steps: [
+          {
+            tempId: "step_1",
+            title: "Real step",
+            description: "Do the actual work.",
+            assignedAgent: "human",
+            blockedBy: [],
+            parallelGroup: 1,
+            order: 1,
+          },
+        ],
+      },
+    };
+
+    oneRenderPass(manualMergeTask);
+
+    render(<TaskDetailSheet taskId={"task-c" as never} onClose={() => {}} />);
+
+    expect(screen.getByTestId("start-manual-plan-button")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("start-manual-plan-button"));
+
+    await waitFor(() => {
+      expect(mockMutationFn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskId: "task-c",
+          executionPlan: manualMergeTask.executionPlan,
+        }),
+      );
+    });
+  });
+
+  it("offers plan and manual merge actions in config", async () => {
+    const mutate = vi.fn().mockResolvedValue("task-c");
+    mockMutationFn.mockImplementation(mutate);
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
+      if (typeof args === "object" && args !== null && "taskId" in (args as Record<string, unknown>)) {
+        return buildDetailView(baseTask);
+      }
+      return [
+        {
+          _id: "task-merge-target",
+          title: "Merge target",
+          description: "Other completed task",
+        },
+      ];
+    });
+
+    render(<TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: /Config/i }));
+    await userEvent.click(screen.getByText("Merge target"));
+
+    await userEvent.click(screen.getByRole("button", { name: /Generate Plan Then Send To Review/i }));
+    expect(mutate).toHaveBeenCalledWith({
+      primaryTaskId: "task1",
+      secondaryTaskId: "task-merge-target",
+      mode: "plan",
+    });
+  });
+
   it("does not render sheet content when taskId is null", () => {
     render(<TaskDetailSheet taskId={null} onClose={() => {}} />);
 
@@ -207,7 +549,7 @@ describe("TaskDetailSheet", () => {
     expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
 
-  it("does not show Approve button for autonomous tasks in review", () => {
+  it("shows Approve button for autonomous tasks in review", () => {
     const reviewTask = {
       ...baseTask,
       status: "review" as const,
@@ -219,7 +561,7 @@ describe("TaskDetailSheet", () => {
       <TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />,
     );
 
-    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
 
   // --- Story 6.4: Retry from Beginning button ---

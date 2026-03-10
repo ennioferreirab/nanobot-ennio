@@ -49,6 +49,83 @@ class TestEnrichCCDescription:
         assert "Save ALL output files" in result
 
     @pytest.mark.asyncio
+    async def test_enrich_appends_merged_source_paths(self):
+        bridge = _make_bridge()
+
+        source_tasks = {
+            "task-merge": {
+                "files": [],
+                "is_merge_task": True,
+                "merge_source_task_ids": ["task-a", "task-b"],
+                "merge_source_labels": ["A", "B"],
+            },
+            "task-a": {
+                "title": "Task A",
+                "description": "First source",
+                "status": "done",
+                "files": [
+                    {
+                        "name": "source-a.pdf",
+                        "type": "application/pdf",
+                        "size": 1024,
+                        "subfolder": "attachments",
+                    },
+                ],
+            },
+            "task-b": {
+                "title": "Task B",
+                "description": "Second source",
+                "status": "done",
+                "files": [
+                    {
+                        "name": "source-b.md",
+                        "type": "text/markdown",
+                        "size": 512,
+                        "subfolder": "output",
+                    },
+                ],
+            },
+        }
+
+        def query_side_effect(fn_name: str, args: dict):
+            if fn_name == "tasks:getById":
+                return source_tasks.get(args["task_id"])
+            return None
+
+        def get_task_messages_side_effect(task_id: str):
+            if task_id == "task-a":
+                return [{
+                    "author_name": "agent-a",
+                    "author_type": "agent",
+                    "timestamp": "2026-01-01T10:00:00Z",
+                    "content": "Task A done",
+                    "type": "step_completion",
+                    "artifacts": [{"path": "output/report-a.md", "action": "created"}],
+                }]
+            if task_id == "task-b":
+                return [{
+                    "author_name": "agent-b",
+                    "author_type": "agent",
+                    "timestamp": "2026-01-01T10:05:00Z",
+                    "content": "Task B done",
+                    "type": "step_completion",
+                    "artifacts": [{"path": "output/report-b.md", "action": "created"}],
+                }]
+            return []
+
+        bridge.query = MagicMock(side_effect=query_side_effect)
+        bridge.get_task_messages = MagicMock(side_effect=get_task_messages_side_effect)
+
+        executor = _make_executor(bridge)
+        result = await executor._enrich_cc_description("task-merge", "Base desc", source_tasks["task-merge"])
+
+        assert "[Merged Task Origins]" in result
+        assert str(Path.home() / ".nanobot" / "tasks" / "task-a" / "attachments" / "source-a.pdf") in result
+        assert str(Path.home() / ".nanobot" / "tasks" / "task-b" / "output" / "source-b.md") in result
+        assert "[Source Thread A]" in result
+        assert "[Source Thread B]" in result
+
+    @pytest.mark.asyncio
     async def test_enrich_appends_thread_context(self):
         bridge = _make_bridge()
         bridge.get_task_messages = MagicMock(return_value=[

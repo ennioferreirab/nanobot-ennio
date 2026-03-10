@@ -17,6 +17,10 @@ from mc.application.execution.background_tasks import (
     create_background_task,
     get_background_tasks,
 )
+from mc.application.execution.file_enricher import (
+    build_merged_source_context,
+    load_merged_source_payloads,
+)
 from mc.application.execution.runtime import (
     build_tag_attributes_context,
     build_thread_context,
@@ -73,6 +77,7 @@ class CCExecutorMixin:
         try:
             safe_id = task_safe_id(task_id)
             files_dir = str(Path.home() / ".nanobot" / "tasks" / safe_id)
+            fresh_task: dict[str, Any] | None = None
             try:
                 fresh_task = await asyncio.to_thread(
                     self._bridge.query, "tasks:getById", {"task_id": task_id}
@@ -109,6 +114,20 @@ class CCExecutorMixin:
         except Exception:
             logger.warning(
                 "[executor] CC enrich: file manifest failed for '%s'", task_id, exc_info=True
+            )
+        try:
+            merged_source_payloads = await load_merged_source_payloads(
+                self._bridge,
+                fresh_task if isinstance(fresh_task, dict) else task_data,
+            )
+            merged_source_context = build_merged_source_context(merged_source_payloads)
+            if merged_source_context:
+                description += f"\n\n{merged_source_context}"
+        except Exception:
+            logger.warning(
+                "[executor] CC enrich: merged source context failed for '%s'",
+                task_id,
+                exc_info=True,
             )
         try:
             thread_messages = await asyncio.to_thread(self._bridge.get_task_messages, task_id)
@@ -511,9 +530,9 @@ class CCExecutorMixin:
         if result.session_id:
             await self._store_cc_session(agent_name, task_id, result.session_id)
 
-        final_status = (
-            TaskStatus.DONE if trust_level == TrustLevel.AUTONOMOUS else TaskStatus.REVIEW
-        )
+        # Execution completion never implies approval. Tasks always land in
+        # review until a human explicitly approves them.
+        final_status = TaskStatus.REVIEW
         await asyncio.to_thread(
             self._bridge.update_task_status,
             task_id,

@@ -43,7 +43,7 @@ class TestHandleReviewTransition:
     """Happy path and error path tests for review transitions."""
 
     @pytest.mark.asyncio
-    async def test_autonomous_no_reviewers_auto_completes(self) -> None:
+    async def test_autonomous_no_reviewers_waits_for_explicit_approval(self) -> None:
         bridge = _make_bridge()
         worker = ReviewWorker(_make_ctx(bridge))
 
@@ -58,9 +58,8 @@ class TestHandleReviewTransition:
         with patch("mc.workers.review.asyncio.to_thread", new=_sync_to_thread):
             await worker.handle_review_transition("task-1", task)
 
-        bridge.update_task_status.assert_called_once_with(
-            "task-1", TaskStatus.DONE
-        )
+        bridge.update_task_status.assert_not_called()
+        bridge.create_activity.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_skips_awaiting_kickoff(self) -> None:
@@ -113,6 +112,26 @@ class TestHandleReviewTransition:
             "trust_level": TrustLevel.AUTONOMOUS,
             "reviewers": [],
             "awaiting_kickoff": None,
+        }
+
+        with patch("mc.workers.review.asyncio.to_thread", new=_sync_to_thread):
+            await worker.handle_review_transition("task-1", task)
+
+        bridge.update_task_status.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_manual_review_task_not_auto_completed(self) -> None:
+        """Manual review tasks must wait for explicit user action."""
+        bridge = _make_bridge()
+        worker = ReviewWorker(_make_ctx(bridge))
+
+        task = {
+            "id": "task-1",
+            "title": "Manual Review Task",
+            "trust_level": TrustLevel.AUTONOMOUS,
+            "reviewers": [],
+            "awaiting_kickoff": None,
+            "is_manual": True,
         }
 
         with patch("mc.workers.review.asyncio.to_thread", new=_sync_to_thread):
@@ -271,8 +290,8 @@ class TestReviewWorkerProcessBatch:
         with patch("mc.workers.review.asyncio.to_thread", new=_sync_to_thread):
             await worker.process_batch(tasks)
 
-        # Only auto-completed once
-        assert bridge.update_task_status.call_count == 1
+        assert bridge.update_task_status.call_count == 0
+        assert worker._known_review_task_ids == {"task-1"}
 
     @pytest.mark.asyncio
     async def test_prunes_stale_ids(self) -> None:
@@ -289,8 +308,8 @@ class TestReviewWorkerProcessBatch:
 
         with patch("mc.workers.review.asyncio.to_thread", new=_sync_to_thread):
             await worker.process_batch([task])
-            assert bridge.update_task_status.call_count == 1
+            assert bridge.update_task_status.call_count == 0
 
             await worker.process_batch([])  # task leaves review
             await worker.process_batch([task])  # re-enters
-            assert bridge.update_task_status.call_count == 2
+            assert bridge.update_task_status.call_count == 0

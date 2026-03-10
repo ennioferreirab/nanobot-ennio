@@ -49,6 +49,13 @@ export interface TaskDetailActionsResult {
     description: string,
     timestamp: string,
   ) => Promise<void>;
+  createMergedTask: (
+    primaryTaskId: Id<"tasks">,
+    secondaryTaskId: Id<"tasks">,
+    mode: "plan" | "manual",
+  ) => Promise<Id<"tasks">>;
+  isCreatingMergeTask: boolean;
+  createMergeTaskError: string;
 }
 
 /**
@@ -70,6 +77,7 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
   const removeTaskFileMutation = useMutation(api.tasks.removeTaskFile);
   const createActivityMutation = useMutation(api.activities.create);
   const removeTagAttrValuesMutation = useMutation(api.tagAttributeValues.removeByTaskAndTag);
+  const createMergedTaskMutation = useMutation(api.tasks.createMergedTask);
 
   const [isKickingOff, setIsKickingOff] = useState(false);
   const [kickOffError, setKickOffError] = useState("");
@@ -81,6 +89,8 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
   const [savePlanError, setSavePlanError] = useState("");
   const [isStartingInbox, setIsStartingInbox] = useState(false);
   const [startInboxError, setStartInboxError] = useState("");
+  const [isCreatingMergeTask, setIsCreatingMergeTask] = useState(false);
+  const [createMergeTaskError, setCreateMergeTaskError] = useState("");
 
   const approve = useCallback(
     async (taskId: Id<"tasks">) => {
@@ -231,6 +241,27 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
     [createActivityMutation],
   );
 
+  const createMergedTask = useCallback(
+    async (
+      primaryTaskId: Id<"tasks">,
+      secondaryTaskId: Id<"tasks">,
+      mode: "plan" | "manual",
+    ) => {
+      setIsCreatingMergeTask(true);
+      setCreateMergeTaskError("");
+      try {
+        return await createMergedTaskMutation({ primaryTaskId, secondaryTaskId, mode });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        setCreateMergeTaskError(`Merge failed: ${message}`);
+        throw err;
+      } finally {
+        setIsCreatingMergeTask(false);
+      }
+    },
+    [createMergedTaskMutation],
+  );
+
   return {
     approve,
     kickOff,
@@ -256,5 +287,8 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
     addTaskFiles,
     removeTaskFile,
     createActivity,
+    createMergedTask,
+    isCreatingMergeTask,
+    createMergeTaskError,
   };
 }

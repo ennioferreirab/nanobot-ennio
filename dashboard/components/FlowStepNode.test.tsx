@@ -11,6 +11,7 @@ vi.mock("@xyflow/react", () => ({
 
 function renderNode(overrides: Partial<FlowStepNodeType["data"]> = {}) {
   const onRetry = vi.fn();
+  const onOpenParentTask = vi.fn();
   const props = {
     id: "step-1",
     selected: false,
@@ -28,12 +29,14 @@ function renderNode(overrides: Partial<FlowStepNodeType["data"]> = {}) {
       status: "crashed",
       isEditMode: false,
       onRetry,
+      parentTaskId: "task-123",
+      onOpenParentTask,
       ...overrides,
     } as any,
   } as FlowStepNodeType;
 
   render(<FlowStepNode {...props} />);
-  return { onRetry };
+  return { onRetry, onOpenParentTask };
 }
 
 describe("FlowStepNode", () => {
@@ -67,5 +70,13 @@ describe("FlowStepNode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry step" }));
 
     expect(onRetry).toHaveBeenCalledWith("step-1");
+  });
+
+  it("shows a task parent link and opens the parent task when clicked", () => {
+    const { onOpenParentTask } = renderNode();
+
+    fireEvent.click(screen.getByRole("button", { name: "Task Parent link" }));
+
+    expect(onOpenParentTask).toHaveBeenCalledWith("task-123");
   });
 });

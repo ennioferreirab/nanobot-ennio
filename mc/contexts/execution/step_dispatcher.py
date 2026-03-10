@@ -42,11 +42,7 @@ def _coerce_step_run_result(value: Any) -> tuple[str, bool, str | None]:
     """Normalize legacy string results and structured execution results."""
     if isinstance(value, str):
         return value, False, None
-    content = (
-        getattr(value, "content", None)
-        or getattr(value, "output", "")
-        or ""
-    )
+    content = getattr(value, "content", None) or getattr(value, "output", "") or ""
     is_error = bool(
         getattr(value, "is_error", False)
         or (hasattr(value, "success") and not getattr(value, "success"))
@@ -131,8 +127,12 @@ async def _run_step_agent(
 class StepDispatcher:
     """Dispatches and executes materialized task steps."""
 
-    def __init__(self, bridge: ConvexBridge, cron_service: Any | None = None,
-                 ask_user_registry: Any | None = None) -> None:
+    def __init__(
+        self,
+        bridge: ConvexBridge,
+        cron_service: Any | None = None,
+        ask_user_registry: Any | None = None,
+    ) -> None:
         self._bridge = bridge
         self._cron_service = cron_service
         self._tier_resolver: Any | None = None
@@ -142,6 +142,7 @@ class StepDispatcher:
         """Lazily create and return a TierResolver instance (shared across steps)."""
         if self._tier_resolver is None:
             from mc.infrastructure.providers.tier_resolver import TierResolver
+
             self._tier_resolver = TierResolver(self._bridge)
         return self._tier_resolver
 
@@ -220,9 +221,7 @@ class StepDispatcher:
                 return
 
             final_steps = await asyncio.to_thread(self._bridge.get_steps_by_task, task_id)
-            any_crashed = any(
-                step.get("status") == StepStatus.CRASHED for step in final_steps
-            )
+            any_crashed = any(step.get("status") == StepStatus.CRASHED for step in final_steps)
             if any_crashed:
                 await asyncio.to_thread(
                     self._bridge.update_task_status,
@@ -240,14 +239,17 @@ class StepDispatcher:
                 await asyncio.to_thread(
                     self._bridge.update_task_status,
                     task_id,
-                    TaskStatus.DONE,
+                    TaskStatus.REVIEW,
                     None,
                     f"All {step_count} steps completed",
                 )
                 await asyncio.to_thread(
                     self._bridge.create_activity,
-                    ActivityEventType.TASK_COMPLETED,
-                    f"Task completed -- all {step_count} steps finished",
+                    ActivityEventType.REVIEW_REQUESTED,
+                    (
+                        f"Execution completed -- all {step_count} steps finished; "
+                        "awaiting explicit approval"
+                    ),
                     task_id,
                 )
         except Exception as exc:
@@ -262,10 +264,7 @@ class StepDispatcher:
                     task_id,
                     "System",
                     AuthorType.SYSTEM,
-                    (
-                        "Step dispatch failed:\n"
-                        f"```\n{type(exc).__name__}: {exc}\n```"
-                    ),
+                    (f"Step dispatch failed:\n```\n{type(exc).__name__}: {exc}\n```"),
                     MessageType.SYSTEM_EVENT,
                 )
             except Exception:
@@ -275,9 +274,7 @@ class StepDispatcher:
                 )
 
     @staticmethod
-    def _group_by_parallel_group(
-        steps: list[dict[str, Any]]
-    ) -> dict[int, list[dict[str, Any]]]:
+    def _group_by_parallel_group(steps: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
         """Group steps by parallel_group and sort each group by order."""
         groups: dict[int, list[dict[str, Any]]] = {}
         for step in steps:
@@ -285,14 +282,10 @@ class StepDispatcher:
             groups.setdefault(parallel_group, []).append(step)
 
         for grouped_steps in groups.values():
-            grouped_steps.sort(
-                key=lambda step: _as_positive_int(step.get("order"), 1)
-            )
+            grouped_steps.sort(key=lambda step: _as_positive_int(step.get("order"), 1))
         return groups
 
-    async def _dispatch_parallel_group(
-        self, task_id: str, steps: list[dict[str, Any]]
-    ) -> None:
+    async def _dispatch_parallel_group(self, task_id: str, steps: list[dict[str, Any]]) -> None:
         """Execute all steps in a parallel group concurrently."""
         results = await asyncio.gather(
             *[self._execute_step(task_id, step) for step in steps],
@@ -320,6 +313,7 @@ class StepDispatcher:
             return []
 
         step_title = (step.get("title") or "Untitled Step").strip()
+
         agent_name = (step.get("assigned_agent") or NANOBOT_AGENT_NAME).strip()
         if is_lead_agent(agent_name):
             logger.warning(
@@ -336,18 +330,19 @@ class StepDispatcher:
             task_id,
             agent_name,
         )
-        await asyncio.to_thread(
-            self._bridge.update_step_status,
-            step_id,
-            StepStatus.RUNNING,
-        )
-        await asyncio.to_thread(
-            self._bridge.create_activity,
-            ActivityEventType.STEP_STARTED,
-            f"Agent {agent_name} started step: {step_title}",
-            task_id,
-            agent_name,
-        )
+        if agent_name != "human":
+            await asyncio.to_thread(
+                self._bridge.update_step_status,
+                step_id,
+                StepStatus.RUNNING,
+            )
+            await asyncio.to_thread(
+                self._bridge.create_activity,
+                ActivityEventType.STEP_STARTED,
+                f"Agent {agent_name} started step: {step_title}",
+                task_id,
+                agent_name,
+            )
 
         try:
             # ── Unified context pipeline (Story 16.1) ─────────────────────
@@ -359,10 +354,7 @@ class StepDispatcher:
                 ctx_builder._tier_resolver = self._tier_resolver  # share resolver
                 req = await ctx_builder.build_step_context(task_id, step)
             except ValueError as exc:
-                error_msg = (
-                    f"Model tier resolution failed for agent "
-                    f"'{agent_name}': {exc}"
-                )
+                error_msg = f"Model tier resolution failed for agent '{agent_name}': {exc}"
                 logger.error("[dispatcher] %s", error_msg)
                 await asyncio.to_thread(
                     self._bridge.send_message,
@@ -390,9 +382,7 @@ class StepDispatcher:
 
             from mc.application.execution.request import RunnerType
 
-            req.runner_type = (
-                RunnerType.CLAUDE_CODE if req.is_cc else RunnerType.NANOBOT
-            )
+            req.runner_type = RunnerType.CLAUDE_CODE if req.is_cc else RunnerType.NANOBOT
 
             result = await _run_step_agent(
                 agent_name=agent_name,
@@ -412,18 +402,23 @@ class StepDispatcher:
                 runner_type=req.runner_type,
                 engine_builder=self._build_execution_engine,
             )
+            transition_status = getattr(result, "transition_status", None)
             result_content, is_error_result, error_message = _coerce_step_run_result(result)
             if is_error_result:
                 raise RuntimeError(
-                    error_message
-                    or result_content
-                    or "Agent returned an execution error"
+                    error_message or result_content or "Agent returned an execution error"
                 )
 
+            if transition_status == StepStatus.WAITING_HUMAN:
+                await asyncio.to_thread(
+                    self._bridge.update_step_status,
+                    step_id,
+                    StepStatus.WAITING_HUMAN,
+                )
+                return []
+
             # Collect artifacts and post structured completion message (Story 2.5).
-            artifacts = await asyncio.to_thread(
-                collect_output_artifacts, task_id, pre_snapshot
-            )
+            artifacts = await asyncio.to_thread(collect_output_artifacts, task_id, pre_snapshot)
 
             # Sync output file manifest to Convex (best-effort, non-blocking) (Story 6.2).
             try:

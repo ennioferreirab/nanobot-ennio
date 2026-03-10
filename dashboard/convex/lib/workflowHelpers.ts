@@ -43,6 +43,7 @@ export type ActivityEventType =
   | "bulk_clear_done"
   | "manual_task_status_changed"
   | "file_attached"
+  | "task_merged"
   | "agent_output"
   | "board_created"
   | "board_updated"
