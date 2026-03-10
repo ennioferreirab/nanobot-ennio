@@ -23,6 +23,113 @@ export function isValidTransition(currentStatus: string, newStatus: string): boo
   return isValidTaskTransition(currentStatus, newStatus);
 }
 
+const MERGE_BLOCKED_SOURCE_STATUSES = new Set(["in_progress", "retrying", "deleted"]);
+function defaultMergeSourceLabel(index: number): string {
+  let value = index;
+  let label = "";
+  do {
+    label = String.fromCharCode(65 + (value % 26)) + label;
+    value = Math.floor(value / 26) - 1;
+  } while (value >= 0);
+  return label;
+}
+
+function getMergeSourceLabel(labels: string[] | undefined, index: number): string {
+  return labels?.[index] ?? defaultMergeSourceLabel(index);
+}
+
+function dedupeTags(...tagSets: Array<string[] | undefined>): string[] | undefined {
+  const merged = Array.from(new Set(tagSets.flatMap((tags) => tags ?? [])));
+  return merged.length > 0 ? merged : undefined;
+}
+
+function removeTag(tags: string[] | undefined, tagName: string): string[] | undefined {
+  const next = (tags ?? []).filter((tag) => tag !== tagName);
+  return next.length > 0 ? next : undefined;
+}
+
+function assertMergeableSourceTask(
+  task: Record<string, unknown> | null,
+  label: string,
+): asserts task is Record<string, unknown> {
+  if (!task) {
+    throw new ConvexError(`Source task ${label} not found`);
+  }
+  if (MERGE_BLOCKED_SOURCE_STATUSES.has(String(task.status))) {
+    throw new ConvexError(
+      `Source task ${label} cannot be merged from status ${String(task.status)}`,
+    );
+  }
+  if (task.mergedIntoTaskId) {
+    throw new ConvexError(`Source task ${label} is already merged into another task`);
+  }
+}
+
+async function resolveMergeSourceTree(
+  ctx: any,
+  sourceTaskIds: string[] | undefined,
+  sourceLabels: string[] | undefined,
+  seen = new Set<string>(),
+  parentLabel?: string,
+): Promise<
+  Array<{
+    taskId: string;
+    taskTitle: string;
+    label: string;
+    task: any;
+    messages: any[];
+  }>
+> {
+  if (!Array.isArray(sourceTaskIds) || sourceTaskIds.length === 0) return [];
+
+  const resolved: Array<{
+    taskId: string;
+    taskTitle: string;
+    label: string;
+    task: any;
+    messages: any[];
+  }> = [];
+
+  for (const [index, sourceTaskId] of sourceTaskIds.entries()) {
+    if (seen.has(sourceTaskId)) continue;
+
+    const sourceTask = await ctx.db.get(sourceTaskId);
+    if (!sourceTask) continue;
+
+    seen.add(sourceTaskId);
+    const sourceMessages = await ctx.db
+      .query("messages")
+      .withIndex("by_taskId", (q: { eq: (field: string, value: string) => unknown }) =>
+        q.eq("taskId", sourceTaskId),
+      )
+      .collect();
+    const ownLabel = getMergeSourceLabel(sourceLabels, index);
+    const label = parentLabel ? `${parentLabel}.${ownLabel}` : ownLabel;
+
+    resolved.push({
+      taskId: sourceTaskId,
+      taskTitle: sourceTask.title,
+      label,
+      task: sourceTask,
+      messages: sourceMessages,
+    });
+
+    if (sourceTask.isMergeTask === true && Array.isArray(sourceTask.mergeSourceTaskIds)) {
+      resolved.push(
+        ...(await resolveMergeSourceTree(
+          ctx,
+          sourceTask.mergeSourceTaskIds as string[],
+          sourceTask.mergeSourceLabels as string[] | undefined,
+          seen,
+          label,
+        )),
+      );
+    }
+  }
+
+  return resolved;
+}
+
 export const create = mutation({
   args: {
     title: v.string(),
@@ -115,6 +222,30 @@ export const getById = query({
   args: { taskId: v.id("tasks") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.taskId);
+  },
+});
+
+export const searchMergeCandidates = query({
+  args: {
+    query: v.string(),
+    excludeTaskId: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    const normalized = args.query.trim().toLowerCase();
+    const tasks = await ctx.db.query("tasks").collect();
+    return tasks
+      .filter((task) => {
+        if (task._id === args.excludeTaskId) return false;
+        if (task.status === "deleted") return false;
+        if (task.mergedIntoTaskId) return false;
+        if (!normalized) return true;
+        return (
+          task.title.toLowerCase().includes(normalized) ||
+          (task.description ?? "").toLowerCase().includes(normalized)
+        );
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, 10);
   },
 });
 
@@ -215,6 +346,76 @@ export const updateExecutionPlan = internalMutation({
   },
 });
 
+export const createMergedTask = mutation({
+  args: {
+    primaryTaskId: v.id("tasks"),
+    secondaryTaskId: v.id("tasks"),
+    mode: v.union(v.literal("plan"), v.literal("manual")),
+  },
+  handler: async (ctx, args) => {
+    if (args.primaryTaskId === args.secondaryTaskId) {
+      throw new ConvexError("Select two different tasks to merge");
+    }
+
+    const [primaryTask, secondaryTask] = await Promise.all([
+      ctx.db.get(args.primaryTaskId),
+      ctx.db.get(args.secondaryTaskId),
+    ]);
+
+    assertMergeableSourceTask(primaryTask, "A");
+    assertMergeableSourceTask(secondaryTask, "B");
+
+    const now = new Date().toISOString();
+    const trustLevel =
+      primaryTask.trustLevel === "human_approved" || secondaryTask.trustLevel === "human_approved"
+        ? "human_approved"
+        : "autonomous";
+
+    const mergedTaskId = await ctx.db.insert("tasks", {
+      title: `Merge: ${String(primaryTask.title)} + ${String(secondaryTask.title)}`,
+      description: `Merged from "${String(primaryTask.title)}" and "${String(secondaryTask.title)}". Continue work in this task.`,
+      status: args.mode === "plan" ? "planning" : "review",
+      awaitingKickoff: undefined,
+      isManual: args.mode === "manual" ? true : undefined,
+      trustLevel,
+      supervisionMode:
+        args.mode === "plan"
+          ? "supervised"
+          : (primaryTask.supervisionMode ?? secondaryTask.supervisionMode ?? "autonomous"),
+      boardId: primaryTask.boardId ?? secondaryTask.boardId,
+      tags: dedupeTags(
+        primaryTask.tags as string[] | undefined,
+        secondaryTask.tags as string[] | undefined,
+        ["merged"],
+      ),
+      isMergeTask: true,
+      mergeSourceTaskIds: [args.primaryTaskId, args.secondaryTaskId],
+      mergeSourceLabels: ["A", "B"],
+      executionPlan: undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    for (const sourceTask of [primaryTask, secondaryTask]) {
+      await ctx.db.patch(sourceTask._id as typeof args.primaryTaskId, {
+        mergedIntoTaskId: mergedTaskId,
+        mergeLockedAt: now,
+        tags: dedupeTags(sourceTask.tags as string[] | undefined, ["merged"]),
+        updatedAt: now,
+      });
+    }
+
+    await logActivity(ctx, {
+      taskId: mergedTaskId,
+      eventType: "task_merged",
+      description: `Merged task created from "${String(primaryTask.title)}" and "${String(secondaryTask.title)}"`,
+      timestamp: now,
+    });
+
+    return mergedTaskId;
+  },
+});
+
 // Reusable schema for execution plan validation
 const executionPlanSchema = v.object({
   steps: v.array(
@@ -253,7 +454,11 @@ export const saveExecutionPlan = mutation({
         `Cannot save execution plan on task in status '${task.status}'. Allowed: ${allowed.join(", ")}`,
       );
     }
-    if (args.executionPlan.steps.length === 0) {
+    if (
+      !args.executionPlan ||
+      !Array.isArray(args.executionPlan.steps) ||
+      args.executionPlan.steps.length === 0
+    ) {
       throw new ConvexError("Execution plan must have at least one step");
     }
     await ctx.db.patch(args.taskId, {
@@ -289,8 +494,9 @@ export const startInboxTask = mutation({
     }
 
     // Use provided plan, or fall back to plan already saved on the task
-    const planToSave =
+    const rawPlan =
       args.executionPlan ?? (task.executionPlan as typeof args.executionPlan | undefined);
+    const planToSave = rawPlan;
     if (!planToSave || !Array.isArray(planToSave.steps) || planToSave.steps.length === 0) {
       throw new ConvexError(
         "Cannot start task without an execution plan. Add at least one step first.",
@@ -298,7 +504,8 @@ export const startInboxTask = mutation({
     }
     // Validate that the fallback plan has the required fields
     for (const step of planToSave.steps) {
-      if (!step.tempId || !step.title || !step.assignedAgent) {
+      const typedStep = step as Record<string, unknown>;
+      if (!typedStep.tempId || !typedStep.title || !typedStep.assignedAgent) {
         throw new ConvexError(
           "Existing execution plan has invalid steps. Please rebuild the plan.",
         );
@@ -310,9 +517,8 @@ export const startInboxTask = mutation({
       status: "in_progress",
       updatedAt: now,
     };
-    // Only overwrite executionPlan if a new one was provided
     if (args.executionPlan) {
-      patch.executionPlan = args.executionPlan;
+      patch.executionPlan = planToSave;
     }
     await ctx.db.patch(args.taskId, patch);
 
@@ -455,7 +661,6 @@ export const resumeTask = mutation({
     }
 
     const now = new Date().toISOString();
-
     const patch: Record<string, unknown> = {
       status: "in_progress",
       awaitingKickoff: undefined, // safety clear
@@ -492,10 +697,11 @@ export const approveAndKickOff = mutation({
     if (!task) {
       throw new ConvexError("Task not found");
     }
-    if (task.status !== "review" || task.awaitingKickoff !== true) {
-      throw new ConvexError(
-        `Cannot kick off task in status '${task.status}'. Expected: review with awaitingKickoff`,
-      );
+    if (task.status !== "review") {
+      throw new ConvexError(`Cannot kick off task in status '${task.status}'. Expected: review`);
+    }
+    if (task.awaitingKickoff !== true && task.isManual !== true) {
+      throw new ConvexError("Cannot kick off task: requires awaitingKickoff or isManual");
     }
 
     const now = new Date().toISOString();
@@ -625,7 +831,7 @@ export const retry = mutation({
 });
 
 /**
- * Approve a human_approved task in review state.
+ * Approve a task in review state.
  * Transitions to "done", writes activity event + thread message.
  */
 export const approve = mutation({
@@ -639,8 +845,8 @@ export const approve = mutation({
     if (task.status !== "review") {
       throw new ConvexError(`Task is not in review state (current: ${task.status})`);
     }
-    if (task.trustLevel !== "human_approved") {
-      throw new ConvexError("Task does not require human approval");
+    if (task.isManual === true) {
+      throw new ConvexError("Cannot approve a manual task. Use Start to begin execution.");
     }
 
     const now = new Date().toISOString();
@@ -655,7 +861,7 @@ export const approve = mutation({
     // Activity event
     await logActivity(ctx, {
       taskId: args.taskId,
-      eventType: "hitl_approved",
+      eventType: task.trustLevel === "human_approved" ? "hitl_approved" : "review_approved",
       description: `User approved "${task.title}"`,
       timestamp: now,
     });
@@ -908,6 +1114,22 @@ export const softDelete = mutation({
 
     const now = new Date().toISOString();
 
+    if (task.isMergeTask && task.mergeSourceTaskIds?.length) {
+      for (const sourceTaskId of task.mergeSourceTaskIds) {
+        const sourceTask = await ctx.db.get(sourceTaskId);
+        if (!sourceTask || sourceTask.mergedIntoTaskId !== args.taskId) continue;
+        await ctx.db.patch(sourceTaskId, {
+          mergedIntoTaskId: undefined,
+          mergeLockedAt: undefined,
+          tags:
+            sourceTask.isMergeTask === true
+              ? dedupeTags(sourceTask.tags as string[] | undefined, ["merged"])
+              : removeTag(sourceTask.tags as string[] | undefined, "merged"),
+          updatedAt: now,
+        });
+      }
+    }
+
     await ctx.db.patch(args.taskId, {
       status: "deleted",
       previousStatus: task.status,
@@ -1111,6 +1333,19 @@ export const restore = mutation({
     }
     await ctx.db.patch(args.taskId, patch);
 
+    if (task.isMergeTask && task.mergeSourceTaskIds?.length) {
+      for (const sourceTaskId of task.mergeSourceTaskIds) {
+        const sourceTask = await ctx.db.get(sourceTaskId);
+        if (!sourceTask || sourceTask.status === "deleted") continue;
+        await ctx.db.patch(sourceTaskId, {
+          mergedIntoTaskId: args.taskId,
+          mergeLockedAt: now,
+          tags: dedupeTags(sourceTask.tags as string[] | undefined, ["merged"]),
+          updatedAt: now,
+        });
+      }
+    }
+
     // Restore cascade-deleted steps back to "planned" so the orchestrator can re-dispatch
     const steps = await ctx.db
       .query("steps")
@@ -1193,7 +1428,7 @@ export const getDetailView = query({
     if (!task) return null;
 
     // Batch-load related data in parallel
-    const [board, messages, steps, tagCatalog, tagAttributes, tagAttributeValues] =
+    const [board, messages, steps, tagCatalog, tagAttributes, tagAttributeValues, mergedIntoTask] =
       await Promise.all([
         task.boardId ? ctx.db.get(task.boardId) : Promise.resolve(null),
         ctx.db
@@ -1210,7 +1445,22 @@ export const getDetailView = query({
           .query("tagAttributeValues")
           .withIndex("by_taskId", (q) => q.eq("taskId", args.taskId))
           .collect(),
+        task.mergedIntoTaskId ? ctx.db.get(task.mergedIntoTaskId) : Promise.resolve(null),
       ]);
+
+    const resolvedMergeSources = await resolveMergeSourceTree(
+      ctx,
+      task.mergeSourceTaskIds as string[] | undefined,
+      task.mergeSourceLabels as string[] | undefined,
+    );
+    const mergeSourceFiles = resolvedMergeSources.flatMap((source) =>
+      (source.task.files ?? []).map((file: any) => ({
+        ...file,
+        sourceTaskId: source.taskId,
+        sourceTaskTitle: source.taskTitle,
+        sourceLabel: source.label,
+      })),
+    );
 
     // Sort steps by order for display
     const sortedSteps = steps.sort((a, b) => a.order - b.order);
@@ -1225,6 +1475,19 @@ export const getDetailView = query({
       messages,
       steps: sortedSteps,
       files: task.files ?? [],
+      mergedIntoTask,
+      mergeSources: resolvedMergeSources.map((source) => ({
+        taskId: source.taskId,
+        taskTitle: source.taskTitle,
+        label: source.label,
+      })),
+      mergeSourceThreads: resolvedMergeSources.map((source) => ({
+        taskId: source.taskId,
+        taskTitle: source.taskTitle,
+        label: source.label,
+        messages: source.messages,
+      })),
+      mergeSourceFiles,
       tags: task.tags ?? [],
       tagCatalog,
       tagAttributes,

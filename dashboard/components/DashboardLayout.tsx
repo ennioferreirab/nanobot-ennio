@@ -173,6 +173,7 @@ function DashboardContent({ isXl }: { isXl: boolean }) {
       <TaskDetailSheet
         taskId={selectedTaskId}
         onClose={() => setSelectedTaskId(null)}
+        onTaskOpen={(taskId) => setSelectedTaskId(taskId)}
       />
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent side="right" className="w-full sm:w-[600px] p-0">

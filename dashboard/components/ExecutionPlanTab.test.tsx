@@ -807,6 +807,48 @@ describe("ExecutionPlanTab", () => {
       expect(mergeStep.blockedBy).toContain("step_3");
     });
 
+    it("shows merge button for root-level parallel siblings in group 0", () => {
+      const rootParallelPlan = {
+        steps: [
+          {
+            tempId: "step_1",
+            stepId: "step_1",
+            title: "Root A",
+            description: "Root branch A",
+            assignedAgent: "agent-a",
+            blockedBy: [] as string[],
+            parallelGroup: 0,
+            order: 1,
+          },
+          {
+            tempId: "step_2",
+            stepId: "step_2",
+            title: "Root B",
+            description: "Root branch B",
+            assignedAgent: "agent-b",
+            blockedBy: [] as string[],
+            parallelGroup: 0,
+            order: 2,
+          },
+        ],
+        generatedAt: "2026-01-01T00:00:00Z",
+        generatedBy: "lead-agent" as const,
+        createdAt: "2026-01-01",
+      };
+
+      render(
+        <ExecutionPlanTab
+          executionPlan={rootParallelPlan}
+          taskId="task-abc"
+          taskStatus="review"
+          onLocalPlanChange={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByTestId("flow-node-merge-paths-step_1")).toBeInTheDocument();
+      expect(screen.getByTestId("flow-node-merge-paths-step_2")).toBeInTheDocument();
+    });
+
     it("clicking merge button ignores other forks in the same parallel group", () => {
       const parallelPlan = {
         steps: [
@@ -949,6 +991,87 @@ describe("ExecutionPlanTab", () => {
 
       expect(screen.queryByTestId("flow-node-merge-paths-step_2")).not.toBeInTheDocument();
       expect(screen.queryByTestId("flow-node-merge-paths-step_4")).not.toBeInTheDocument();
+    });
+
+    it("only allows sequential insertion from the visual merge alias step", () => {
+      const mergeAliasPlan = {
+        steps: [
+          {
+            tempId: "step_merge",
+            stepId: "step_merge",
+            title: "Merge task A with task B",
+            description: "Merged context from task A and task B.",
+            assignedAgent: "nanobot",
+            blockedBy: [] as string[],
+            parallelGroup: 0,
+            order: 1,
+          },
+          {
+            tempId: "step_2",
+            stepId: "step_2",
+            title: "Continue",
+            description: "Continue work",
+            assignedAgent: "agent-a",
+            blockedBy: ["step_merge"] as string[],
+            parallelGroup: 1,
+            order: 2,
+          },
+        ],
+        generatedAt: "2026-01-01T00:00:00Z",
+        generatedBy: "lead-agent" as const,
+        createdAt: "2026-01-01",
+      };
+
+      render(
+        <ExecutionPlanTab
+          executionPlan={mergeAliasPlan}
+          taskId="task-abc"
+          taskStatus="review"
+          onLocalPlanChange={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByTestId("flow-node-add-sequential-__merge_alias__")).toBeInTheDocument();
+      expect(screen.queryByTestId("flow-node-add-parallel-__merge_alias__")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("flow-node-merge-paths-__merge_alias__")).not.toBeInTheDocument();
+    });
+
+    it("renders the merge alias as a visual-only step ahead of the real plan", () => {
+      const realPlan = {
+        steps: [
+          {
+            tempId: "step_1",
+            stepId: "step_1",
+            title: "Continue",
+            description: "Continue work",
+            assignedAgent: "agent-a",
+            blockedBy: [] as string[],
+            parallelGroup: 1,
+            order: 1,
+          },
+        ],
+        generatedAt: "2026-01-01T00:00:00Z",
+        generatedBy: "lead-agent" as const,
+        createdAt: "2026-01-01",
+      };
+
+      render(
+        <ExecutionPlanTab
+          executionPlan={realPlan}
+          taskId="task-abc"
+          taskStatus="review"
+          onLocalPlanChange={vi.fn()}
+          mergeAlias={{
+            title: "Merge task A with task B",
+            description: "Merged context from task A and task B.",
+          }}
+        />,
+      );
+
+      const aliasNode = screen.getByTestId("flow-node-__merge_alias__");
+      expect(aliasNode).toHaveTextContent("Merge task A with task B");
+      expect(aliasNode).toHaveAttribute("data-agent", "");
+      expect(screen.getByTestId("flow-node-step_1")).toBeInTheDocument();
     });
   });
 });

@@ -69,9 +69,17 @@ class TestExecuteStepCrashHandler:
                 "mc.contexts.execution.step_dispatcher._run_step_agent",
                 new=AsyncMock(side_effect=exc),
             ),
-            patch("mc.contexts.execution.step_dispatcher._load_agent_config", return_value=(None, None, None)),
-            patch("mc.contexts.execution.step_dispatcher._maybe_inject_orientation", side_effect=lambda n, p: p),
-            patch("mc.contexts.execution.step_dispatcher._build_step_thread_context", return_value=""),
+            patch(
+                "mc.contexts.execution.step_dispatcher._load_agent_config",
+                return_value=(None, None, None),
+            ),
+            patch(
+                "mc.contexts.execution.step_dispatcher._maybe_inject_orientation",
+                side_effect=lambda n, p: p,
+            ),
+            patch(
+                "mc.contexts.execution.step_dispatcher._build_step_thread_context", return_value=""
+            ),
             patch("mc.contexts.execution.executor._snapshot_output_dir", return_value={}),
         ):
             with pytest.raises(RuntimeError):
@@ -79,7 +87,8 @@ class TestExecuteStepCrashHandler:
 
         # Step must be marked CRASHED
         crashed_calls = [
-            c for c in bridge.update_step_status.call_args_list
+            c
+            for c in bridge.update_step_status.call_args_list
             if len(c[0]) >= 2 and c[0][1] == StepStatus.CRASHED
         ]
         assert crashed_calls, "update_step_status must be called with CRASHED"
@@ -98,9 +107,17 @@ class TestExecuteStepCrashHandler:
                 "mc.contexts.execution.step_dispatcher._run_step_agent",
                 new=AsyncMock(side_effect=exc),
             ),
-            patch("mc.contexts.execution.step_dispatcher._load_agent_config", return_value=(None, None, None)),
-            patch("mc.contexts.execution.step_dispatcher._maybe_inject_orientation", side_effect=lambda n, p: p),
-            patch("mc.contexts.execution.step_dispatcher._build_step_thread_context", return_value=""),
+            patch(
+                "mc.contexts.execution.step_dispatcher._load_agent_config",
+                return_value=(None, None, None),
+            ),
+            patch(
+                "mc.contexts.execution.step_dispatcher._maybe_inject_orientation",
+                side_effect=lambda n, p: p,
+            ),
+            patch(
+                "mc.contexts.execution.step_dispatcher._build_step_thread_context", return_value=""
+            ),
             patch("mc.contexts.execution.executor._snapshot_output_dir", return_value={}),
         ):
             with pytest.raises(RuntimeError):
@@ -127,9 +144,17 @@ class TestExecuteStepCrashHandler:
                 "mc.contexts.execution.step_dispatcher._run_step_agent",
                 new=AsyncMock(side_effect=exc),
             ),
-            patch("mc.contexts.execution.step_dispatcher._load_agent_config", return_value=(None, None, None)),
-            patch("mc.contexts.execution.step_dispatcher._maybe_inject_orientation", side_effect=lambda n, p: p),
-            patch("mc.contexts.execution.step_dispatcher._build_step_thread_context", return_value=""),
+            patch(
+                "mc.contexts.execution.step_dispatcher._load_agent_config",
+                return_value=(None, None, None),
+            ),
+            patch(
+                "mc.contexts.execution.step_dispatcher._maybe_inject_orientation",
+                side_effect=lambda n, p: p,
+            ),
+            patch(
+                "mc.contexts.execution.step_dispatcher._build_step_thread_context", return_value=""
+            ),
             patch("mc.contexts.execution.executor._snapshot_output_dir", return_value={}),
         ):
             with pytest.raises(ValueError):
@@ -153,9 +178,17 @@ class TestExecuteStepCrashHandler:
                 "mc.contexts.execution.step_dispatcher._run_step_agent",
                 new=AsyncMock(side_effect=RuntimeError("boom")),
             ),
-            patch("mc.contexts.execution.step_dispatcher._load_agent_config", return_value=(None, None, None)),
-            patch("mc.contexts.execution.step_dispatcher._maybe_inject_orientation", side_effect=lambda n, p: p),
-            patch("mc.contexts.execution.step_dispatcher._build_step_thread_context", return_value=""),
+            patch(
+                "mc.contexts.execution.step_dispatcher._load_agent_config",
+                return_value=(None, None, None),
+            ),
+            patch(
+                "mc.contexts.execution.step_dispatcher._maybe_inject_orientation",
+                side_effect=lambda n, p: p,
+            ),
+            patch(
+                "mc.contexts.execution.step_dispatcher._build_step_thread_context", return_value=""
+            ),
             patch("mc.contexts.execution.executor._snapshot_output_dir", return_value={}),
         ):
             with pytest.raises(RuntimeError, match="boom"):

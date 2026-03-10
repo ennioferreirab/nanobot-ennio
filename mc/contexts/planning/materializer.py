@@ -5,13 +5,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from mc.domain.utils import as_positive_int
 from mc.types import (
     NANOBOT_AGENT_NAME,
     ActivityEventType,
     ExecutionPlan,
     TaskStatus,
 )
-from mc.domain.utils import as_positive_int
 
 if TYPE_CHECKING:
     from mc.bridge import ConvexBridge
@@ -75,22 +75,22 @@ class PlanMaterializer:
         for step in plan.steps:
             for dep in step.blocked_by:
                 if dep not in all_temp_ids:
-                    raise ValueError(
-                        f"Step '{step.temp_id}' references unknown dependency '{dep}'"
-                    )
+                    raise ValueError(f"Step '{step.temp_id}' references unknown dependency '{dep}'")
                 if dep == step.temp_id:
-                    raise ValueError(
-                        f"Step '{step.temp_id}' cannot depend on itself"
-                    )
+                    raise ValueError(f"Step '{step.temp_id}' cannot depend on itself")
 
     def _build_steps_payload(self, plan: ExecutionPlan) -> list[dict[str, object]]:
         """Build snake_case payload accepted by bridge.batch_create_steps()."""
         payload: list[dict[str, object]] = []
 
         for index, step in enumerate(plan.steps, start=1):
+            if step.temp_id == "__merge_alias__":
+                continue  # Visual-only alias, not a real step
             title = (step.title or step.description or f"Step {index}").strip()
             description = (step.description or title).strip()
-            assigned_agent = (step.assigned_agent or NANOBOT_AGENT_NAME).strip() or NANOBOT_AGENT_NAME
+            assigned_agent = (
+                step.assigned_agent or NANOBOT_AGENT_NAME
+            ).strip() or NANOBOT_AGENT_NAME
 
             payload.append(
                 {

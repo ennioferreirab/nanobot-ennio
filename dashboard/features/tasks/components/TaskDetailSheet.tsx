@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, Fragment } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import * as motion from "motion/react-client";
 import { useReducedMotion } from "motion/react";
@@ -45,6 +45,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useTaskDetailView } from "@/hooks/useTaskDetailView";
 import { useTaskDetailActions } from "@/hooks/useTaskDetailActions";
 import { usePlanEditorState } from "@/hooks/usePlanEditorState";
+import type { ExecutionPlan } from "@/lib/types";
 
 const formatSize = (bytes: number) =>
   bytes < 1024 * 1024
@@ -53,7 +54,6 @@ const formatSize = (bytes: number) =>
 
 const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"]);
 const CODE_EXTS = new Set([".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".sh"]);
-
 function FileIcon({ name }: { name: string }) {
   const dotIdx = name.lastIndexOf(".");
   const ext = dotIdx > 0 ? name.slice(dotIdx).toLowerCase() : "";
@@ -72,12 +72,39 @@ function FileIcon({ name }: { name: string }) {
   return <File className="h-4 w-4 flex-shrink-0 text-muted-foreground" aria-label="Generic file" />;
 }
 
+function buildMergeAliasDisplay(
+  mergeSources:
+    | Array<{
+        label: string;
+        taskTitle: string;
+      }>
+    | undefined,
+):
+  | {
+      title: string;
+      description: string;
+    }
+  | undefined {
+  if (!mergeSources || mergeSources.length < 2) return undefined;
+
+  const [primarySource, secondarySource] = mergeSources;
+  return {
+    title: `Merge task ${primarySource.label} with task ${secondarySource.label}`,
+    description: `Merged context from "${primarySource.taskTitle}" and "${secondarySource.taskTitle}".`,
+  };
+}
+
+function hasExecutablePlanSteps(plan: ExecutionPlan | undefined): boolean {
+  return Boolean(plan?.steps?.length);
+}
+
 interface TaskDetailSheetProps {
   taskId: Id<"tasks"> | null;
   onClose: () => void;
+  onTaskOpen?: (taskId: Id<"tasks">) => void;
 }
 
-export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
+export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheetProps) {
   // --- Feature hooks ---
   const view = useTaskDetailView(taskId);
   const actions = useTaskDetailActions();
@@ -90,6 +117,10 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     tagsList,
     tagAttributesList,
     tagAttrValues,
+    mergedIntoTask,
+    mergeSources,
+    mergeSourceThreads,
+    displayFiles,
     isTaskLoaded,
     colors,
     tagColorMap,
@@ -124,6 +155,9 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     addTaskFiles,
     removeTaskFile,
     createActivity,
+    createMergedTask,
+    isCreatingMergeTask,
+    createMergeTaskError,
   } = actions;
 
   const { activePlan, localPlan, setLocalPlan, activeTab, setActiveTab } = planState;
@@ -153,6 +187,9 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     type: string;
     size: number;
     subfolder: string;
+    sourceTaskId?: Id<"tasks">;
+    sourceLabel?: string;
+    sourceTaskTitle?: string;
   } | null>(null);
   const [showRejection, setShowRejection] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -164,10 +201,23 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const [editTitleValue, setEditTitleValue] = useState("");
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editDescriptionValue, setEditDescriptionValue] = useState("");
+  const [mergeQuery, setMergeQuery] = useState("");
+  const [selectedMergeTaskId, setSelectedMergeTaskId] = useState<Id<"tasks"> | "">("");
   const attachInputRef = useRef<HTMLInputElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const messageCount = messages?.length ?? 0;
+  const isMergeLockedSource = Boolean(task?.mergedIntoTaskId);
+  const mergeCandidates = useQuery(
+    api.tasks.searchMergeCandidates,
+    task ? { query: mergeQuery, excludeTaskId: task._id } : "skip",
+  );
+  const mergeAlias = task?.isMergeTask ? buildMergeAliasDisplay(mergeSources) : undefined;
+  const planForDisplay = activePlan ?? taskExecutionPlan ?? null;
+  const hasManualMergePlanReady =
+    taskStatus === "review" &&
+    task?.isManual &&
+    hasExecutablePlanSteps(localPlan ?? taskExecutionPlan);
 
   // Track if user is at bottom via IntersectionObserver
   useEffect(() => {
@@ -342,13 +392,25 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     }
   };
 
+  const handleCreateMergeTask = async (mode: "plan" | "manual") => {
+    if (!task || !isTaskLoaded || !selectedMergeTaskId) return;
+    try {
+      const mergedTaskId = await createMergedTask(task._id, selectedMergeTaskId, mode);
+      onTaskOpen?.(mergedTaskId);
+    } catch {
+      // error handled in hook state
+    }
+  };
+
   const handleOpenArtifact = useCallback(
-    (artifactPath: string) => {
+    (artifactPath: string, sourceTaskId?: Id<"tasks">) => {
       if (!task || !isTaskLoaded) return;
 
       const normalizedPath = artifactPath.startsWith("/") ? artifactPath : `/${artifactPath}`;
-      const matchedFile = (task.files ?? []).find(
-        (file) => `/${file.subfolder}/${file.name}` === normalizedPath,
+      const matchedFile = displayFiles.find(
+        (file) =>
+          (file.sourceTaskId ?? task._id) === (sourceTaskId ?? task._id) &&
+          `/${file.subfolder}/${file.name}` === normalizedPath,
       );
 
       if (matchedFile) {
@@ -370,9 +432,10 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
         subfolder,
         size: 0,
         type: "",
+        sourceTaskId,
       });
     },
-    [isTaskLoaded, task],
+    [displayFiles, isTaskLoaded, task],
   );
 
   return (
@@ -402,17 +465,19 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                 ) : (
                   <div className="flex items-start gap-1.5 group/title">
                     <span className="flex-1">{task!.title}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditTitleValue(task!.title);
-                        setIsEditingTitle(true);
-                      }}
-                      className="opacity-0 group-hover/title:opacity-100 transition-opacity mt-0.5 flex-shrink-0 p-0.5 rounded hover:bg-accent"
-                      aria-label="Edit title"
-                    >
-                      <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                    </button>
+                    {!isMergeLockedSource && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditTitleValue(task!.title);
+                          setIsEditingTitle(true);
+                        }}
+                        className="opacity-0 group-hover/title:opacity-100 transition-opacity mt-0.5 flex-shrink-0 p-0.5 rounded hover:bg-accent"
+                        aria-label="Edit title"
+                      >
+                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                      </button>
+                    )}
                   </div>
                 )}
               </SheetTitle>
@@ -431,19 +496,13 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                     const colorKey = tagColorMap[tag];
                     const color = colorKey ? TAG_COLORS[colorKey] : null;
                     const chipClass = `inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs max-w-[200px] ${
-                      color
-                        ? `${color.bg} ${color.text}`
-                        : "bg-muted text-muted-foreground"
+                      color ? `${color.bg} ${color.text}` : "bg-muted text-muted-foreground"
                     }`;
                     const renderDot = () =>
                       color ? (
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${color.dot} flex-shrink-0`}
-                        />
+                        <span className={`w-1.5 h-1.5 rounded-full ${color.dot} flex-shrink-0`} />
                       ) : null;
-                    const attrs = (
-                      tagAttrValues?.filter((v) => v.tagName === tag && v.value) ?? []
-                    );
+                    const attrs = tagAttrValues?.filter((v) => v.tagName === tag && v.value) ?? [];
                     if (attrs.length === 0) {
                       return (
                         <span key={tag} className={chipClass} title={tag}>
@@ -474,7 +533,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                       </Fragment>
                     );
                   })}
-                  {task!.status === "review" && task!.trustLevel === "human_approved" && (
+                  {task!.status === "review" && !task!.isManual && (
                     <>
                       <Button
                         variant="default"
@@ -487,14 +546,16 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                       >
                         Approve
                       </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        className="text-xs h-7 px-2"
-                        onClick={() => setShowRejection((prev) => !prev)}
-                      >
-                        Deny
-                      </Button>
+                      {task!.trustLevel === "human_approved" && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="text-xs h-7 px-2"
+                          onClick={() => setShowRejection((prev) => !prev)}
+                        >
+                          Deny
+                        </Button>
+                      )}
                     </>
                   )}
                   {task!.status === "crashed" && (
@@ -532,7 +593,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                       )}
                     </Button>
                   )}
-                  {isPaused && (
+                  {isPaused && !hasManualMergePlanReady && (
                     <>
                       <Badge
                         variant="outline"
@@ -638,7 +699,48 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                       )}
                     </>
                   )}
-                  {task!.status !== "deleted" && (
+                  {taskStatus === "review" && task?.isManual && localPlan && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-7 px-2"
+                      onClick={handleSavePlan}
+                      disabled={isSavingPlan}
+                      data-testid="save-plan-button"
+                    >
+                      {isSavingPlan ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        "Save Plan"
+                      )}
+                    </Button>
+                  )}
+                  {hasManualMergePlanReady && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700 text-white text-xs h-7 px-2"
+                      onClick={handleKickOff}
+                      disabled={isKickingOff}
+                      data-testid="start-manual-plan-button"
+                    >
+                      {isKickingOff ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                          Starting...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-3.5 w-3.5 mr-1" />
+                          Start
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  {task!.status !== "deleted" && !isMergeLockedSource && (
                     <button
                       type="button"
                       onClick={() => setShowDeleteConfirm(true)}
@@ -733,6 +835,19 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                   {startInboxError}
                 </div>
               )}
+              {isMergeLockedSource && mergedIntoTask && (
+                <div className="mt-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                  Merged into{" "}
+                  <button
+                    type="button"
+                    className="font-medium underline underline-offset-2"
+                    onClick={() => onTaskOpen?.(mergedIntoTask._id)}
+                  >
+                    {mergedIntoTask.title}
+                  </button>
+                  . Continue the thread and edits there.
+                </div>
+              )}
 
               {/* Description — always visible in header, editable with pencil icon */}
               <div className="mt-3 group/desc">
@@ -768,17 +883,19 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                         Add description...
                       </p>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditDescriptionValue(task!.description ?? "");
-                        setIsEditingDescription(true);
-                      }}
-                      className="opacity-0 group-hover/desc:opacity-100 transition-opacity mt-0.5 flex-shrink-0 p-0.5 rounded hover:bg-accent"
-                      aria-label="Edit description"
-                    >
-                      <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                    </button>
+                    {!isMergeLockedSource && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditDescriptionValue(task!.description ?? "");
+                          setIsEditingDescription(true);
+                        }}
+                        className="opacity-0 group-hover/desc:opacity-100 transition-opacity mt-0.5 flex-shrink-0 p-0.5 rounded hover:bg-accent"
+                        aria-label="Edit description"
+                      >
+                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -796,9 +913,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                 <TabsTrigger value="plan">Execution Plan</TabsTrigger>
                 <TabsTrigger value="config">Config</TabsTrigger>
                 <TabsTrigger value="files">
-                  {task!.files && task!.files.length > 0
-                    ? `Files (${task!.files.length})`
-                    : "Files"}
+                  {displayFiles.length > 0 ? `Files (${displayFiles.length})` : "Files"}
                 </TabsTrigger>
               </TabsList>
 
@@ -831,11 +946,39 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                           />
                         </motion.div>
                       ))}
+                      {(mergeSourceThreads ?? []).map((sourceThread) => (
+                        <details
+                          key={sourceThread.taskId}
+                          className="rounded-md border border-border bg-muted/20"
+                        >
+                          <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-foreground">
+                            Thread {sourceThread.label}
+                          </summary>
+                          <div className="flex flex-col gap-2 px-3 pb-3">
+                            {sourceThread.messages.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">
+                                No messages in source thread.
+                              </p>
+                            ) : (
+                              sourceThread.messages.map((msg) => (
+                                <ThreadMessage
+                                  key={msg._id}
+                                  message={msg}
+                                  steps={undefined}
+                                  onArtifactClick={handleOpenArtifact}
+                                />
+                              ))
+                            )}
+                          </div>
+                        </details>
+                      ))}
                       <div ref={threadEndRef} />
                     </div>
                   )}
                 </ScrollArea>
-                {task && <ThreadInput task={task} onMessageSent={scrollToBottom} />}
+                {task && !isMergeLockedSource && (
+                  <ThreadInput task={task} onMessageSent={scrollToBottom} />
+                )}
               </TabsContent>
 
               <TabsContent
@@ -844,7 +987,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
               >
                 <div className="flex-1 min-h-0 px-6 py-4">
                   <ExecutionPlanTab
-                    executionPlan={activePlan ?? null}
+                    executionPlan={planForDisplay}
                     liveSteps={liveSteps ?? undefined}
                     isPlanning={task!.status === "planning"}
                     isEditMode={task!.status === "review"}
@@ -852,6 +995,12 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                     taskStatus={taskStatus}
                     boardId={task?.boardId}
                     onLocalPlanChange={setLocalPlan}
+                    mergeAlias={mergeAlias}
+                    onOpenParentTask={
+                      onTaskOpen
+                        ? (parentTaskId) => onTaskOpen(parentTaskId as Id<"tasks">)
+                        : undefined
+                    }
                   />
                 </div>
               </TabsContent>
@@ -862,6 +1011,104 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
               >
                 <ScrollArea className="flex-1 px-6 py-4">
                   <div className="space-y-4">
+                    {task?.isMergeTask ? (
+                      <div>
+                        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                          Merge Sources
+                        </h4>
+                        <div className="mt-2 space-y-2">
+                          {(mergeSources ?? []).map((source) => (
+                            <div
+                              key={source.taskId}
+                              className="flex items-center gap-2 text-sm text-foreground"
+                            >
+                              <span>
+                                {source.label}: {source.taskTitle}
+                              </span>
+                              <button
+                                type="button"
+                                className="text-xs text-sky-700 underline underline-offset-2"
+                                onClick={() => onTaskOpen?.(source.taskId)}
+                                aria-label={`Open merge source ${source.label}`}
+                              >
+                                link
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 rounded-md border border-border p-3">
+                        <div>
+                          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            Merge With Another Task
+                          </h4>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Create a new task C from this task and another source task. Then choose
+                            whether C should enter review with a generated plan or stay manual in
+                            review.
+                          </p>
+                        </div>
+                        <Input
+                          value={mergeQuery}
+                          onChange={(event) => setMergeQuery(event.target.value)}
+                          placeholder="Search task to merge..."
+                          disabled={isMergeLockedSource}
+                        />
+                        <div className="max-h-40 overflow-auto rounded-md border border-border">
+                          {(mergeCandidates ?? []).length === 0 ? (
+                            <p className="px-3 py-2 text-xs text-muted-foreground">
+                              No merge candidates found.
+                            </p>
+                          ) : (
+                            (mergeCandidates ?? []).map((candidate) => (
+                              <button
+                                key={candidate._id}
+                                type="button"
+                                onClick={() => setSelectedMergeTaskId(candidate._id)}
+                                className={`flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-muted/50 ${
+                                  selectedMergeTaskId === candidate._id ? "bg-muted" : ""
+                                }`}
+                                disabled={isMergeLockedSource}
+                              >
+                                <span>{candidate.title}</span>
+                                {candidate.description && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {candidate.description}
+                                  </span>
+                                )}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => void handleCreateMergeTask("plan")}
+                            disabled={
+                              !selectedMergeTaskId || isCreatingMergeTask || isMergeLockedSource
+                            }
+                          >
+                            {isCreatingMergeTask
+                              ? "Creating..."
+                              : "Generate Plan Then Send To Review"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void handleCreateMergeTask("manual")}
+                            disabled={
+                              !selectedMergeTaskId || isCreatingMergeTask || isMergeLockedSource
+                            }
+                          >
+                            {isCreatingMergeTask ? "Creating..." : "Create Manual Review Task"}
+                          </Button>
+                        </div>
+                        {createMergeTaskError && (
+                          <p className="text-xs text-red-500">{createMergeTaskError}</p>
+                        )}
+                      </div>
+                    )}
                     <div>
                       <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Trust Level
@@ -923,66 +1170,70 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                                 />
                               )}
                               {tag}
-                              <button
-                                onClick={() => handleRemoveTag(tag)}
-                                className="ml-0.5 rounded-full hover:bg-black/10 p-0.5 transition-colors"
-                                aria-label={`Remove tag ${tag}`}
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
+                              {!isMergeLockedSource && (
+                                <button
+                                  onClick={() => handleRemoveTag(tag)}
+                                  className="ml-0.5 rounded-full hover:bg-black/10 p-0.5 transition-colors"
+                                  aria-label={`Remove tag ${tag}`}
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              )}
                             </span>
                           );
                         })}
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <button
-                              className="inline-flex items-center justify-center h-6 w-6 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors"
-                              aria-label="Add tag"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-48 p-2" align="start">
-                            {tagsList === undefined ? (
-                              <p className="text-xs text-muted-foreground p-2">Loading...</p>
-                            ) : tagsList.length === 0 ? (
-                              <p className="text-xs text-muted-foreground p-2">
-                                No tags defined. Open the Tags panel to create some.
-                              </p>
-                            ) : (
-                              <div className="flex flex-col gap-0.5">
-                                {tagsList.map((catalogTag) => {
-                                  const isAssigned = (task!.tags ?? []).includes(catalogTag.name);
-                                  const color = TAG_COLORS[catalogTag.color];
-                                  return (
-                                    <button
-                                      key={catalogTag._id}
-                                      className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs text-left transition-colors ${
-                                        isAssigned
-                                          ? "opacity-50 cursor-default"
-                                          : "hover:bg-muted cursor-pointer"
-                                      }`}
-                                      onClick={() => !isAssigned && handleAddTag(catalogTag.name)}
-                                      disabled={isAssigned}
-                                    >
-                                      {color && (
-                                        <span
-                                          className={`w-2 h-2 rounded-full ${color.dot} flex-shrink-0`}
-                                        />
-                                      )}
-                                      <span className="flex-1">{catalogTag.name}</span>
-                                      {isAssigned && (
-                                        <span className="text-muted-foreground text-[10px]">
-                                          Added
-                                        </span>
-                                      )}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </PopoverContent>
-                        </Popover>
+                        {!isMergeLockedSource && (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button
+                                className="inline-flex items-center justify-center h-6 w-6 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-foreground hover:text-foreground transition-colors"
+                                aria-label="Add tag"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-48 p-2" align="start">
+                              {tagsList === undefined ? (
+                                <p className="text-xs text-muted-foreground p-2">Loading...</p>
+                              ) : tagsList.length === 0 ? (
+                                <p className="text-xs text-muted-foreground p-2">
+                                  No tags defined. Open the Tags panel to create some.
+                                </p>
+                              ) : (
+                                <div className="flex flex-col gap-0.5">
+                                  {tagsList.map((catalogTag) => {
+                                    const isAssigned = (task!.tags ?? []).includes(catalogTag.name);
+                                    const color = TAG_COLORS[catalogTag.color];
+                                    return (
+                                      <button
+                                        key={catalogTag._id}
+                                        className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs text-left transition-colors ${
+                                          isAssigned
+                                            ? "opacity-50 cursor-default"
+                                            : "hover:bg-muted cursor-pointer"
+                                        }`}
+                                        onClick={() => !isAssigned && handleAddTag(catalogTag.name)}
+                                        disabled={isAssigned}
+                                      >
+                                        {color && (
+                                          <span
+                                            className={`w-2 h-2 rounded-full ${color.dot} flex-shrink-0`}
+                                          />
+                                        )}
+                                        <span className="flex-1">{catalogTag.name}</span>
+                                        {isAssigned && (
+                                          <span className="text-muted-foreground text-[10px]">
+                                            Added
+                                          </span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </PopoverContent>
+                          </Popover>
+                        )}
                       </div>
 
                       {/* Tag Attributes (expandable per tag) */}
@@ -1065,16 +1316,18 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                       onChange={handleAttachFiles}
                       className="hidden"
                     />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => attachInputRef.current?.click()}
-                      disabled={isUploading}
-                      data-testid="attach-file-button"
-                    >
-                      <Paperclip className="h-3.5 w-3.5 mr-1.5" />
-                      {isUploading ? "Uploading..." : "Attach File"}
-                    </Button>
+                    {!isMergeLockedSource && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => attachInputRef.current?.click()}
+                        disabled={isUploading}
+                        data-testid="attach-file-button"
+                      >
+                        <Paperclip className="h-3.5 w-3.5 mr-1.5" />
+                        {isUploading ? "Uploading..." : "Attach File"}
+                      </Button>
+                    )}
                     {uploadError && (
                       <p className="text-xs text-red-500" data-testid="upload-error">
                         {uploadError}
@@ -1088,7 +1341,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                   )}
 
                   {(() => {
-                    const allFiles = task!.files ?? [];
+                    const allFiles = displayFiles;
                     const attachments = allFiles.filter((f) => f.subfolder === "attachments");
                     const outputs = allFiles.filter((f) => f.subfolder === "output");
 
@@ -1129,24 +1382,31 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                                     <span className="flex-1 min-w-0 text-sm truncate">
                                       {file.name}
                                     </span>
+                                    {file.sourceLabel && (
+                                      <Badge variant="secondary" className="text-[10px]">
+                                        {file.sourceLabel}
+                                      </Badge>
+                                    )}
                                     <span className="text-xs text-muted-foreground flex-shrink-0">
                                       {formatSize(file.size)}
                                     </span>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDeleteFile(file);
-                                      }}
-                                      disabled={isDeleting}
-                                      className={`flex-shrink-0 transition-opacity text-muted-foreground hover:text-destructive ${isDeleting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                                      aria-label="Delete attachment"
-                                    >
-                                      {isDeleting ? (
-                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      ) : (
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      )}
-                                    </button>
+                                    {!file.sourceTaskId && !isMergeLockedSource && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteFile(file);
+                                        }}
+                                        disabled={isDeleting}
+                                        className={`flex-shrink-0 transition-opacity text-muted-foreground hover:text-destructive ${isDeleting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                                        aria-label="Delete attachment"
+                                      >
+                                        {isDeleting ? (
+                                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        )}
+                                      </button>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -1173,6 +1433,11 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                                   <span className="flex-1 min-w-0 text-sm truncate">
                                     {file.name}
                                   </span>
+                                  {file.sourceLabel && (
+                                    <Badge variant="secondary" className="text-[10px]">
+                                      {file.sourceLabel}
+                                    </Badge>
+                                  )}
                                   <span className="text-xs text-muted-foreground flex-shrink-0">
                                     {formatSize(file.size)}
                                   </span>
@@ -1199,7 +1464,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
       </SheetContent>
       {isTaskLoaded && (
         <DocumentViewerModal
-          taskId={task!._id}
+          taskId={viewerFile?.sourceTaskId ?? task!._id}
           file={viewerFile}
           onClose={() => setViewerFile(null)}
         />

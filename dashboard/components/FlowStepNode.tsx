@@ -140,6 +140,7 @@ export type FlowStepNodeData = {
   step: PlanStep;
   status?: string;
   isEditMode?: boolean;
+  isVisualOnly?: boolean;
   hasParallelSiblings?: boolean;
   isLeafStep?: boolean;
   onAddSequential?: (tempId: string) => void;
@@ -153,6 +154,8 @@ export type FlowStepNodeData = {
   onStepClick?: (stepId: string) => void;
   isRetrying?: boolean;
   retryError?: string;
+  parentTaskId?: string;
+  onOpenParentTask?: (taskId: string) => void;
 };
 
 export type FlowStepNodeType = Node<FlowStepNodeData, "flowStep">;
@@ -180,14 +183,24 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
     onStepClick,
     isRetrying,
     retryError,
+    isVisualOnly,
+    parentTaskId,
+    onOpenParentTask,
   } = data;
   const resolvedStatus = status ?? "planned";
-  const meta = getStatusMeta(resolvedStatus);
+  const meta = isVisualOnly
+    ? {
+        badgeText: "Merged",
+        iconColorClass: "text-cyan-500",
+        badgeClass: "bg-cyan-50 text-cyan-700",
+        icon: "pending" as const,
+      }
+    : getStatusMeta(resolvedStatus);
   const normalizedStatus = normalizeStatus(resolvedStatus);
   const isWaitingHuman = normalizedStatus === "waiting_human";
   const isRunningHuman = normalizedStatus === "running" && step.assignedAgent === "human";
   const isCrashed = normalizedStatus === "crashed";
-  const agentDisplay = step.assignedAgent === "human" ? null : step.assignedAgent;
+  const agentDisplay = isVisualOnly || step.assignedAgent === "human" ? null : step.assignedAgent;
 
   // Buttons visible class: always for leaf, on group-hover for non-leaf
   const btnVisibility = isLeafStep ? "opacity-100" : "opacity-0 group-hover:opacity-100";
@@ -226,6 +239,22 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
         {/* Agent badge */}
         {agentDisplay && (
           <p className="text-[10px] text-muted-foreground mt-1 truncate">{agentDisplay}</p>
+        )}
+
+        {parentTaskId && onOpenParentTask && (
+          <div className="mt-1">
+            <button
+              type="button"
+              className="text-[10px] text-cyan-700 underline underline-offset-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenParentTask(parentTaskId);
+              }}
+              aria-label="Task Parent link"
+            >
+              Task Parent link
+            </button>
+          </div>
         )}
 
         {/* Accept button for waiting_human / Mark Done for running human steps */}
@@ -327,46 +356,50 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
               </button>
             )}
           </div>
-          {/* Parallel ↑ (top edge) */}
-          <div
-            className={cn(
-              "absolute top-0 left-1/2 -translate-x-1/2 transition-opacity",
-              btnVisibility,
-            )}
-          >
-            <button
-              type="button"
-              data-testid={`add-parallel-top-${step.tempId}`}
-              className={addBtnClass}
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddParallel?.(step.tempId);
-              }}
-              title="Add parallel step"
-            >
-              <ArrowRight className="h-3 w-3 -rotate-90" />
-            </button>
-          </div>
-          {/* Parallel ↓ (bottom edge) */}
-          <div
-            className={cn(
-              "absolute bottom-0 left-1/2 -translate-x-1/2 transition-opacity",
-              btnVisibility,
-            )}
-          >
-            <button
-              type="button"
-              data-testid={`add-parallel-bottom-${step.tempId}`}
-              className={addBtnClass}
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddParallel?.(step.tempId);
-              }}
-              title="Add parallel step"
-            >
-              <ArrowRight className="h-3 w-3 rotate-90" />
-            </button>
-          </div>
+          {onAddParallel && (
+            <>
+              {/* Parallel ↑ (top edge) */}
+              <div
+                className={cn(
+                  "absolute top-0 left-1/2 -translate-x-1/2 transition-opacity",
+                  btnVisibility,
+                )}
+              >
+                <button
+                  type="button"
+                  data-testid={`add-parallel-top-${step.tempId}`}
+                  className={addBtnClass}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddParallel(step.tempId);
+                  }}
+                  title="Add parallel step"
+                >
+                  <ArrowRight className="h-3 w-3 -rotate-90" />
+                </button>
+              </div>
+              {/* Parallel ↓ (bottom edge) */}
+              <div
+                className={cn(
+                  "absolute bottom-0 left-1/2 -translate-x-1/2 transition-opacity",
+                  btnVisibility,
+                )}
+              >
+                <button
+                  type="button"
+                  data-testid={`add-parallel-bottom-${step.tempId}`}
+                  className={addBtnClass}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddParallel(step.tempId);
+                  }}
+                  title="Add parallel step"
+                >
+                  <ArrowRight className="h-3 w-3 rotate-90" />
+                </button>
+              </div>
+            </>
+          )}
           {/* Trash (left edge) */}
           <div
             className={cn(

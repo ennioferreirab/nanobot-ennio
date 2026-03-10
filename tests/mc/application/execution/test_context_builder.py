@@ -10,6 +10,7 @@ Covers AC1-AC4:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -189,6 +190,205 @@ class TestBuildTaskContext:
         assert len(req.file_manifest) == 1
         assert req.file_manifest[0]["name"] == "doc.pdf"
         assert "doc.pdf" in (req.description or "")
+
+    @pytest.mark.asyncio
+    @patch(
+        "mc.application.execution.roster_builder.load_agent_config",
+        return_value=(None, None, None),
+    )
+    async def test_merge_sources_include_absolute_paths_and_delimited_threads(
+        self, mock_config: MagicMock
+    ) -> None:
+        source_a_path = str(Path.home() / ".nanobot" / "tasks" / "task_a" / "attachments" / "source-a.pdf")
+        source_b_path = str(Path.home() / ".nanobot" / "tasks" / "task_b" / "output" / "source-b.md")
+
+        current_task = {
+            "id": "task_merge",
+            "title": "Merged Task C",
+            "description": "Continue from merged context",
+            "files": [],
+            "tags": [],
+            "is_merge_task": True,
+            "merge_source_task_ids": ["task_a", "task_b"],
+            "merge_source_labels": ["A", "B"],
+        }
+        source_tasks = {
+            "task_merge": current_task,
+            "task_a": {
+                "id": "task_a",
+                "title": "Task A",
+                "description": "First source",
+                "status": "done",
+                "files": [
+                    {"name": "source-a.pdf", "type": "application/pdf", "size": 1024, "subfolder": "attachments"},
+                ],
+            },
+            "task_b": {
+                "id": "task_b",
+                "title": "Task B",
+                "description": "Second source",
+                "status": "done",
+                "files": [
+                    {"name": "source-b.md", "type": "text/markdown", "size": 512, "subfolder": "output"},
+                ],
+            },
+        }
+
+        bridge = MagicMock()
+
+        def query_side_effect(fn_name: str, args: dict) -> Any:
+            if fn_name == "tasks:getById":
+                return source_tasks.get(args["task_id"])
+            if fn_name == "tagAttributeValues:getByTask":
+                return []
+            if fn_name == "tagAttributes:list":
+                return []
+            return None
+
+        def message_side_effect(task_id: str) -> list[dict[str, Any]]:
+            if task_id == "task_merge":
+                return [_user_msg("Continue from both sources")]
+            if task_id == "task_a":
+                return [
+                    {
+                        "author_name": "agent-a",
+                        "author_type": "agent",
+                        "timestamp": "2026-01-01T10:00:00Z",
+                        "content": "Task A completed",
+                        "type": "step_completion",
+                        "artifacts": [{"path": "output/report-a.md", "action": "created"}],
+                    },
+                ]
+            if task_id == "task_b":
+                return [
+                    {
+                        "author_name": "agent-b",
+                        "author_type": "agent",
+                        "timestamp": "2026-01-01T10:05:00Z",
+                        "content": "Task B completed",
+                        "type": "step_completion",
+                        "artifacts": [{"path": "output/report-b.md", "action": "created"}],
+                    },
+                ]
+            return []
+
+        bridge.query = MagicMock(side_effect=query_side_effect)
+        bridge.get_agent_by_name = MagicMock(return_value=None)
+        bridge.get_task_messages = MagicMock(side_effect=message_side_effect)
+        bridge.get_board_by_id = MagicMock(return_value=None)
+        bridge.get_steps_by_task = MagicMock(return_value=[])
+
+        builder = ContextBuilder(bridge)
+        req = await builder.build_task_context(
+            task_id="task_merge",
+            title="Merged Task C",
+            description="Base description",
+            agent_name="test-agent",
+            task_data=current_task,
+        )
+
+        assert "[Merged Task Origins]" in (req.description or "")
+        assert "[Source Task A Files]" in (req.description or "")
+        assert "[Source Task B Files]" in (req.description or "")
+        assert "[Source Thread A]" in (req.description or "")
+        assert "[Source Thread B]" in (req.description or "")
+        assert source_a_path in (req.description or "")
+        assert source_b_path in (req.description or "")
+        assert str(Path.home() / ".nanobot" / "tasks" / "task_a" / "output" / "report-a.md") in (req.description or "")
+        assert str(Path.home() / ".nanobot" / "tasks" / "task_b" / "output" / "report-b.md") in (req.description or "")
+
+    @pytest.mark.asyncio
+    @patch(
+        "mc.application.execution.roster_builder.load_agent_config",
+        return_value=(None, None, None),
+    )
+    async def test_nested_merge_sources_are_flattened_recursively(
+        self, mock_config: MagicMock
+    ) -> None:
+        current_task = {
+            "id": "task_merge_2",
+            "title": "Merged Task D",
+            "description": "Continue from merged context",
+            "files": [],
+            "tags": [],
+            "is_merge_task": True,
+            "merge_source_task_ids": ["task_merge_1", "task_c"],
+            "merge_source_labels": ["A", "B"],
+        }
+        source_tasks = {
+            "task_merge_2": current_task,
+            "task_merge_1": {
+                "id": "task_merge_1",
+                "title": "Merged Task C",
+                "description": "Inner merge",
+                "status": "review",
+                "files": [{"name": "inner.md", "subfolder": "output"}],
+                "is_merge_task": True,
+                "merge_source_task_ids": ["task_a", "task_b"],
+                "merge_source_labels": ["A", "B"],
+            },
+            "task_a": {
+                "id": "task_a",
+                "title": "Task A",
+                "description": "First source",
+                "status": "done",
+                "files": [{"name": "source-a.pdf", "subfolder": "attachments"}],
+            },
+            "task_b": {
+                "id": "task_b",
+                "title": "Task B",
+                "description": "Second source",
+                "status": "done",
+                "files": [{"name": "source-b.md", "subfolder": "output"}],
+            },
+            "task_c": {
+                "id": "task_c",
+                "title": "Task C",
+                "description": "Third source",
+                "status": "done",
+                "files": [{"name": "source-c.txt", "subfolder": "attachments"}],
+            },
+        }
+
+        bridge = MagicMock()
+
+        def query_side_effect(fn_name: str, args: dict) -> Any:
+            if fn_name == "tasks:getById":
+                return source_tasks.get(args["task_id"])
+            if fn_name == "tagAttributeValues:getByTask":
+                return []
+            if fn_name == "tagAttributes:list":
+                return []
+            return None
+
+        def message_side_effect(task_id: str) -> list[dict[str, Any]]:
+            return [{
+                "author_name": "agent",
+                "author_type": "agent",
+                "timestamp": "2026-01-01T10:00:00Z",
+                "content": f"{task_id} completed",
+                "type": "step_completion",
+            }]
+
+        bridge.query = MagicMock(side_effect=query_side_effect)
+        bridge.get_agent_by_name = MagicMock(return_value=None)
+        bridge.get_task_messages = MagicMock(side_effect=message_side_effect)
+        bridge.get_board_by_id = MagicMock(return_value=None)
+        bridge.get_steps_by_task = MagicMock(return_value=[])
+
+        builder = ContextBuilder(bridge)
+        req = await builder.build_task_context(
+            task_id="task_merge_2",
+            title="Merged Task D",
+            description="Base description",
+            agent_name="test-agent",
+            task_data=current_task,
+        )
+
+        assert "A: Merged Task C [review]" in (req.description or "")
+        assert "A.A: Task A [done]" in (req.description or "")
+        assert "A.B: Task B [done]" in (req.description or "")
+        assert "B: Task C [done]" in (req.description or "")
 
     @pytest.mark.asyncio
     @patch(
