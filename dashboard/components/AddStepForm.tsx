@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { User } from "lucide-react";
+import { useBoardById } from "@/hooks/useBoardById";
 import { useSelectableAgents } from "@/hooks/useSelectableAgents";
 import { HUMAN_AGENT_NAME } from "@/lib/constants";
 import { getStatusMeta } from "./FlowStepNode";
@@ -57,7 +56,7 @@ export function AddStepForm({
   const [blockedByIds, setBlockedByIds] = useState<string[]>(defaultBlockedByIds ?? []);
   const [blockerPopoverOpen, setBlockerPopoverOpen] = useState(false);
 
-  const board = useQuery(api.boards.getById, boardId ? { boardId } : "skip");
+  const board = useBoardById(boardId);
 
   const agents = useSelectableAgents(board?.enabledAgents);
 
