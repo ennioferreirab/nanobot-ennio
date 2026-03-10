@@ -141,7 +141,7 @@ export type FlowStepNodeData = {
   status?: string;
   isEditMode?: boolean;
   hasParallelSiblings?: boolean;
-  showToolbars?: boolean;
+  isLeafStep?: boolean;
   onAddSequential?: (tempId: string) => void;
   onAddParallel?: (tempId: string) => void;
   onMergePaths?: (tempId: string) => void;
@@ -168,7 +168,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
     status,
     isEditMode,
     hasParallelSiblings,
-    showToolbars,
+    isLeafStep,
     onAddSequential,
     onAddParallel,
     onMergePaths,
@@ -189,27 +189,117 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
   const isCrashed = normalizedStatus === "crashed";
   const agentDisplay = step.assignedAgent === "human" ? null : step.assignedAgent;
 
-  return (
-    <div
-      data-testid={`flow-step-node-${step.tempId}`}
-      className={cn(
-        "relative rounded-lg border bg-background px-3 py-2 shadow-sm w-[220px]",
-        selected ? "border-blue-500 ring-1 ring-blue-500/30" : "border-border",
-        meta.runningPulse && "motion-safe:animate-pulse",
-        onStepClick && "cursor-pointer hover:border-primary/50 transition-colors",
-      )}
-    >
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!opacity-0 !pointer-events-none !w-2 !h-2"
-      />
+  // Buttons visible class: always for leaf, on group-hover for non-leaf
+  const btnVisibility = isLeafStep ? "opacity-100" : "opacity-0 group-hover:opacity-100";
 
-      {/* Edit-mode inline buttons (inside the node for hover continuity) */}
-      {isEditMode && showToolbars && (
+  return (
+    /* Outer wrapper: extra padding creates a larger hover hit area that
+       includes the absolutely-positioned buttons around the card edges. */
+    <div className={cn("group p-3 -m-3", isEditMode && "relative")}>
+      <div
+        data-testid={`flow-step-node-${step.tempId}`}
+        className={cn(
+          "relative rounded-lg border bg-background px-3 py-2 shadow-sm w-[220px]",
+          selected ? "border-blue-500 ring-1 ring-blue-500/30" : "border-border",
+          meta.runningPulse && "motion-safe:animate-pulse",
+          onStepClick && "cursor-pointer hover:border-primary/50 transition-colors",
+        )}
+      >
+        <Handle
+          type="target"
+          position={Position.Left}
+          className="!opacity-0 !pointer-events-none !w-2 !h-2"
+        />
+
+        {/* Header: status icon + title */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <StepStatusIcon meta={meta} />
+          <span className="text-xs font-medium truncate flex-1">{step.title || "Untitled"}</span>
+          <Badge
+            variant="secondary"
+            className={cn("text-[9px] font-medium shrink-0 px-1.5 py-0", meta.badgeClass)}
+          >
+            {meta.badgeText}
+          </Badge>
+        </div>
+
+        {/* Agent badge */}
+        {agentDisplay && (
+          <p className="text-[10px] text-muted-foreground mt-1 truncate">{agentDisplay}</p>
+        )}
+
+        {/* Accept button for waiting_human / Mark Done for running human steps */}
+        {(isWaitingHuman || isRunningHuman) && !isEditMode && onAccept && (
+          <div className="mt-1.5">
+            <button
+              type="button"
+              data-testid={`accept-step-${step.tempId}`}
+              disabled={isAccepting}
+              onClick={(e) => {
+                e.stopPropagation();
+                onAccept(step.tempId);
+              }}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium",
+                "bg-green-600 text-white hover:bg-green-700 transition-colors",
+                "disabled:opacity-60 disabled:cursor-not-allowed",
+              )}
+            >
+              {isAccepting ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <CheckCircle className="h-3 w-3" />
+              )}
+              {isRunningHuman ? "Mark Done" : "Accept"}
+            </button>
+            {acceptError && <p className="mt-0.5 text-[10px] text-red-600">{acceptError}</p>}
+          </div>
+        )}
+
+        {isCrashed && !isEditMode && onRetry && (
+          <div className="mt-1.5">
+            <button
+              type="button"
+              data-testid={`retry-step-${step.tempId}`}
+              disabled={isRetrying}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry(step.tempId);
+              }}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium",
+                "bg-amber-600 text-white hover:bg-amber-700 transition-colors",
+                "disabled:opacity-60 disabled:cursor-not-allowed",
+              )}
+            >
+              {isRetrying ? (
+                <RefreshCw className="h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3" />
+              )}
+              Retry step
+            </button>
+            {retryError && <p className="mt-0.5 text-[10px] text-red-600">{retryError}</p>}
+          </div>
+        )}
+
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!opacity-0 !pointer-events-none !w-2 !h-2"
+        />
+      </div>
+
+      {/* Edit-mode buttons positioned around the card, inside the group hover area */}
+      {isEditMode && (
         <>
           {/* Sequential → (right edge) */}
-          <div className="absolute -right-7 top-1/2 -translate-y-1/2 flex flex-col gap-1">
+          <div
+            className={cn(
+              "absolute right-0 top-1/2 -translate-y-1/2 flex flex-col gap-1 transition-opacity",
+              btnVisibility,
+            )}
+          >
             <button
               type="button"
               data-testid={`add-sequential-${step.tempId}`}
@@ -238,7 +328,12 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
             )}
           </div>
           {/* Parallel ↑ (top edge) */}
-          <div className="absolute -top-7 left-1/2 -translate-x-1/2">
+          <div
+            className={cn(
+              "absolute top-0 left-1/2 -translate-x-1/2 transition-opacity",
+              btnVisibility,
+            )}
+          >
             <button
               type="button"
               data-testid={`add-parallel-top-${step.tempId}`}
@@ -253,7 +348,12 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
             </button>
           </div>
           {/* Parallel ↓ (bottom edge) */}
-          <div className="absolute -bottom-7 left-1/2 -translate-x-1/2">
+          <div
+            className={cn(
+              "absolute bottom-0 left-1/2 -translate-x-1/2 transition-opacity",
+              btnVisibility,
+            )}
+          >
             <button
               type="button"
               data-testid={`add-parallel-bottom-${step.tempId}`}
@@ -269,7 +369,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           </div>
           {/* Trash (left edge, only when selected) */}
           {selected && (
-            <div className="absolute -left-7 top-1/2 -translate-y-1/2">
+            <div className="absolute left-0 top-1/2 -translate-y-1/2">
               <button
                 type="button"
                 data-testid={`delete-step-${step.tempId}`}
@@ -286,84 +386,6 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           )}
         </>
       )}
-
-      {/* Header: status icon + title */}
-      <div className="flex items-center gap-1.5 min-w-0">
-        <StepStatusIcon meta={meta} />
-        <span className="text-xs font-medium truncate flex-1">{step.title || "Untitled"}</span>
-        <Badge
-          variant="secondary"
-          className={cn("text-[9px] font-medium shrink-0 px-1.5 py-0", meta.badgeClass)}
-        >
-          {meta.badgeText}
-        </Badge>
-      </div>
-
-      {/* Agent badge */}
-      {agentDisplay && (
-        <p className="text-[10px] text-muted-foreground mt-1 truncate">{agentDisplay}</p>
-      )}
-
-      {/* Accept button for waiting_human / Mark Done for running human steps */}
-      {(isWaitingHuman || isRunningHuman) && !isEditMode && onAccept && (
-        <div className="mt-1.5">
-          <button
-            type="button"
-            data-testid={`accept-step-${step.tempId}`}
-            disabled={isAccepting}
-            onClick={(e) => {
-              e.stopPropagation();
-              onAccept(step.tempId);
-            }}
-            className={cn(
-              "inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium",
-              "bg-green-600 text-white hover:bg-green-700 transition-colors",
-              "disabled:opacity-60 disabled:cursor-not-allowed",
-            )}
-          >
-            {isAccepting ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <CheckCircle className="h-3 w-3" />
-            )}
-            {isRunningHuman ? "Mark Done" : "Accept"}
-          </button>
-          {acceptError && <p className="mt-0.5 text-[10px] text-red-600">{acceptError}</p>}
-        </div>
-      )}
-
-      {isCrashed && !isEditMode && onRetry && (
-        <div className="mt-1.5">
-          <button
-            type="button"
-            data-testid={`retry-step-${step.tempId}`}
-            disabled={isRetrying}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRetry(step.tempId);
-            }}
-            className={cn(
-              "inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium",
-              "bg-amber-600 text-white hover:bg-amber-700 transition-colors",
-              "disabled:opacity-60 disabled:cursor-not-allowed",
-            )}
-          >
-            {isRetrying ? (
-              <RefreshCw className="h-3 w-3 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3 w-3" />
-            )}
-            Retry step
-          </button>
-          {retryError && <p className="mt-0.5 text-[10px] text-red-600">{retryError}</p>}
-        </div>
-      )}
-
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!opacity-0 !pointer-events-none !w-2 !h-2"
-      />
     </div>
   );
 }
