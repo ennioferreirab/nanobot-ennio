@@ -141,6 +141,7 @@ export type FlowStepNodeData = {
   status?: string;
   isEditMode?: boolean;
   hasParallelSiblings?: boolean;
+  showToolbars?: boolean;
   onAddSequential?: (tempId: string) => void;
   onAddParallel?: (tempId: string) => void;
   onMergePaths?: (tempId: string) => void;
@@ -167,6 +168,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
     status,
     isEditMode,
     hasParallelSiblings,
+    showToolbars,
     onAddSequential,
     onAddParallel,
     onMergePaths,
@@ -225,7 +227,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           </NodeToolbar>
 
           {/* Sequential (→) and optionally merge (⎇) — right */}
-          <NodeToolbar position={Position.Right} offset={8} align="center" isVisible>
+          <NodeToolbar position={Position.Right} offset={8} align="center" isVisible={showToolbars}>
             <div className="flex flex-col gap-1">
               <button
                 type="button"
@@ -255,7 +257,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
               )}
             </div>
           </NodeToolbar>
-          <NodeToolbar position={Position.Top} offset={8} align="center" isVisible>
+          <NodeToolbar position={Position.Top} offset={8} align="center" isVisible={showToolbars}>
             <button
               type="button"
               data-testid={`add-parallel-top-${step.tempId}`}
@@ -269,7 +271,12 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
               <ArrowRight className="h-3 w-3 -rotate-90" />
             </button>
           </NodeToolbar>
-          <NodeToolbar position={Position.Bottom} offset={8} align="center" isVisible>
+          <NodeToolbar
+            position={Position.Bottom}
+            offset={8}
+            align="center"
+            isVisible={showToolbars}
+          >
             <button
               type="button"
               data-testid={`add-parallel-bottom-${step.tempId}`}

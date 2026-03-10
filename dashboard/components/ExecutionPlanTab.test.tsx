@@ -683,7 +683,7 @@ describe("ExecutionPlanTab", () => {
       expect(screen.queryByTestId("flow-node-add-sequential-step_1")).not.toBeInTheDocument();
     });
 
-    it("clicking sequential button opens AddStepForm with sourceStepId as blocker", () => {
+    it("clicking sequential button inserts step immediately via onLocalPlanChange", () => {
       const onLocalPlanChange = vi.fn();
       render(
         <ExecutionPlanTab
@@ -694,19 +694,27 @@ describe("ExecutionPlanTab", () => {
         />,
       );
 
-      // Initially no form
-      expect(screen.queryByTestId("add-step-form")).not.toBeInTheDocument();
-
-      // Click sequential button on step_1
       fireEvent.click(screen.getByTestId("flow-node-add-sequential-step_1"));
 
-      // Form should appear with step_1 as default blocker
-      const form = screen.getByTestId("add-step-form");
-      expect(form).toBeInTheDocument();
-      expect(JSON.parse(form.getAttribute("data-default-blocked-by") ?? "[]")).toEqual(["step_1"]);
+      expect(onLocalPlanChange).toHaveBeenCalledTimes(1);
+      const updatedPlan = onLocalPlanChange.mock.calls[0][0];
+
+      // Should have 3 steps now
+      expect(updatedPlan.steps).toHaveLength(3);
+
+      // The new step should be blocked by step_1
+      const newStep = updatedPlan.steps.find(
+        (s: { tempId: string }) => s.tempId !== "step_1" && s.tempId !== "step_2",
+      );
+      expect(newStep).toBeDefined();
+      expect(newStep.blockedBy).toEqual(["step_1"]);
+
+      // step_2 should now be rerouted to depend on the new step
+      const step2 = updatedPlan.steps.find((s: { tempId: string }) => s.tempId === "step_2");
+      expect(step2.blockedBy).toEqual([newStep.tempId]);
     });
 
-    it("clicking parallel button opens AddStepForm with source's blockers pre-filled", () => {
+    it("clicking parallel button inserts step with same blockers as source", () => {
       const onLocalPlanChange = vi.fn();
       render(
         <ExecutionPlanTab
@@ -720,49 +728,18 @@ describe("ExecutionPlanTab", () => {
       // Click parallel button on step_2 (which has blockedBy: ["step_1"])
       fireEvent.click(screen.getByTestId("flow-node-add-parallel-step_2"));
 
-      const form = screen.getByTestId("add-step-form");
-      expect(form).toBeInTheDocument();
-      expect(JSON.parse(form.getAttribute("data-default-blocked-by") ?? "[]")).toEqual(["step_1"]);
-    });
-
-    it("submitting form after sequential canvas op calls onLocalPlanChange with graph transformation", () => {
-      const onLocalPlanChange = vi.fn();
-      render(
-        <ExecutionPlanTab
-          executionPlan={reviewPlan}
-          taskId="task-abc"
-          taskStatus="review"
-          onLocalPlanChange={onLocalPlanChange}
-        />,
-      );
-
-      // Click sequential on step_1 — inserts placeholder immediately (1st call)
-      fireEvent.click(screen.getByTestId("flow-node-add-sequential-step_1"));
       expect(onLocalPlanChange).toHaveBeenCalledTimes(1);
-
-      // Submit the form — updates placeholder with form data (2nd call)
-      fireEvent.click(screen.getByTestId("mock-add-btn"));
-      expect(onLocalPlanChange).toHaveBeenCalledTimes(2);
-
-      const updatedPlan = onLocalPlanChange.mock.calls[1][0];
-
-      // Should have 3 steps now
+      const updatedPlan = onLocalPlanChange.mock.calls[0][0];
       expect(updatedPlan.steps).toHaveLength(3);
 
-      // The new step should be blocked by step_1
       const newStep = updatedPlan.steps.find(
         (s: { tempId: string }) => s.tempId !== "step_1" && s.tempId !== "step_2",
       );
       expect(newStep).toBeDefined();
       expect(newStep.blockedBy).toEqual(["step_1"]);
-      expect(newStep.title).toBe("New Step");
-
-      // step_2 should now be rerouted to depend on the new step
-      const step2 = updatedPlan.steps.find((s: { tempId: string }) => s.tempId === "step_2");
-      expect(step2.blockedBy).toEqual([newStep.tempId]);
     });
 
-    it("submitting form after merge canvas op merges all parallel siblings", () => {
+    it("clicking merge button inserts step blocked by all parallel siblings", () => {
       const parallelPlan = {
         steps: [
           {
@@ -811,22 +788,10 @@ describe("ExecutionPlanTab", () => {
         />,
       );
 
-      // Click merge on step_2
       fireEvent.click(screen.getByTestId("flow-node-merge-paths-step_2"));
 
-      // Form should show with both siblings as default blockers
-      const form = screen.getByTestId("add-step-form");
-      const defaultBlockers = JSON.parse(form.getAttribute("data-default-blocked-by") ?? "[]");
-      expect(defaultBlockers).toContain("step_2");
-      expect(defaultBlockers).toContain("step_3");
-      expect(defaultBlockers).toHaveLength(2);
-
-      // Submit the form — updates placeholder with form data (2nd call)
-      fireEvent.click(screen.getByTestId("mock-add-btn"));
-
-      // 1st call: placeholder insertion, 2nd call: form submit update
-      expect(onLocalPlanChange).toHaveBeenCalledTimes(2);
-      const updatedPlan = onLocalPlanChange.mock.calls[1][0];
+      expect(onLocalPlanChange).toHaveBeenCalledTimes(1);
+      const updatedPlan = onLocalPlanChange.mock.calls[0][0];
 
       // Should have 4 steps now (3 original + 1 merge)
       expect(updatedPlan.steps).toHaveLength(4);
@@ -839,37 +804,6 @@ describe("ExecutionPlanTab", () => {
       expect(mergeStep).toBeDefined();
       expect(mergeStep.blockedBy).toContain("step_2");
       expect(mergeStep.blockedBy).toContain("step_3");
-      expect(mergeStep.title).toBe("New Step");
-    });
-
-    it("canceling the form after canvas op restores previous plan", () => {
-      const onLocalPlanChange = vi.fn();
-      render(
-        <ExecutionPlanTab
-          executionPlan={reviewPlan}
-          taskId="task-abc"
-          taskStatus="review"
-          onLocalPlanChange={onLocalPlanChange}
-        />,
-      );
-
-      // Click sequential on step_1 — inserts placeholder (1st call)
-      fireEvent.click(screen.getByTestId("flow-node-add-sequential-step_1"));
-      expect(screen.getByTestId("add-step-form")).toBeInTheDocument();
-      expect(onLocalPlanChange).toHaveBeenCalledTimes(1);
-
-      // Cancel — restores previous plan (2nd call)
-      fireEvent.click(screen.getByTestId("mock-cancel-btn"));
-      expect(screen.queryByTestId("add-step-form")).not.toBeInTheDocument();
-
-      // 2nd call restores the original plan (2 steps, no placeholder)
-      expect(onLocalPlanChange).toHaveBeenCalledTimes(2);
-      const restoredPlan = onLocalPlanChange.mock.calls[1][0];
-      expect(restoredPlan.steps).toHaveLength(2);
-      expect(restoredPlan.steps.map((s: { tempId: string }) => s.tempId)).toEqual([
-        "step_1",
-        "step_2",
-      ]);
     });
   });
 });
