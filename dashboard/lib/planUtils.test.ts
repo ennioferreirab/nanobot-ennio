@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { insertSequentialStep, insertParallelStep, insertMergeStep } from "./planUtils";
+import {
+  insertSequentialStep,
+  insertParallelStep,
+  insertMergeStep,
+  getMergeableSiblingIds,
+} from "./planUtils";
 import type { PlanStep } from "./types";
 
 function makeStep(overrides: Partial<PlanStep> = {}): PlanStep {
@@ -222,9 +227,60 @@ describe("insertMergeStep", () => {
     expect(step4.blockedBy).toEqual([mergeStep.tempId]);
   });
 
+  it("merges only siblings from the same fork when another fork shares the parallel group", () => {
+    const steps = [
+      makeStep({ tempId: "step_1", order: 1, parallelGroup: 1 }),
+      makeStep({ tempId: "step_2", order: 2, parallelGroup: 2, blockedBy: ["step_1"] }),
+      makeStep({ tempId: "step_3", order: 2, parallelGroup: 2, blockedBy: ["step_1"] }),
+      makeStep({ tempId: "step_4", order: 2, parallelGroup: 2, blockedBy: ["step_99"] }),
+      makeStep({ tempId: "step_5", order: 2, parallelGroup: 2, blockedBy: ["step_99"] }),
+    ];
+
+    const result = insertMergeStep(steps, "step_2");
+
+    const mergeStep = result.find(
+      (s) => !["step_1", "step_2", "step_3", "step_4", "step_5"].includes(s.tempId),
+    )!;
+    expect(mergeStep.blockedBy).toEqual(["step_2", "step_3"]);
+  });
+
+  it("reroutes only downstream dependencies from the merged fork", () => {
+    const steps = [
+      makeStep({ tempId: "step_1", order: 1, parallelGroup: 1 }),
+      makeStep({ tempId: "step_2", order: 2, parallelGroup: 2, blockedBy: ["step_1"] }),
+      makeStep({ tempId: "step_3", order: 2, parallelGroup: 2, blockedBy: ["step_1"] }),
+      makeStep({ tempId: "step_4", order: 2, parallelGroup: 2, blockedBy: ["step_99"] }),
+      makeStep({ tempId: "step_5", order: 2, parallelGroup: 2, blockedBy: ["step_99"] }),
+      makeStep({ tempId: "step_6", order: 3, parallelGroup: 3, blockedBy: ["step_2"] }),
+      makeStep({ tempId: "step_7", order: 3, parallelGroup: 3, blockedBy: ["step_4"] }),
+    ];
+
+    const result = insertMergeStep(steps, "step_2");
+
+    const mergeStep = result.find(
+      (s) => !["step_1", "step_2", "step_3", "step_4", "step_5", "step_6", "step_7"].includes(s.tempId),
+    )!;
+    const mergedDownstream = result.find((s) => s.tempId === "step_6")!;
+    const unrelatedDownstream = result.find((s) => s.tempId === "step_7")!;
+
+    expect(mergedDownstream.blockedBy).toEqual([mergeStep.tempId]);
+    expect(unrelatedDownstream.blockedBy).toEqual(["step_4"]);
+  });
+
   it("returns original steps when source not found", () => {
     const steps = [makeStep({ tempId: "step_1" })];
     const result = insertMergeStep(steps, "nonexistent");
+    expect(result).toEqual(steps);
+  });
+
+  it("returns original steps when there is no mergeable sibling in the same fork", () => {
+    const steps = [
+      makeStep({ tempId: "step_1", order: 1, parallelGroup: 1 }),
+      makeStep({ tempId: "step_2", order: 2, parallelGroup: 2, blockedBy: ["step_1"] }),
+      makeStep({ tempId: "step_3", order: 2, parallelGroup: 2, blockedBy: ["step_99"] }),
+    ];
+
+    const result = insertMergeStep(steps, "step_2");
     expect(result).toEqual(steps);
   });
 
@@ -238,5 +294,28 @@ describe("insertMergeStep", () => {
     expect(mergeStep.title).toBe("");
     expect(mergeStep.description).toBe("");
     expect(mergeStep.assignedAgent).toBe("nanobot");
+  });
+});
+
+describe("getMergeableSiblingIds", () => {
+  it("returns only siblings sharing both parallelGroup and blockers", () => {
+    const steps = [
+      makeStep({ tempId: "step_1", order: 1, parallelGroup: 1 }),
+      makeStep({ tempId: "step_2", order: 2, parallelGroup: 2, blockedBy: ["step_1"] }),
+      makeStep({ tempId: "step_3", order: 2, parallelGroup: 2, blockedBy: ["step_1"] }),
+      makeStep({ tempId: "step_4", order: 2, parallelGroup: 2, blockedBy: ["step_99"] }),
+    ];
+
+    expect(getMergeableSiblingIds(steps, "step_2")).toEqual(["step_2", "step_3"]);
+  });
+
+  it("returns only the source id when there is no same-fork sibling", () => {
+    const steps = [
+      makeStep({ tempId: "step_1", order: 1, parallelGroup: 1 }),
+      makeStep({ tempId: "step_2", order: 2, parallelGroup: 2, blockedBy: ["step_1"] }),
+      makeStep({ tempId: "step_3", order: 2, parallelGroup: 2, blockedBy: ["step_99"] }),
+    ];
+
+    expect(getMergeableSiblingIds(steps, "step_2")).toEqual(["step_2"]);
   });
 });
