@@ -1126,11 +1126,9 @@ class TaskExecutor(CCExecutorMixin):
                         cron_parent_task_id,
                     )
 
-            # Determine final status based on trust level
-            if trust_level == TrustLevel.AUTONOMOUS:
-                final_status = TaskStatus.DONE
-            else:
-                final_status = TaskStatus.REVIEW
+            # Execution completion never implies approval. Tasks always land in
+            # review until a human explicitly approves them.
+            final_status = TaskStatus.REVIEW
 
             # Activity event (task_completed) is written by the Convex
             # tasks:updateStatus mutation — no duplicate create_activity here.

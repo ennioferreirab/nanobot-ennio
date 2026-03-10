@@ -26,8 +26,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mc.application.execution.file_enricher import (
+    build_merged_source_context,
     build_file_context,
     build_file_manifest,
+    load_merged_source_payloads,
     resolve_task_dirs,
 )
 from mc.application.execution.request import EntityType, ExecutionRequest
@@ -205,6 +207,7 @@ class ContextBuilder:
         req.files_dir = files_dir
         req.output_dir = output_dir
 
+        fresh_task: dict[str, Any] | None = None
         try:
             fresh_task = await asyncio.to_thread(
                 self._bridge.query, "tasks:getById", {"task_id": task_id}
@@ -226,7 +229,22 @@ class ContextBuilder:
         )
         req.description = (req.description or "") + f"\n\n{file_context}"
 
-        # 6. Build thread context
+        # 6. Inject merged source context before the live thread when task C
+        # inherits A/B histories.
+        try:
+            merged_source_payloads = await load_merged_source_payloads(
+                self._bridge,
+                fresh_task if isinstance(fresh_task, dict) else task_data,
+            )
+            merged_source_context = build_merged_source_context(merged_source_payloads)
+            if merged_source_context:
+                req.description = (req.description or "") + f"\n\n{merged_source_context}"
+        except Exception:
+            logger.warning(
+                "[context] Merged source context failed for '%s'", title, exc_info=True
+            )
+
+        # 7. Build thread context
         try:
             thread_messages = await asyncio.to_thread(
                 self._bridge.get_task_messages, task_id
@@ -245,7 +263,7 @@ class ContextBuilder:
                 "[context] Thread context failed for '%s'", title, exc_info=True,
             )
 
-        # 7. Build tag attributes context
+        # 8. Build tag attributes context
         try:
             task_tags = (task_data or {}).get("tags") or []
             if task_tags:
@@ -264,7 +282,7 @@ class ContextBuilder:
                 "[context] Tag attributes failed for '%s'", title, exc_info=True,
             )
 
-        # 8. Inject orientation
+        # 9. Inject orientation
         agent_prompt = inject_orientation(agent_name, agent_prompt)
 
         # System agents (nanobot) use SOUL.md -- skip prompt injection
@@ -277,7 +295,7 @@ class ContextBuilder:
             if roster:
                 req.description = (req.description or "") + f"\n\n{roster}"
 
-        # 9. Resolve board workspace
+        # 10. Resolve board workspace
         board_id = (task_data or {}).get("board_id")
         if board_id:
             board_name, memory_workspace = await self._resolve_board(

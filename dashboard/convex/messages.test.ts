@@ -106,6 +106,18 @@ describe("messages.postMentionMessage", () => {
     ).rejects.toThrow(/Cannot send messages on deleted tasks/);
   });
 
+  it("throws when source task is merge-locked into task C", async () => {
+    const handler = getHandler();
+    const { ctx } = makeCtx({ ...baseTask, mergedIntoTaskId: "task-c" });
+
+    await expect(
+      handler(ctx, {
+        taskId: "task-1",
+        content: "Hey @coder",
+      })
+    ).rejects.toThrow(/merged into another task/i);
+  });
+
   // AC 2: Verify all non-deleted statuses are accepted
   const allowedStatuses = [
     "inbox",

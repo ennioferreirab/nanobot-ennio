@@ -36,6 +36,15 @@ const fileAttachmentsValidator = v.optional(v.array(v.object({
   size: v.number(),
 })));
 
+function assertTaskThreadWritable(task: { status: string; mergedIntoTaskId?: string }) {
+  if (task.status === "deleted") {
+    throw new ConvexError("Cannot send messages on deleted tasks");
+  }
+  if (task.mergedIntoTaskId) {
+    throw new ConvexError("Task has been merged into another task. Continue the thread there.");
+  }
+}
+
 export const listRecentUserMessages = query({
   args: { sinceTimestamp: v.string() },
   handler: async (ctx, args) => {
@@ -229,6 +238,7 @@ export const postUserPlanMessage = mutation({
     if (!task) {
       throw new ConvexError("Task not found");
     }
+    assertTaskThreadWritable(task);
     const allowedStatuses = task.isManual
       ? ["inbox", "in_progress", "review"]
       : ["in_progress", "review"];
@@ -278,6 +288,7 @@ export const postComment = mutation({
     if (!task) {
       throw new ConvexError("Task not found");
     }
+    assertTaskThreadWritable(task);
 
     // Validate using thread rules
     if (!canPostComment(task.status)) {
@@ -334,9 +345,7 @@ export const postMentionMessage = mutation({
     if (!task) {
       throw new ConvexError("Task not found");
     }
-    if (task.status === "deleted") {
-      throw new ConvexError("Cannot send messages on deleted tasks");
-    }
+    assertTaskThreadWritable(task);
 
     const timestamp = new Date().toISOString();
 
@@ -384,6 +393,7 @@ export const sendThreadMessage = mutation({
     if (!task) {
       throw new ConvexError("Task not found");
     }
+    assertTaskThreadWritable(task);
     const blockedStatuses = task.isManual
       ? ["retrying", "deleted"]
       : ["in_progress", "retrying", "deleted"];

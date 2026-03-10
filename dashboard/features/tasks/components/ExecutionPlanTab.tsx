@@ -58,6 +58,11 @@ interface LiveStep {
   completedAt?: string;
 }
 
+interface MergeAliasDisplay {
+  title: string;
+  description: string;
+}
+
 interface ExecutionPlanTabProps {
   executionPlan:
     | { steps: ExecutionPlanStep[]; createdAt?: string; generatedAt?: string }
@@ -70,6 +75,9 @@ interface ExecutionPlanTabProps {
   taskStatus?: string;
   boardId?: Id<"boards">;
   onLocalPlanChange?: (plan: ExecutionPlan) => void;
+  readOnly?: boolean;
+  mergeAlias?: MergeAliasDisplay;
+  onOpenParentTask?: (taskId: string) => void;
 }
 
 interface NormalizedStep {
@@ -83,9 +91,12 @@ interface NormalizedStep {
   status: string;
   order: number;
   errorMessage?: string;
+  isVisualOnly?: boolean;
 }
 
 /* ── Utility functions ── */
+
+const VISUAL_MERGE_ALIAS_ID = "__merge_alias__";
 
 function getDependencyIds(step: ExecutionPlanStep): string[] {
   return (step.blockedBy ?? step.dependsOn ?? []).map((id) => String(id));
@@ -110,6 +121,38 @@ function normalizePlanSteps(planSteps: ExecutionPlanStep[]): NormalizedStep[] {
       order: step.order ?? index + 1,
       errorMessage: step.errorMessage,
     }));
+}
+
+function injectVisualMergeAlias(
+  steps: NormalizedStep[],
+  mergeAlias: MergeAliasDisplay | undefined,
+  taskStatus?: string,
+): NormalizedStep[] {
+  if (!mergeAlias) return steps;
+
+  const isLive = taskStatus === "in_progress" || taskStatus === "done";
+  const aliasStep: NormalizedStep = {
+    stepId: VISUAL_MERGE_ALIAS_ID,
+    title: mergeAlias.title,
+    description: mergeAlias.description,
+    assignedAgent: "",
+    dependencies: [],
+    parallelGroup: 0,
+    status: isLive ? "completed" : "planned",
+    order: 0,
+    isVisualOnly: true,
+  };
+
+  if (steps.length === 0) {
+    return [aliasStep];
+  }
+
+  return [
+    aliasStep,
+    ...steps.map((step) =>
+      step.dependencies.length === 0 ? { ...step, dependencies: [VISUAL_MERGE_ALIAS_ID] } : step,
+    ),
+  ];
 }
 
 function mergeStepsWithLiveData(
@@ -189,11 +232,45 @@ function normalizedStepsToPlanSteps(steps: NormalizedStep[]): PlanStep[] {
     tempId: s.stepId,
     title: s.title ?? "",
     description: s.description,
-    assignedAgent: s.assignedAgent ?? "nanobot",
+    assignedAgent: s.isVisualOnly ? "" : (s.assignedAgent ?? "nanobot"),
     blockedBy: s.dependencies,
     parallelGroup: typeof s.parallelGroup === "number" ? s.parallelGroup : 0,
     order: s.order,
   }));
+}
+
+function nextTempId(steps: PlanStep[]): string {
+  const existingIds = new Set(steps.map((step) => step.tempId));
+  const existingNums = steps
+    .map((step) => step.tempId)
+    .filter((id) => /^step_\d+$/.test(id))
+    .map((id) => Number.parseInt(id.replace("step_", ""), 10));
+  let nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : steps.length + 1;
+  while (existingIds.has(`step_${nextNum}`)) {
+    nextNum += 1;
+  }
+  return `step_${nextNum}`;
+}
+
+function insertRootStepAfterMergeAlias(steps: PlanStep[]): PlanStep[] {
+  const newId = nextTempId(steps);
+  const maxOrder = steps.reduce((max, step) => Math.max(max, step.order), 0);
+  const updatedSteps = steps.map((step) =>
+    step.blockedBy.length === 0 ? { ...step, blockedBy: [newId] } : step,
+  );
+
+  return [
+    ...updatedSteps,
+    {
+      tempId: newId,
+      title: "",
+      description: "",
+      assignedAgent: "nanobot",
+      blockedBy: [],
+      parallelGroup: 1,
+      order: maxOrder + 1,
+    },
+  ];
 }
 
 /* ── Component ── */
@@ -207,6 +284,9 @@ export function ExecutionPlanTab({
   taskStatus,
   boardId,
   onLocalPlanChange,
+  readOnly = false,
+  mergeAlias,
+  onOpenParentTask,
 }: ExecutionPlanTabProps) {
   const acceptHumanStepMutation = useMutation(api.steps.acceptHumanStep);
   const retryStepMutation = useMutation(api.steps.retryStep);
@@ -229,6 +309,11 @@ export function ExecutionPlanTab({
     const normalizedPlan = normalizePlanSteps(executionPlan.steps);
     return mergeStepsWithLiveData(normalizedPlan, liveSteps);
   }, [executionPlan, liveSteps]);
+  const resolvedMergeAlias = mergeAlias;
+  const displaySteps = useMemo(
+    () => injectVisualMergeAlias(steps, resolvedMergeAlias, taskStatus),
+    [steps, resolvedMergeAlias, taskStatus],
+  );
 
   const handleRetry = useCallback(
     async (stepId: string) => {
@@ -284,8 +369,8 @@ export function ExecutionPlanTab({
   // Determine if this is a review (pre-kickoff) mode vs live mode
   const isReviewMode = taskStatus === "review" || taskStatus === "inbox" || isEditMode;
   const isLiveMode = taskStatus === "in_progress" || taskStatus === "done";
-  const canAddOrEdit = isReviewMode || isLiveMode;
-  const canEditCanvas = isReviewMode && !!onLocalPlanChange;
+  const canAddOrEdit = !readOnly && (isReviewMode || isLiveMode);
+  const canEditCanvas = !readOnly && isReviewMode && !!onLocalPlanChange;
 
   const handleDeleteStep = useCallback(
     async (stepId: string) => {
@@ -348,6 +433,10 @@ export function ExecutionPlanTab({
   // Canvas directional button handlers — insert step immediately, no form
   const handleAddSequential = useCallback(
     (stepId: string) => {
+      if (stepId === VISUAL_MERGE_ALIAS_ID) {
+        applyGraphTransform(insertRootStepAfterMergeAlias);
+        return;
+      }
       applyGraphTransform((steps) => insertSequentialStep(steps, stepId));
     },
     [applyGraphTransform],
@@ -369,6 +458,7 @@ export function ExecutionPlanTab({
 
   const handleStepClick = useCallback(
     (stepId: string) => {
+      if (stepId === VISUAL_MERGE_ALIAS_ID) return;
       if (!canAddOrEdit) return;
       setEditingStepId(stepId);
       setEditStepError(null);
@@ -388,26 +478,30 @@ export function ExecutionPlanTab({
 
   // Compute leaf steps: steps that no other step depends on (closest to END)
   const leafStepIds = useMemo(() => {
-    const allDeps = new Set(editablePlanSteps.flatMap((s) => s.blockedBy));
-    return new Set(editablePlanSteps.filter((s) => !allDeps.has(s.tempId)).map((s) => s.tempId));
-  }, [editablePlanSteps]);
+    const displayPlanSteps = normalizedStepsToPlanSteps(displaySteps);
+    const allDeps = new Set(displayPlanSteps.flatMap((step) => step.blockedBy));
+    return new Set(
+      displayPlanSteps.filter((step) => !allDeps.has(step.tempId)).map((step) => step.tempId),
+    );
+  }, [displaySteps]);
 
   // Build flow nodes/edges
   const { flowNodes, flowEdges } = useMemo(() => {
-    if (steps.length === 0) return { flowNodes: [], flowEdges: [] };
-    const planSteps = normalizedStepsToPlanSteps(steps);
+    if (displaySteps.length === 0) return { flowNodes: [], flowEdges: [] };
+    const planSteps = normalizedStepsToPlanSteps(displaySteps);
     const { nodes: rawNodes, edges: rawEdges } = stepsToNodesAndEdges(planSteps);
 
     // Inject status + handlers into node data (skip START/END terminal nodes)
-    const statusMap = new Map(steps.map((s) => [s.stepId, s.status]));
+    const statusMap = new Map(displaySteps.map((step) => [step.stepId, step.status]));
     const nodesWithStatus = rawNodes.map((n) => {
       if (n.id === "__start__" || n.id === "__end__") return n;
       // Compute hasParallelSiblings for merge button visibility
-      const stepData = editablePlanSteps.find((s) => s.tempId === n.id);
-      const hasParallelSiblings =
-        stepData && stepData.parallelGroup > 0
-          ? getMergeableSiblingIds(editablePlanSteps, n.id).length > 1
-          : false;
+      const stepData = planSteps.find((step) => step.tempId === n.id);
+      const isMergeAliasStep = n.id === VISUAL_MERGE_ALIAS_ID;
+      const isVisualOnly = n.id === VISUAL_MERGE_ALIAS_ID;
+      const hasParallelSiblings = stepData
+        ? !isMergeAliasStep && getMergeableSiblingIds(editablePlanSteps, n.id).length > 1
+        : false;
       return {
         ...n,
         data: {
@@ -417,16 +511,19 @@ export function ExecutionPlanTab({
           hasParallelSiblings,
           isLeafStep: leafStepIds.has(n.id),
           onAddSequential: canEditCanvas ? handleAddSequential : undefined,
-          onAddParallel: canEditCanvas ? handleAddParallel : undefined,
-          onMergePaths: canEditCanvas ? handleMergePaths : undefined,
-          onDeleteStep: canEditCanvas ? handleDeleteStep : undefined,
-          onAccept: handleAccept,
-          onRetry: handleRetry,
+          onAddParallel: canEditCanvas && !isMergeAliasStep ? handleAddParallel : undefined,
+          onMergePaths: canEditCanvas && !isMergeAliasStep ? handleMergePaths : undefined,
+          onDeleteStep: canEditCanvas && !isVisualOnly ? handleDeleteStep : undefined,
+          onAccept: readOnly || isVisualOnly ? undefined : handleAccept,
+          onRetry: readOnly || isVisualOnly ? undefined : handleRetry,
           isAccepting: acceptingStepId === n.id,
           acceptError: acceptErrors[n.id],
-          onStepClick: canAddOrEdit ? handleStepClick : undefined,
+          onStepClick: canAddOrEdit && !isVisualOnly ? handleStepClick : undefined,
           isRetrying: retryingStepId === n.id,
           retryError: retryErrors[n.id],
+          isVisualOnly,
+          parentTaskId: taskId,
+          onOpenParentTask,
         },
       };
     });
@@ -434,10 +531,11 @@ export function ExecutionPlanTab({
     const positioned = layoutWithDagre(nodesWithStatus, rawEdges);
     return { flowNodes: positioned, flowEdges: rawEdges };
   }, [
-    steps,
+    displaySteps,
     editablePlanSteps,
     leafStepIds,
     canEditCanvas,
+    readOnly,
     handleAddSequential,
     handleAddParallel,
     handleMergePaths,
@@ -450,6 +548,8 @@ export function ExecutionPlanTab({
     retryErrors,
     canAddOrEdit,
     handleStepClick,
+    taskId,
+    onOpenParentTask,
   ]);
 
   // Build existingSteps for the blocked-by selector
@@ -632,7 +732,7 @@ export function ExecutionPlanTab({
     );
   }
 
-  if (!executionPlan || !executionPlan.steps || executionPlan.steps.length === 0) {
+  if (displaySteps.length === 0) {
     if (!canAddOrEdit) {
       return (
         <p className="text-sm text-muted-foreground text-center py-8">

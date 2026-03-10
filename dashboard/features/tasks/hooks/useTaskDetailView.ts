@@ -7,6 +7,27 @@ import type { Id, Doc } from "@/convex/_generated/dataModel";
 import { STATUS_COLORS, type TaskStatus } from "@/lib/constants";
 import type { ExecutionPlan } from "@/lib/types";
 
+export type MergedTaskRef = {
+  _id: Id<"tasks">;
+  title: string;
+};
+
+export type MergeSourceRef = {
+  taskId: Id<"tasks">;
+  taskTitle: string;
+  label: string;
+};
+
+export type MergeSourceThread = MergeSourceRef & {
+  messages: Doc<"messages">[];
+};
+
+export type DetailFileRef = NonNullable<Doc<"tasks">["files"]>[number] & {
+  sourceTaskId?: Id<"tasks">;
+  sourceTaskTitle?: string;
+  sourceLabel?: string;
+};
+
 type TaskDetailReadModel = {
   task: Doc<"tasks">;
   board: Doc<"boards"> | null;
@@ -17,6 +38,10 @@ type TaskDetailReadModel = {
   tagCatalog: Doc<"taskTags">[];
   tagAttributes: Doc<"tagAttributes">[];
   tagAttributeValues: Doc<"tagAttributeValues">[];
+  mergedIntoTask: MergedTaskRef | null;
+  mergeSources: MergeSourceRef[];
+  mergeSourceThreads: MergeSourceThread[];
+  mergeSourceFiles: DetailFileRef[];
   uiFlags: {
     isAwaitingKickoff: boolean;
     isPaused: boolean;
@@ -42,6 +67,10 @@ export interface TaskDetailViewData {
   tagsList: Doc<"taskTags">[] | undefined;
   tagAttributesList: Doc<"tagAttributes">[] | undefined;
   tagAttrValues: Doc<"tagAttributeValues">[] | undefined;
+  mergedIntoTask: MergedTaskRef | null | undefined;
+  mergeSources: MergeSourceRef[] | undefined;
+  mergeSourceThreads: MergeSourceThread[] | undefined;
+  displayFiles: DetailFileRef[];
   isTaskLoaded: boolean;
   colors: { border: string; bg: string; text: string } | null;
   tagColorMap: Record<string, string>;
@@ -64,11 +93,18 @@ export function useTaskDetailView(taskId: Id<"tasks"> | null): TaskDetailViewDat
   const tagsList = detailView?.tagCatalog;
   const tagAttributesList = detailView?.tagAttributes;
   const tagAttrValues = detailView?.tagAttributeValues;
+  const mergedIntoTask = detailView?.mergedIntoTask;
+  const mergeSources = detailView?.mergeSources;
+  const mergeSourceThreads = detailView?.mergeSourceThreads;
 
   const isTaskLoaded = task != null && typeof task === "object" && "status" in task;
   const taskExecutionPlan = task?.executionPlan as ExecutionPlan | undefined;
   const taskAwaitingKickoff: boolean = detailView?.uiFlags.isAwaitingKickoff === true;
   const taskStatus: string | undefined = task?.status;
+  const displayFiles = useMemo(
+    () => [...(task?.files ?? []), ...(detailView?.mergeSourceFiles ?? [])],
+    [detailView?.mergeSourceFiles, task?.files],
+  );
 
   const colors = isTaskLoaded
     ? (STATUS_COLORS[task.status as TaskStatus] ?? STATUS_COLORS.inbox)
@@ -86,6 +122,10 @@ export function useTaskDetailView(taskId: Id<"tasks"> | null): TaskDetailViewDat
     tagsList,
     tagAttributesList,
     tagAttrValues,
+    mergedIntoTask,
+    mergeSources,
+    mergeSourceThreads,
+    displayFiles,
     isTaskLoaded,
     colors,
     tagColorMap,

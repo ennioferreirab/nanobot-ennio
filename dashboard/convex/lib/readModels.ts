@@ -11,6 +11,7 @@ export type TaskForFlags = {
   awaitingKickoff?: boolean;
   isManual?: boolean;
   executionPlan?: unknown;
+  mergedIntoTaskId?: string;
 };
 
 /** Minimal step shape used by read-model computations. */
@@ -60,11 +61,7 @@ export type BoardColumn = {
 
 // --- Constants ---
 
-const PLAN_EDITABLE_STATUSES: ReadonlySet<string> = new Set([
-  "planning",
-  "ready",
-  "review",
-]);
+const PLAN_EDITABLE_STATUSES: ReadonlySet<string> = new Set(["planning", "ready", "review"]);
 
 const BOARD_COLUMNS: readonly BoardColumn[] = [
   { status: "inbox", label: "Inbox" },
@@ -84,10 +81,7 @@ const BOARD_COLUMNS: readonly BoardColumn[] = [
 /**
  * Compute UI flags from a task and its steps.
  */
-export function computeUiFlags(
-  task: TaskForFlags,
-  steps: StepForFlags[]
-): UiFlags {
+export function computeUiFlags(task: TaskForFlags, steps: StepForFlags[]): UiFlags {
   const hasNonCompletedSteps = steps.some((s) => s.status !== "completed");
 
   return {
@@ -101,23 +95,21 @@ export function computeUiFlags(
 /**
  * Compute allowed actions from a task and its UI flags.
  */
-export function computeAllowedActions(
-  task: TaskForFlags,
-  uiFlags: UiFlags
-): AllowedActions {
+export function computeAllowedActions(task: TaskForFlags, uiFlags: UiFlags): AllowedActions {
   const status = task.status;
   const hasExecutionPlan = task.executionPlan != null;
+  const isMergeLocked =
+    typeof task.mergedIntoTaskId === "string" && task.mergedIntoTaskId.length > 0;
 
   return {
-    approve: status === "review",
-    kickoff:
-      status === "ready" || (status === "review" && hasExecutionPlan),
+    approve: status === "review" && !uiFlags.isManual,
+    kickoff: status === "ready" || (status === "review" && hasExecutionPlan),
     pause: status === "in_progress",
     resume: status === "review" && uiFlags.isPaused,
     retry: status === "crashed" || status === "failed",
     savePlan: uiFlags.isPlanEditable,
     startInbox: status === "inbox",
-    sendMessage: status !== "deleted" && status !== "retrying",
+    sendMessage: status !== "deleted" && status !== "retrying" && !isMergeLocked,
   };
 }
 
@@ -125,9 +117,7 @@ export function computeAllowedActions(
  * Group tasks by status into board columns.
  * Returns a record mapping status to array of tasks.
  */
-export function groupTasksByStatus<T extends { status: string }>(
-  tasks: T[]
-): Record<string, T[]> {
+export function groupTasksByStatus<T extends { status: string }>(tasks: T[]): Record<string, T[]> {
   const grouped: Record<string, T[]> = {};
   for (const col of BOARD_COLUMNS) {
     grouped[col.status] = [];
@@ -158,11 +148,7 @@ export function filterTasks<
     description?: string | null;
     tags?: string[] | null;
   },
->(
-  tasks: T[],
-  freeText?: string,
-  tagFilters?: string[]
-): T[] {
+>(tasks: T[], freeText?: string, tagFilters?: string[]): T[] {
   let result = tasks;
 
   if (freeText) {
@@ -170,15 +156,13 @@ export function filterTasks<
     result = result.filter(
       (t) =>
         t.title.toLowerCase().includes(lower) ||
-        (t.description && t.description.toLowerCase().includes(lower))
+        (t.description && t.description.toLowerCase().includes(lower)),
     );
   }
 
   if (tagFilters && tagFilters.length > 0) {
     const filterSet = new Set(tagFilters);
-    result = result.filter(
-      (t) => t.tags && t.tags.some((tag) => filterSet.has(tag))
-    );
+    result = result.filter((t) => t.tags && t.tags.some((tag) => filterSet.has(tag)));
   }
 
   return result;

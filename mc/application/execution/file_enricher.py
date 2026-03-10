@@ -6,6 +6,7 @@ and step_dispatcher.py into a single shared module.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
@@ -144,3 +145,173 @@ def build_file_context(
         parts.append(task_instruction)
 
     return "\n".join(parts)
+
+
+def build_absolute_file_path(task_id: str, subfolder: str, name: str) -> str:
+    """Return absolute path for a task file entry."""
+    safe_id = task_safe_id(task_id)
+    return str(Path.home() / ".nanobot" / "tasks" / safe_id / subfolder / name)
+
+
+def absolutize_artifact_path(task_id: str, path: str) -> str:
+    """Resolve a task-relative artifact path into an absolute filesystem path."""
+    safe_id = task_safe_id(task_id)
+    normalized = path.lstrip("/")
+    return str(Path.home() / ".nanobot" / "tasks" / safe_id / normalized)
+
+
+def _read_merge_field(task_data: dict[str, Any], snake_case: str, camel_case: str) -> Any:
+    """Read a merge-related field from either snake_case or camelCase task data."""
+    return task_data.get(snake_case, task_data.get(camel_case))
+
+
+def _default_merge_label(index: int) -> str:
+    """Return spreadsheet-style labels: A, B, ..., Z, AA, AB, ..."""
+    value = index
+    label = ""
+    while True:
+        label = chr(ord("A") + (value % 26)) + label
+        value = value // 26 - 1
+        if value < 0:
+            return label
+
+
+async def load_merged_source_payloads(
+    bridge: Any,
+    task_data: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Fetch source task payloads for a merged task."""
+    if not task_data:
+        return []
+
+    is_merge_task = _read_merge_field(task_data, "is_merge_task", "isMergeTask") is True
+    source_task_ids = _read_merge_field(
+        task_data,
+        "merge_source_task_ids",
+        "mergeSourceTaskIds",
+    ) or []
+    source_labels = _read_merge_field(
+        task_data,
+        "merge_source_labels",
+        "mergeSourceLabels",
+    ) or []
+
+    if not is_merge_task or not isinstance(source_task_ids, list) or not source_task_ids:
+        return []
+
+    async def _load_source(
+        index: int,
+        task_id: str,
+        seen: set[str],
+        labels: list[str],
+        parent_label: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if task_id in seen:
+            return []
+
+        source_task = await asyncio.to_thread(
+            bridge.query,
+            "tasks:getById",
+            {"task_id": task_id},
+        )
+        if not isinstance(source_task, dict):
+            return []
+
+        seen.add(task_id)
+        base_label = labels[index] if index < len(labels) else _default_merge_label(index)
+        label = f"{parent_label}.{base_label}" if parent_label else base_label
+
+        source_messages = await asyncio.to_thread(bridge.get_task_messages, task_id)
+        payload = {
+            "label": label,
+            "task_id": task_id,
+            "task_data": source_task,
+            "messages": source_messages if isinstance(source_messages, list) else [],
+        }
+
+        resolved = [payload]
+        nested_source_ids = _read_merge_field(
+            source_task,
+            "merge_source_task_ids",
+            "mergeSourceTaskIds",
+        ) or []
+        nested_source_labels = _read_merge_field(
+            source_task,
+            "merge_source_labels",
+            "mergeSourceLabels",
+        ) or []
+        nested_is_merge = _read_merge_field(
+            source_task,
+            "is_merge_task",
+            "isMergeTask",
+        ) is True
+
+        if nested_is_merge and isinstance(nested_source_ids, list) and nested_source_ids:
+            for nested_index, nested_task_id in enumerate(nested_source_ids):
+                resolved.extend(
+                    await _load_source(
+                        nested_index,
+                        nested_task_id,
+                        seen,
+                        nested_source_labels,
+                        label,
+                    )
+                )
+
+        return resolved
+
+    seen: set[str] = set()
+    payloads: list[dict[str, Any]] = []
+    for index, task_id in enumerate(source_task_ids):
+        payloads.extend(await _load_source(index, task_id, seen, source_labels))
+    return payloads
+
+
+def build_merged_source_context(source_payloads: list[dict[str, Any]]) -> str:
+    """Build source-task metadata, file refs, and source thread sections."""
+    if not source_payloads:
+        return ""
+
+    from mc.application.execution.thread_context import ThreadContextBuilder
+
+    builder = ThreadContextBuilder()
+    sections: list[str] = ["[Merged Task Origins]"]
+
+    for source in source_payloads:
+        label = source.get("label", "?")
+        task_id = source.get("task_id", "unknown")
+        task_data = source.get("task_data") or {}
+        title = task_data.get("title", f"Task {label}")
+        status = task_data.get("status", "unknown")
+        description = task_data.get("description")
+        line = f"{label}: {title} [{status}]"
+        if description:
+            line += f" — {description}"
+        sections.append(line)
+
+        files = task_data.get("files") or []
+        if files:
+            file_lines = [f"[Source Task {label} Files]"]
+            for file_data in files:
+                name = file_data.get("name", "unknown")
+                subfolder = file_data.get("subfolder", "attachments")
+                absolute_path = build_absolute_file_path(task_id, subfolder, name)
+                file_lines.append(f"- {name} ({subfolder}) — {absolute_path}")
+            sections.append("\n".join(file_lines))
+
+        messages = source.get("messages") or []
+        if messages:
+            thread_lines = [f"[Source Thread {label}]"]
+            for message in messages[-10:]:
+                normalized_message = dict(message)
+                normalized_message["artifacts"] = [
+                    {
+                        **artifact,
+                        "path": absolutize_artifact_path(task_id, artifact.get("path", "")),
+                    }
+                    for artifact in (message.get("artifacts") or [])
+                ]
+                thread_lines.append(builder._format_message(normalized_message))
+            sections.append("\n".join(thread_lines))
+
+    return "\n\n".join(sections)

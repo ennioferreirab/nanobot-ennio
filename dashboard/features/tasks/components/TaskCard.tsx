@@ -45,7 +45,9 @@ export function TaskCard({ task, onClick, tagColorMap, layoutIdPrefix }: TaskCar
   const [isDragging, setIsDragging] = useState(false);
   const [titleExpanded, setTitleExpanded] = useState(false);
   const colors = STATUS_COLORS[task.status as TaskStatus] ?? STATUS_COLORS.inbox;
-  const showHitlButtons = task.status === "review" && task.trustLevel === "human_approved";
+  const showApproveButton = task.status === "review" && !task.isManual;
+  const showDenyButton =
+    task.status === "review" && task.trustLevel === "human_approved" && !task.isManual;
   const isManual = task.isManual === true;
   const executionPlan = task.executionPlan as { steps?: TaskProgressStep[] } | undefined;
   const steps = Array.isArray(executionPlan?.steps) ? executionPlan.steps : [];
@@ -232,7 +234,7 @@ export function TaskCard({ task, onClick, tagColorMap, layoutIdPrefix }: TaskCar
                   Paused
                 </Badge>
               )}
-              {showHitlButtons && (
+              {showApproveButton && (
                 <>
                   <Button
                     variant="default"
@@ -245,17 +247,19 @@ export function TaskCard({ task, onClick, tagColorMap, layoutIdPrefix }: TaskCar
                   >
                     Approve
                   </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowRejection((prev) => !prev);
-                    }}
-                  >
-                    Deny
-                  </Button>
+                  {showDenyButton && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowRejection((prev) => !prev);
+                      }}
+                    >
+                      Deny
+                    </Button>
+                  )}
                 </>
               )}
               <Trash2

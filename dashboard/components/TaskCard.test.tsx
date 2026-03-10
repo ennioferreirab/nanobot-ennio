@@ -136,9 +136,9 @@ describe("TaskCard", () => {
     expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
 
-  it("does not show Approve button for autonomous tasks in review", () => {
+  it("shows Approve button for autonomous tasks in review", () => {
     render(<TaskCard task={{ ...baseTask, status: "review", trustLevel: "autonomous" }} />);
-    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
 
   it("does not show Approve button for human_approved tasks not in review", () => {

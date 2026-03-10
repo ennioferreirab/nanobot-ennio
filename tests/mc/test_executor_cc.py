@@ -263,7 +263,7 @@ class TestBackendRouting:
 class TestExecuteCCTaskHappyPath:
 
     @pytest.mark.asyncio
-    async def test_successful_execution_transitions_to_done(self):
+    async def test_successful_execution_transitions_to_review(self):
         bridge = _make_bridge()
         executor = _make_executor(bridge)
         agent_data = _cc_agent()
@@ -295,10 +295,10 @@ class TestExecuteCCTaskHappyPath:
         assert call_args[2] == AuthorType.AGENT
         assert "All done" in call_args[3]     # content
 
-        # Should update status to DONE
+        # Should update status to REVIEW
         bridge.update_task_status.assert_called_once()
         status_args = bridge.update_task_status.call_args[0]
-        assert status_args[1] == TaskStatus.DONE
+        assert status_args[1] == TaskStatus.REVIEW
         mock_relocate.assert_called_once_with("t1", ws_ctx.cwd)
 
         # IPC server should be stopped
@@ -739,10 +739,10 @@ class TestCompleteCCTask:
         assert act_args[0] == ActivityEventType.TASK_COMPLETED
         assert "0.0010" in act_args[1]
 
-        # Status update to DONE
+        # Status update to REVIEW
         bridge.update_task_status.assert_called_once()
         status_args = bridge.update_task_status.call_args[0]
-        assert status_args[1] == TaskStatus.DONE
+        assert status_args[1] == TaskStatus.REVIEW
 
 
 # ---------------------------------------------------------------------------

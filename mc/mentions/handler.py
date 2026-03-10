@@ -18,6 +18,10 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from mc.application.execution.file_enricher import (
+    build_merged_source_context,
+    load_merged_source_payloads,
+)
 from mc.types import (
     NANOBOT_AGENT_NAME,
     ActivityEventType,
@@ -288,6 +292,19 @@ async def handle_mention(
     files_section = _build_task_files_section(task_data)
     if files_section:
         sections.append(files_section)
+
+    if task_data:
+        try:
+            merged_source_payloads = await load_merged_source_payloads(bridge, task_data)
+            merged_source_context = build_merged_source_context(merged_source_payloads)
+            if merged_source_context:
+                sections.append(merged_source_context)
+        except Exception:
+            logger.warning(
+                "[mention_handler] Failed to inject merged source context for task %s",
+                task_id,
+                exc_info=True,
+            )
 
     # Thread context from ThreadContextBuilder
     if thread_context:

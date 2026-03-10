@@ -95,20 +95,20 @@ Merge each worktree branch back into main. Resolve conflicts from parallel devel
 - In the dashboard, feature UI modules should depend on hooks/view-models instead of importing `convex/react` directly.
 - GitHub Actions enforces this baseline on pull requests by checking changed files plus the always-on architecture guardrails.
 
-### Worktree UI Preview (PO Validation)
+### Worktree Preview
 
-To preview a worktree's dashboard for visual/PO validation without disrupting the main MC instance:
+**Always start worktrees with `uv run nanobot mc start`** — never use `npm run dev` or `npm run dev:frontend` alone. The MC gateway (Python) is required for task execution: it materializes steps, dispatches agents, and manages the full lifecycle. Without it, tasks transition to `in_progress` but nothing executes.
 
 1. Copy `.env.local` into the worktree's dashboard (it is gitignored and not present by default):
    ```bash
    cp dashboard/.env.local .worktrees/codex/<branch>/dashboard/.env.local
    ```
-2. Start only the Next.js frontend on a different port:
+2. Start the full MC stack from the worktree root on a different port:
    ```bash
-   cd .worktrees/codex/<branch>/dashboard
-   PORT=3001 npm run dev:frontend
+   cd .worktrees/codex/<branch>
+   PORT=3001 uv run nanobot mc start
    ```
-3. Open `http://localhost:3001` to evaluate the UI. The worktree frontend connects to the same Convex backend as the main instance — no need to run a second `convex dev` or gateway.
+3. Open `http://localhost:3001`. This runs both the Python gateway and the Next.js frontend together, exercising the full runtime.
 4. Kill the process when done (`Ctrl-C` or `lsof -ti:3001 | xargs kill`).
 
 ### Upstream Sync
