@@ -217,7 +217,6 @@ export function ExecutionPlanTab({
   const [addStepError, setAddStepError] = useState<string | null>(null);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editStepError, setEditStepError] = useState<string | null>(null);
-  const [hoveredStepId, setHoveredStepId] = useState<string | null>(null);
   const editFormRef = useRef<HTMLDivElement>(null);
 
   const steps = useMemo(() => {
@@ -403,12 +402,6 @@ export function ExecutionPlanTab({
       const hasParallelSiblings = stepData
         ? editablePlanSteps.filter((s) => s.parallelGroup === stepData.parallelGroup).length > 1
         : false;
-      // Toolbar visibility: show on hover, or by default on leaf steps only
-      const showToolbars = canEditCanvas
-        ? hoveredStepId
-          ? hoveredStepId === n.id
-          : leafStepIds.has(n.id)
-        : false;
       return {
         ...n,
         data: {
@@ -416,7 +409,7 @@ export function ExecutionPlanTab({
           status: statusMap.get(n.id) ?? "planned",
           isEditMode: canEditCanvas,
           hasParallelSiblings,
-          showToolbars,
+          isLeafStep: leafStepIds.has(n.id),
           onAddSequential: canEditCanvas ? handleAddSequential : undefined,
           onAddParallel: canEditCanvas ? handleAddParallel : undefined,
           onMergePaths: canEditCanvas ? handleMergePaths : undefined,
@@ -438,7 +431,6 @@ export function ExecutionPlanTab({
     steps,
     editablePlanSteps,
     leafStepIds,
-    hoveredStepId,
     canEditCanvas,
     handleAddSequential,
     handleAddParallel,
@@ -748,12 +740,6 @@ export function ExecutionPlanTab({
           nodeTypes={nodeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
           onNodeClick={handleNodeClick}
-          onNodeMouseEnter={(_event, node) => {
-            if (node.id !== "__start__" && node.id !== "__end__") {
-              setHoveredStepId(node.id);
-            }
-          }}
-          onNodeMouseLeave={() => setHoveredStepId(null)}
           onPaneClick={() => {
             setEditingStepId(null);
             setEditStepError(null);
