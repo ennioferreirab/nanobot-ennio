@@ -14,7 +14,12 @@ import { EditStepForm, type EditStepData } from "@/components/EditStepForm";
 import { Button } from "@/components/ui/button";
 import { stepsToNodesAndEdges, layoutWithDagre } from "@/lib/flowLayout";
 import type { ExecutionPlan, PlanStep } from "@/lib/types";
-import { insertSequentialStep, insertParallelStep, insertMergeStep } from "@/lib/planUtils";
+import {
+  insertSequentialStep,
+  insertParallelStep,
+  insertMergeStep,
+  getMergeableSiblingIds,
+} from "@/lib/planUtils";
 
 const nodeTypes = { flowStep: FlowStepNode, start: StartNode, end: EndNode };
 
@@ -401,7 +406,7 @@ export function ExecutionPlanTab({
       const stepData = editablePlanSteps.find((s) => s.tempId === n.id);
       const hasParallelSiblings =
         stepData && stepData.parallelGroup > 0
-          ? editablePlanSteps.filter((s) => s.parallelGroup === stepData.parallelGroup).length > 1
+          ? getMergeableSiblingIds(editablePlanSteps, n.id).length > 1
           : false;
       return {
         ...n,

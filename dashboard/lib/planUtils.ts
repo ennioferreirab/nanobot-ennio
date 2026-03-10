@@ -7,6 +7,10 @@ import type { PlanStep } from "./types";
 
 export type StepData = Partial<Pick<PlanStep, "title" | "description" | "assignedAgent">>;
 
+function blockersKey(blockedBy: string[]): string {
+  return [...new Set(blockedBy)].sort().join("|");
+}
+
 /** Generate the next unique tempId for a step. */
 function nextTempId(steps: PlanStep[]): string {
   const existingIds = new Set(steps.map((s) => s.tempId));
@@ -20,6 +24,24 @@ function nextTempId(steps: PlanStep[]): string {
     nextNum++;
   }
   return `step_${nextNum}`;
+}
+
+/**
+ * Return the IDs that can be merged with `tempId`.
+ * Merge scope is limited to steps in the same fork: same parallelGroup and same blockers.
+ */
+export function getMergeableSiblingIds(steps: PlanStep[], tempId: string): string[] {
+  const sourceStep = steps.find((s) => s.tempId === tempId);
+  if (!sourceStep) return [];
+
+  const sourceBlockersKey = blockersKey(sourceStep.blockedBy);
+  return steps
+    .filter(
+      (step) =>
+        step.parallelGroup === sourceStep.parallelGroup &&
+        blockersKey(step.blockedBy) === sourceBlockersKey,
+    )
+    .map((step) => step.tempId);
 }
 
 /**
@@ -101,8 +123,9 @@ export function insertMergeStep(
   const sourceStep = steps.find((s) => s.tempId === tempId);
   if (!sourceStep) return steps;
 
-  const siblings = steps.filter((s) => s.parallelGroup === sourceStep.parallelGroup);
-  const siblingIds = new Set(siblings.map((s) => s.tempId));
+  const mergeableSiblingIds = getMergeableSiblingIds(steps, tempId);
+  if (mergeableSiblingIds.length < 2) return steps;
+  const siblingIds = new Set(mergeableSiblingIds);
 
   const newId = nextTempId(steps);
   const maxOrder = steps.reduce((max, s) => Math.max(max, s.order), 0);

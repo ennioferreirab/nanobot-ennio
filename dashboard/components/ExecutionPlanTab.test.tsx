@@ -78,6 +78,7 @@ vi.mock("@xyflow/react", () => ({
         onAddSequential?: (id: string) => void;
         onAddParallel?: (id: string) => void;
         onMergePaths?: (id: string) => void;
+        hasParallelSiblings?: boolean;
       };
     }[];
     [key: string]: unknown;
@@ -135,7 +136,7 @@ vi.mock("@xyflow/react", () => ({
                 Add Parallel
               </button>
             )}
-            {n.data.onMergePaths && (
+            {n.data.onMergePaths && n.data.hasParallelSiblings && (
               <button
                 type="button"
                 data-testid={`flow-node-merge-paths-${n.id}`}
@@ -804,6 +805,150 @@ describe("ExecutionPlanTab", () => {
       expect(mergeStep).toBeDefined();
       expect(mergeStep.blockedBy).toContain("step_2");
       expect(mergeStep.blockedBy).toContain("step_3");
+    });
+
+    it("clicking merge button ignores other forks in the same parallel group", () => {
+      const parallelPlan = {
+        steps: [
+          {
+            tempId: "step_1",
+            stepId: "step_1",
+            title: "Root A",
+            description: "Root A step",
+            assignedAgent: "agent-a",
+            blockedBy: [] as string[],
+            parallelGroup: 1,
+            order: 1,
+          },
+          {
+            tempId: "step_99",
+            stepId: "step_99",
+            title: "Root B",
+            description: "Root B step",
+            assignedAgent: "agent-b",
+            blockedBy: [] as string[],
+            parallelGroup: 1,
+            order: 1,
+          },
+          {
+            tempId: "step_2",
+            stepId: "step_2",
+            title: "Branch A1",
+            description: "Parallel branch A1",
+            assignedAgent: "agent-a",
+            blockedBy: ["step_1"] as string[],
+            parallelGroup: 2,
+            order: 2,
+          },
+          {
+            tempId: "step_3",
+            stepId: "step_3",
+            title: "Branch A2",
+            description: "Parallel branch A2",
+            assignedAgent: "agent-b",
+            blockedBy: ["step_1"] as string[],
+            parallelGroup: 2,
+            order: 2,
+          },
+          {
+            tempId: "step_4",
+            stepId: "step_4",
+            title: "Branch B1",
+            description: "Parallel branch B1",
+            assignedAgent: "agent-c",
+            blockedBy: ["step_99"] as string[],
+            parallelGroup: 2,
+            order: 2,
+          },
+        ],
+        generatedAt: "2026-01-01T00:00:00Z",
+        generatedBy: "lead-agent" as const,
+        createdAt: "2026-01-01",
+      };
+
+      const onLocalPlanChange = vi.fn();
+      render(
+        <ExecutionPlanTab
+          executionPlan={parallelPlan}
+          taskId="task-abc"
+          taskStatus="review"
+          onLocalPlanChange={onLocalPlanChange}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId("flow-node-merge-paths-step_2"));
+
+      expect(onLocalPlanChange).toHaveBeenCalledTimes(1);
+      const updatedPlan = onLocalPlanChange.mock.calls[0][0];
+      const mergeStep = updatedPlan.steps.find(
+        (s: { tempId: string }) =>
+          !["step_1", "step_99", "step_2", "step_3", "step_4"].includes(s.tempId),
+      );
+
+      expect(mergeStep).toBeDefined();
+      expect(mergeStep.blockedBy).toEqual(["step_2", "step_3"]);
+    });
+
+    it("does not show merge button when a step has no same-fork sibling", () => {
+      const mismatchedPlan = {
+        steps: [
+          {
+            tempId: "step_1",
+            stepId: "step_1",
+            title: "Root A",
+            description: "Root A step",
+            assignedAgent: "agent-a",
+            blockedBy: [] as string[],
+            parallelGroup: 1,
+            order: 1,
+          },
+          {
+            tempId: "step_99",
+            stepId: "step_99",
+            title: "Root B",
+            description: "Root B step",
+            assignedAgent: "agent-b",
+            blockedBy: [] as string[],
+            parallelGroup: 1,
+            order: 1,
+          },
+          {
+            tempId: "step_2",
+            stepId: "step_2",
+            title: "Branch A1",
+            description: "Parallel branch A1",
+            assignedAgent: "agent-a",
+            blockedBy: ["step_1"] as string[],
+            parallelGroup: 2,
+            order: 2,
+          },
+          {
+            tempId: "step_4",
+            stepId: "step_4",
+            title: "Branch B1",
+            description: "Parallel branch B1",
+            assignedAgent: "agent-c",
+            blockedBy: ["step_99"] as string[],
+            parallelGroup: 2,
+            order: 2,
+          },
+        ],
+        generatedAt: "2026-01-01T00:00:00Z",
+        generatedBy: "lead-agent" as const,
+        createdAt: "2026-01-01",
+      };
+
+      render(
+        <ExecutionPlanTab
+          executionPlan={mismatchedPlan}
+          taskId="task-abc"
+          taskStatus="review"
+          onLocalPlanChange={vi.fn()}
+        />,
+      );
+
+      expect(screen.queryByTestId("flow-node-merge-paths-step_2")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("flow-node-merge-paths-step_4")).not.toBeInTheDocument();
     });
   });
 });
