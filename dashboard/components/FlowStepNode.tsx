@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { Handle, NodeToolbar, Position, type NodeProps, type Node } from "@xyflow/react";
+import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import {
   ArrowRight,
   CheckCircle,
@@ -193,71 +193,52 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
     <div
       data-testid={`flow-step-node-${step.tempId}`}
       className={cn(
-        "rounded-lg border bg-background px-3 py-2 shadow-sm w-[220px]",
+        "relative rounded-lg border bg-background px-3 py-2 shadow-sm w-[220px]",
         selected ? "border-blue-500 ring-1 ring-blue-500/30" : "border-border",
         meta.runningPulse && "motion-safe:animate-pulse",
         onStepClick && "cursor-pointer hover:border-primary/50 transition-colors",
       )}
-      /* Click handled by ReactFlow onNodeClick — onStepClick only controls cursor */
     >
-      {/* Handles — always present for edge rendering, hidden in edit mode */}
       <Handle
         type="target"
         position={Position.Left}
         className="!opacity-0 !pointer-events-none !w-2 !h-2"
       />
 
-      {/* Edit-mode toolbars */}
-      {isEditMode && (
+      {/* Edit-mode inline buttons (inside the node for hover continuity) */}
+      {isEditMode && showToolbars && (
         <>
-          {/* Trash button — left side, only when selected */}
-          <NodeToolbar position={Position.Left} offset={8} align="center" isVisible={selected}>
+          {/* Sequential → (right edge) */}
+          <div className="absolute -right-7 top-1/2 -translate-y-1/2 flex flex-col gap-1">
             <button
               type="button"
-              data-testid={`delete-step-${step.tempId}`}
-              className="flex items-center justify-center w-5 h-5 rounded-full bg-muted hover:bg-destructive hover:text-destructive-foreground text-muted-foreground transition-colors shadow-sm border border-border cursor-pointer"
+              data-testid={`add-sequential-${step.tempId}`}
+              className={addBtnClass}
               onClick={(e) => {
                 e.stopPropagation();
-                onDeleteStep?.(step.tempId);
+                onAddSequential?.(step.tempId);
               }}
-              title="Delete step"
+              title="Add sequential step"
             >
-              <Trash2 className="h-3 w-3" />
+              <ArrowRight className="h-3 w-3" />
             </button>
-          </NodeToolbar>
-
-          {/* Sequential (→) and optionally merge (⎇) — right */}
-          <NodeToolbar position={Position.Right} offset={8} align="center" isVisible={showToolbars}>
-            <div className="flex flex-col gap-1">
+            {hasParallelSiblings && (
               <button
                 type="button"
-                data-testid={`add-sequential-${step.tempId}`}
+                data-testid={`merge-paths-${step.tempId}`}
                 className={addBtnClass}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onAddSequential?.(step.tempId);
+                  onMergePaths?.(step.tempId);
                 }}
-                title="Add sequential step"
+                title="Merge parallel paths into one step"
               >
-                <ArrowRight className="h-3 w-3" />
+                <GitMerge className="h-3 w-3" />
               </button>
-              {hasParallelSiblings && (
-                <button
-                  type="button"
-                  data-testid={`merge-paths-${step.tempId}`}
-                  className={addBtnClass}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onMergePaths?.(step.tempId);
-                  }}
-                  title="Merge parallel paths into one step"
-                >
-                  <GitMerge className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          </NodeToolbar>
-          <NodeToolbar position={Position.Top} offset={8} align="center" isVisible={showToolbars}>
+            )}
+          </div>
+          {/* Parallel ↑ (top edge) */}
+          <div className="absolute -top-7 left-1/2 -translate-x-1/2">
             <button
               type="button"
               data-testid={`add-parallel-top-${step.tempId}`}
@@ -270,13 +251,9 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
             >
               <ArrowRight className="h-3 w-3 -rotate-90" />
             </button>
-          </NodeToolbar>
-          <NodeToolbar
-            position={Position.Bottom}
-            offset={8}
-            align="center"
-            isVisible={showToolbars}
-          >
+          </div>
+          {/* Parallel ↓ (bottom edge) */}
+          <div className="absolute -bottom-7 left-1/2 -translate-x-1/2">
             <button
               type="button"
               data-testid={`add-parallel-bottom-${step.tempId}`}
@@ -289,7 +266,24 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
             >
               <ArrowRight className="h-3 w-3 rotate-90" />
             </button>
-          </NodeToolbar>
+          </div>
+          {/* Trash (left edge, only when selected) */}
+          {selected && (
+            <div className="absolute -left-7 top-1/2 -translate-y-1/2">
+              <button
+                type="button"
+                data-testid={`delete-step-${step.tempId}`}
+                className="flex items-center justify-center w-5 h-5 rounded-full bg-muted hover:bg-destructive hover:text-destructive-foreground text-muted-foreground transition-colors shadow-sm border border-border cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteStep?.(step.tempId);
+                }}
+                title="Delete step"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          )}
         </>
       )}
 
