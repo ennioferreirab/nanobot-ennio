@@ -2,12 +2,11 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { AddStepForm, type ExistingStep } from "./AddStepForm";
 
-// Mock convex/react
-vi.mock("convex/react", () => ({
-  useQuery: vi.fn(() => ({
+// Mock useBoardById hook
+vi.mock("@/hooks/useBoardById", () => ({
+  useBoardById: () => ({
     enabledAgents: ["agent-a", "agent-b"],
-  })),
-  useMutation: vi.fn(() => vi.fn()),
+  }),
 }));
 
 // Mock useSelectableAgents to return test agents

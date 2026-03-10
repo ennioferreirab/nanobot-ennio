@@ -460,7 +460,9 @@ describe("ExecutionPlanTab", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId("flow-node-retry-step-1"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("flow-node-retry-step-1"));
+    });
 
     expect(mockMutationFn).toHaveBeenCalledWith({ stepId: "step-1" });
   });
@@ -757,6 +759,85 @@ describe("ExecutionPlanTab", () => {
       // step_2 should now be rerouted to depend on the new step
       const step2 = updatedPlan.steps.find((s: { tempId: string }) => s.tempId === "step_2");
       expect(step2.blockedBy).toEqual([newStep.tempId]);
+    });
+
+    it("submitting form after merge canvas op merges all parallel siblings", () => {
+      const parallelPlan = {
+        steps: [
+          {
+            tempId: "step_1",
+            stepId: "step_1",
+            title: "Root",
+            description: "Root step",
+            assignedAgent: "agent-a",
+            blockedBy: [] as string[],
+            parallelGroup: 1,
+            order: 1,
+          },
+          {
+            tempId: "step_2",
+            stepId: "step_2",
+            title: "Branch A",
+            description: "Parallel branch A",
+            assignedAgent: "agent-a",
+            blockedBy: ["step_1"] as string[],
+            parallelGroup: 2,
+            order: 2,
+          },
+          {
+            tempId: "step_3",
+            stepId: "step_3",
+            title: "Branch B",
+            description: "Parallel branch B",
+            assignedAgent: "agent-b",
+            blockedBy: ["step_1"] as string[],
+            parallelGroup: 2,
+            order: 2,
+          },
+        ],
+        generatedAt: "2026-01-01T00:00:00Z",
+        generatedBy: "lead-agent" as const,
+        createdAt: "2026-01-01",
+      };
+
+      const onLocalPlanChange = vi.fn();
+      render(
+        <ExecutionPlanTab
+          executionPlan={parallelPlan}
+          taskId="task-abc"
+          taskStatus="review"
+          onLocalPlanChange={onLocalPlanChange}
+        />,
+      );
+
+      // Click merge on step_2
+      fireEvent.click(screen.getByTestId("flow-node-merge-paths-step_2"));
+
+      // Form should show with both siblings as default blockers
+      const form = screen.getByTestId("add-step-form");
+      const defaultBlockers = JSON.parse(form.getAttribute("data-default-blocked-by") ?? "[]");
+      expect(defaultBlockers).toContain("step_2");
+      expect(defaultBlockers).toContain("step_3");
+      expect(defaultBlockers).toHaveLength(2);
+
+      // Submit the form
+      fireEvent.click(screen.getByTestId("mock-add-btn"));
+
+      expect(onLocalPlanChange).toHaveBeenCalledTimes(1);
+      const updatedPlan = onLocalPlanChange.mock.calls[0][0];
+
+      // Should have 4 steps now (3 original + 1 merge)
+      expect(updatedPlan.steps).toHaveLength(4);
+
+      // The merge step should depend on both parallel siblings
+      const mergeStep = updatedPlan.steps.find(
+        (s: { tempId: string }) =>
+          s.tempId !== "step_1" && s.tempId !== "step_2" && s.tempId !== "step_3",
+      );
+      expect(mergeStep).toBeDefined();
+      expect(mergeStep.blockedBy).toContain("step_2");
+      expect(mergeStep.blockedBy).toContain("step_3");
+      expect(mergeStep.title).toBe("New Step");
     });
 
     it("canceling the form after canvas op clears pendingCanvasOp", () => {
