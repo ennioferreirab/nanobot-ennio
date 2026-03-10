@@ -11,7 +11,7 @@ import { STRUCTURED_MESSAGE_TYPE } from "@/lib/constants";
 interface ThreadMessageProps {
   message: Doc<"messages">;
   steps?: Doc<"steps">[];
-  onArtifactClick?: (artifactPath: string) => void;
+  onArtifactClick?: (artifactPath: string, sourceTaskId?: Doc<"messages">["taskId"]) => void;
 }
 
 function getInitials(name: string): string {
@@ -124,7 +124,7 @@ export function ThreadMessage({ message, steps, onArtifactClick }: ThreadMessage
           <ArtifactRenderer
             artifacts={message.artifacts}
             onArtifactClick={
-              onArtifactClick ? (artifact) => onArtifactClick(artifact.path) : undefined
+              onArtifactClick ? (artifact) => onArtifactClick(artifact.path, message.taskId) : undefined
             }
           />
         )}

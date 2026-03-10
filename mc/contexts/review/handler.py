@@ -91,13 +91,8 @@ class ReviewHandler:
         if not reviewers and trust_level == TrustLevel.AUTONOMOUS:
             logger.info(
                 "[orchestrator] Task '%s' is autonomous with no reviewers — "
-                "auto-completing to done.",
+                "awaiting explicit approval in review.",
                 title,
-            )
-            await asyncio.to_thread(
-                self._bridge.update_task_status,
-                task_id,
-                TaskStatus.DONE,
             )
             return
 

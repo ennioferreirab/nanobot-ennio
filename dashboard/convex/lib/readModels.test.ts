@@ -30,20 +30,14 @@ describe("computeUiFlags", () => {
 
   it("detects isPaused when review + non-completed steps exist", () => {
     const task: TaskForFlags = { status: "review" };
-    const steps: StepForFlags[] = [
-      { status: "completed" },
-      { status: "assigned" },
-    ];
+    const steps: StepForFlags[] = [{ status: "completed" }, { status: "assigned" }];
     const flags = computeUiFlags(task, steps);
     expect(flags.isPaused).toBe(true);
   });
 
   it("isPaused is false when review but all steps completed", () => {
     const task: TaskForFlags = { status: "review" };
-    const steps: StepForFlags[] = [
-      { status: "completed" },
-      { status: "completed" },
-    ];
+    const steps: StepForFlags[] = [{ status: "completed" }, { status: "completed" }];
     const flags = computeUiFlags(task, steps);
     expect(flags.isPaused).toBe(false);
   });
@@ -105,7 +99,7 @@ describe("computeAllowedActions", () => {
   function getActions(
     status: string,
     overrides: Partial<TaskForFlags> = {},
-    steps: StepForFlags[] = []
+    steps: StepForFlags[] = [],
   ) {
     const task: TaskForFlags = { status, ...overrides };
     const uiFlags = computeUiFlags(task, steps);
@@ -118,14 +112,16 @@ describe("computeAllowedActions", () => {
     expect(getActions("done").approve).toBe(false);
   });
 
+  it("approve is false for manual tasks in review", () => {
+    expect(getActions("review", { isManual: true }).approve).toBe(false);
+  });
+
   it("kickoff is true for ready status", () => {
     expect(getActions("ready").kickoff).toBe(true);
   });
 
   it("kickoff is true for review with execution plan", () => {
-    expect(
-      getActions("review", { executionPlan: { steps: [] } }).kickoff
-    ).toBe(true);
+    expect(getActions("review", { executionPlan: { steps: [] } }).kickoff).toBe(true);
   });
 
   it("kickoff is false for review without execution plan", () => {
@@ -177,6 +173,10 @@ describe("computeAllowedActions", () => {
     expect(getActions("crashed").sendMessage).toBe(true);
     expect(getActions("deleted").sendMessage).toBe(false);
     expect(getActions("retrying").sendMessage).toBe(false);
+  });
+
+  it("sendMessage is false when task is merge-locked into task C", () => {
+    expect(getActions("done", { mergedIntoTaskId: "task-c" }).sendMessage).toBe(false);
   });
 });
 
@@ -290,9 +290,11 @@ describe("getBoardColumns", () => {
 
 describe("getDetailView", () => {
   function getHandler() {
-    return (getDetailView as unknown as {
-      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<unknown>;
-    })._handler;
+    return (
+      getDetailView as unknown as {
+        _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<unknown>;
+      }
+    )._handler;
   }
 
   function makeCtx(
@@ -302,7 +304,7 @@ describe("getDetailView", () => {
     steps: Record<string, unknown>[] = [],
     tagCatalog: Record<string, unknown>[] = [],
     tagAttributes: Record<string, unknown>[] = [],
-    tagAttributeValues: Record<string, unknown>[] = []
+    tagAttributeValues: Record<string, unknown>[] = [],
   ) {
     const ctx = {
       db: {
@@ -348,14 +350,28 @@ describe("getDetailView", () => {
       title: "Test task",
       status: "review",
       boardId: "board-1",
-      files: [{ name: "a.txt", type: "text/plain", size: 100, subfolder: "output", uploadedAt: "2026-01-01" }],
+      files: [
+        {
+          name: "a.txt",
+          type: "text/plain",
+          size: 100,
+          subfolder: "output",
+          uploadedAt: "2026-01-01",
+        },
+      ],
       tags: ["bug"],
       awaitingKickoff: true,
       executionPlan: { steps: [{ title: "step" }] },
     };
     const board = { _id: "board-1", name: "default", displayName: "Default" };
     const messages = [
-      { _id: "msg-1", taskId: "task-1", content: "Hello", authorName: "User", messageType: "user_message" },
+      {
+        _id: "msg-1",
+        taskId: "task-1",
+        content: "Hello",
+        authorName: "User",
+        messageType: "user_message",
+      },
     ];
     const steps = [
       { _id: "step-1", taskId: "task-1", status: "assigned", order: 2 },
@@ -367,7 +383,15 @@ describe("getDetailView", () => {
       { _id: "tav-1", taskId: "task-1", tagName: "bug", attributeId: "attr-1", value: "high" },
     ];
 
-    const ctx = makeCtx(task, board, messages, steps, tagCatalog, tagAttributes, tagAttributeValues);
+    const ctx = makeCtx(
+      task,
+      board,
+      messages,
+      steps,
+      tagCatalog,
+      tagAttributes,
+      tagAttributeValues,
+    );
     const result = (await handler(ctx, { taskId: "task-1" })) as Record<string, unknown>;
 
     expect(result).not.toBeNull();
@@ -412,21 +436,145 @@ describe("getDetailView", () => {
     expect(result.tagAttributes).toEqual([]);
     expect(result.tagAttributeValues).toEqual([]);
   });
+
+  it("flattens nested merge sources into detail view threads and files", async () => {
+    const handler = getHandler();
+    const tasksById: Record<string, Record<string, unknown>> = {
+      "task-1": {
+        _id: "task-1",
+        title: "Merge: C + D",
+        status: "review",
+        isMergeTask: true,
+        mergeSourceTaskIds: ["task-c", "task-d"],
+        mergeSourceLabels: ["A", "B"],
+      },
+      "task-c": {
+        _id: "task-c",
+        title: "Merge: A + B",
+        status: "review",
+        isMergeTask: true,
+        files: [{ name: "merge-c.md", type: "text/markdown", size: 10, subfolder: "output" }],
+        mergeSourceTaskIds: ["task-a", "task-b"],
+        mergeSourceLabels: ["A", "B"],
+      },
+      "task-a": {
+        _id: "task-a",
+        title: "Task A",
+        status: "done",
+        files: [{ name: "a.txt", type: "text/plain", size: 1, subfolder: "attachments" }],
+      },
+      "task-b": {
+        _id: "task-b",
+        title: "Task B",
+        status: "done",
+        files: [{ name: "b.txt", type: "text/plain", size: 1, subfolder: "attachments" }],
+      },
+      "task-d": {
+        _id: "task-d",
+        title: "Task D",
+        status: "done",
+        files: [{ name: "d.txt", type: "text/plain", size: 1, subfolder: "output" }],
+      },
+    };
+    const messagesByTaskId: Record<string, Record<string, unknown>[]> = {
+      "task-1": [],
+      "task-c": [
+        {
+          _id: "msg-c",
+          taskId: "task-c",
+          content: "Merged C",
+          authorName: "agent",
+          messageType: "work",
+        },
+      ],
+      "task-a": [
+        { _id: "msg-a", taskId: "task-a", content: "A", authorName: "agent", messageType: "work" },
+      ],
+      "task-b": [
+        { _id: "msg-b", taskId: "task-b", content: "B", authorName: "agent", messageType: "work" },
+      ],
+      "task-d": [
+        { _id: "msg-d", taskId: "task-d", content: "D", authorName: "agent", messageType: "work" },
+      ],
+    };
+
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => tasksById[id] ?? null),
+        query: vi.fn((table: string) => {
+          const collect = vi.fn(async () => []);
+          return {
+            collect,
+            withIndex: vi.fn(
+              (
+                _idx: string,
+                cb: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+              ) => {
+                let targetId = "";
+                cb({
+                  eq: (_field: string, value: string) => {
+                    targetId = value;
+                    return {};
+                  },
+                });
+                return {
+                  collect: vi.fn(async () => {
+                    if (table === "messages") return messagesByTaskId[targetId] ?? [];
+                    if (table === "steps") return [];
+                    if (table === "tagAttributeValues") return [];
+                    return [];
+                  }),
+                };
+              },
+            ),
+          };
+        }),
+      },
+    };
+
+    const result = (await handler(ctx, { taskId: "task-1" })) as Record<string, unknown>;
+
+    expect(
+      (result.mergeSources as Array<{ taskId: string; label: string }>).map((s) => [
+        s.taskId,
+        s.label,
+      ]),
+    ).toEqual([
+      ["task-c", "A"],
+      ["task-a", "A.A"],
+      ["task-b", "A.B"],
+      ["task-d", "B"],
+    ]);
+    expect(result.mergeSourceThreads as Array<{ taskId: string }>).toHaveLength(4);
+    expect(
+      (result.mergeSourceFiles as Array<{ sourceTaskId: string; name: string }>).map((f) => [
+        f.sourceTaskId,
+        f.name,
+      ]),
+    ).toEqual([
+      ["task-c", "merge-c.md"],
+      ["task-a", "a.txt"],
+      ["task-b", "b.txt"],
+      ["task-d", "d.txt"],
+    ]);
+  });
 });
 
 // --- getBoardView query (integration with mock ctx.db) ---
 
 describe("getBoardView", () => {
   function getHandler() {
-    return (getBoardView as unknown as {
-      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<unknown>;
-    })._handler;
+    return (
+      getBoardView as unknown as {
+        _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<unknown>;
+      }
+    )._handler;
   }
 
   function makeCtx(
     board: Record<string, unknown> | null,
     tasks: Record<string, unknown>[] = [],
-    stepsByTaskId: Record<string, Record<string, unknown>[]> = {}
+    stepsByTaskId: Record<string, Record<string, unknown>[]> = {},
   ) {
     const ctx = {
       db: {
@@ -496,11 +644,25 @@ describe("getBoardView", () => {
     const handler = getHandler();
     const board = { _id: "board-1", name: "main", displayName: "Main" };
     const tasks = [
-      { _id: "t1", status: "inbox", title: "Task 1", isFavorite: true, trustLevel: "autonomous", tags: [] },
+      {
+        _id: "t1",
+        status: "inbox",
+        title: "Task 1",
+        isFavorite: true,
+        trustLevel: "autonomous",
+        tags: [],
+      },
       { _id: "t2", status: "inbox", title: "Task 2", trustLevel: "autonomous", tags: [] },
       { _id: "t3", status: "in_progress", title: "Task 3", trustLevel: "autonomous", tags: [] },
       { _id: "t4", status: "review", title: "Task 4", trustLevel: "human_approved", tags: [] },
-      { _id: "t5", status: "deleted", title: "Deleted", previousStatus: "done", trustLevel: "autonomous", tags: [] },
+      {
+        _id: "t5",
+        status: "deleted",
+        title: "Deleted",
+        previousStatus: "done",
+        trustLevel: "autonomous",
+        tags: [],
+      },
     ];
 
     // Use a simplified mock that just returns tasks/steps arrays
@@ -531,10 +693,10 @@ describe("getBoardView", () => {
     expect(groupedItems.review).toHaveLength(1);
 
     // Counters
-    expect((result.favorites as unknown[])).toHaveLength(1);
+    expect(result.favorites as unknown[]).toHaveLength(1);
     expect(result.deletedCount).toBe(1);
     expect(result.hitlCount).toBe(1);
-    expect((result.tasks as unknown[])).toHaveLength(4);
+    expect(result.tasks as unknown[]).toHaveLength(4);
   });
 
   it("applies free text filter server-side", async () => {

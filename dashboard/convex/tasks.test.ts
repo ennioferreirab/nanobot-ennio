@@ -1,6 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { create, kickOff, pauseTask, resumeTask, retry } from "./tasks";
+import { ConvexError } from "convex/values";
+
+import {
+  approve,
+  approveAndKickOff,
+  create,
+  createMergedTask,
+  kickOff,
+  pauseTask,
+  resumeTask,
+  retry,
+  softDelete,
+} from "./tasks";
 
 type InsertCall = {
   table: string;
@@ -25,33 +37,59 @@ function makeCtx(defaultBoard?: { _id: string; deletedAt?: string }) {
 }
 
 function getHandler() {
-  return (create as unknown as {
-    _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
-  })._handler;
+  return (
+    create as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
+    }
+  )._handler;
 }
 
 function getKickOffHandler() {
-  return (kickOff as unknown as {
-    _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<void>;
-  })._handler;
+  return (
+    kickOff as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<void>;
+    }
+  )._handler;
 }
 
 function getPauseTaskHandler() {
-  return (pauseTask as unknown as {
-    _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
-  })._handler;
+  return (
+    pauseTask as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
+    }
+  )._handler;
 }
 
 function getResumeTaskHandler() {
-  return (resumeTask as unknown as {
-    _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
-  })._handler;
+  return (
+    resumeTask as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
+    }
+  )._handler;
 }
 
 function getRetryHandler() {
-  return (retry as unknown as {
-    _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<void>;
-  })._handler;
+  return (
+    retry as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<void>;
+    }
+  )._handler;
+}
+
+function getSoftDeleteHandler() {
+  return (
+    softDelete as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<void>;
+    }
+  )._handler;
+}
+
+function getCreateMergedTaskHandler() {
+  return (
+    createMergedTask as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
+    }
+  )._handler;
 }
 
 describe("tasks.create", () => {
@@ -110,6 +148,286 @@ describe("tasks.create", () => {
   });
 });
 
+describe("tasks.createMergedTask", () => {
+  it("creates task C in planning so the lead agent can generate a reviewable plan", async () => {
+    const handler = getCreateMergedTaskHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      if (table === "tasks") return "task-c";
+      return `${table}-id`;
+    });
+    const get = vi.fn(async (id: string) => {
+      if (id === "task-a") {
+        return {
+          _id: "task-a",
+          title: "Task A",
+          description: "First source",
+          status: "done",
+          trustLevel: "autonomous",
+          boardId: "board-1",
+          tags: ["alpha"],
+        };
+      }
+      if (id === "task-b") {
+        return {
+          _id: "task-b",
+          title: "Task B",
+          description: "Second source",
+          status: "done",
+          trustLevel: "human_approved",
+          boardId: "board-2",
+          tags: ["beta"],
+        };
+      }
+      return null;
+    });
+
+    const taskId = await handler(
+      { db: { get, insert, patch } },
+      { primaryTaskId: "task-a", secondaryTaskId: "task-b", mode: "plan" },
+    );
+
+    expect(taskId).toBe("task-c");
+    expect(insert).toHaveBeenCalledWith(
+      "tasks",
+      expect.objectContaining({
+        title: "Merge: Task A + Task B",
+        description: 'Merged from "Task A" and "Task B". Continue work in this task.',
+        status: "planning",
+        awaitingKickoff: undefined,
+        boardId: "board-1",
+        trustLevel: "human_approved",
+        supervisionMode: "supervised",
+        isMergeTask: true,
+        mergeSourceTaskIds: ["task-a", "task-b"],
+        mergeSourceLabels: ["A", "B"],
+        tags: ["alpha", "beta", "merged"],
+        executionPlan: undefined,
+      }),
+    );
+
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      "task-a",
+      expect.objectContaining({
+        mergedIntoTaskId: "task-c",
+        mergeLockedAt: expect.any(String),
+        tags: ["alpha", "merged"],
+      }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      2,
+      "task-b",
+      expect.objectContaining({
+        mergedIntoTaskId: "task-c",
+        mergeLockedAt: expect.any(String),
+        tags: ["beta", "merged"],
+      }),
+    );
+  });
+
+  it("creates task C in manual review without persisting the visual merge alias", async () => {
+    const handler = getCreateMergedTaskHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      if (table === "tasks") return "task-c";
+      return `${table}-id`;
+    });
+    const get = vi.fn(async (id: string) => {
+      if (id === "task-a") {
+        return {
+          _id: "task-a",
+          title: "Task A",
+          status: "done",
+          trustLevel: "autonomous",
+          boardId: "board-1",
+        };
+      }
+      if (id === "task-b") {
+        return {
+          _id: "task-b",
+          title: "Task B",
+          status: "done",
+          trustLevel: "autonomous",
+          boardId: "board-1",
+        };
+      }
+      return null;
+    });
+
+    await handler(
+      { db: { get, insert, patch } },
+      { primaryTaskId: "task-a", secondaryTaskId: "task-b", mode: "manual" },
+    );
+
+    expect(insert).toHaveBeenCalledWith(
+      "tasks",
+      expect.objectContaining({
+        status: "review",
+        isManual: true,
+        awaitingKickoff: undefined,
+        executionPlan: undefined,
+        tags: ["merged"],
+      }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      "task-a",
+      expect.objectContaining({
+        mergedIntoTaskId: "task-c",
+        tags: ["merged"],
+      }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      2,
+      "task-b",
+      expect.objectContaining({
+        mergedIntoTaskId: "task-c",
+        tags: ["merged"],
+      }),
+    );
+  });
+
+  it("rejects merge when a source task is active", async () => {
+    const handler = getCreateMergedTaskHandler();
+    const get = vi.fn(async (id: string) => {
+      if (id === "task-a") {
+        return {
+          _id: "task-a",
+          title: "Task A",
+          status: "in_progress",
+          trustLevel: "autonomous",
+        };
+      }
+      return {
+        _id: "task-b",
+        title: "Task B",
+        status: "done",
+        trustLevel: "autonomous",
+      };
+    });
+
+    await expect(
+      handler(
+        { db: { get, insert: vi.fn(), patch: vi.fn() } },
+        { primaryTaskId: "task-a", secondaryTaskId: "task-b", mode: "plan" },
+      ),
+    ).rejects.toThrow(ConvexError);
+  });
+
+  it("allows a merge task to be merged again as a direct source", async () => {
+    const handler = getCreateMergedTaskHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async (table: string) => (table === "tasks" ? "task-c2" : `${table}-id`));
+    const get = vi.fn(async (id: string) => {
+      if (id === "task-c1") {
+        return {
+          _id: "task-c1",
+          title: "Merge: Task A + Task B",
+          status: "review",
+          isMergeTask: true,
+          trustLevel: "autonomous",
+          boardId: "board-1",
+          tags: ["merged"],
+          mergeSourceTaskIds: ["task-a", "task-b"],
+          mergeSourceLabels: ["A", "B"],
+        };
+      }
+      if (id === "task-d") {
+        return {
+          _id: "task-d",
+          title: "Task D",
+          status: "done",
+          trustLevel: "autonomous",
+          boardId: "board-1",
+          tags: ["delta"],
+        };
+      }
+      return null;
+    });
+
+    await expect(
+      handler(
+        { db: { get, insert, patch } },
+        { primaryTaskId: "task-c1", secondaryTaskId: "task-d", mode: "manual" },
+      ),
+    ).resolves.toBe("task-c2");
+
+    expect(insert).toHaveBeenCalledWith(
+      "tasks",
+      expect.objectContaining({
+        mergeSourceTaskIds: ["task-c1", "task-d"],
+        mergeSourceLabels: ["A", "B"],
+      }),
+    );
+  });
+});
+
+describe("tasks.softDelete", () => {
+  it("removes merged tag from direct non-merge source tasks when deleting a merge task", async () => {
+    const handler = getSoftDeleteHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async (id: string) => {
+      if (id === "merge-task") {
+        return {
+          _id: "merge-task",
+          title: "Merge: A + B",
+          status: "review",
+          isMergeTask: true,
+          mergeSourceTaskIds: ["task-a", "task-c"],
+          mergeSourceLabels: ["A", "B"],
+        };
+      }
+      if (id === "task-a") {
+        return {
+          _id: "task-a",
+          title: "Task A",
+          status: "done",
+          tags: ["alpha", "merged"],
+          mergedIntoTaskId: "merge-task",
+          isMergeTask: false,
+        };
+      }
+      if (id === "task-c") {
+        return {
+          _id: "task-c",
+          title: "Merge Child",
+          status: "review",
+          tags: ["merged"],
+          mergedIntoTaskId: "merge-task",
+          isMergeTask: true,
+        };
+      }
+      return null;
+    });
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(() => ({
+        collect: vi.fn(async () => (table === "steps" ? [] : [])),
+      })),
+    }));
+
+    await handler({ db: { get, patch, insert, query } }, { taskId: "merge-task" });
+
+    expect(patch).toHaveBeenCalledWith(
+      "task-a",
+      expect.objectContaining({
+        mergedIntoTaskId: undefined,
+        mergeLockedAt: undefined,
+        tags: ["alpha"],
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "task-c",
+      expect.objectContaining({
+        mergedIntoTaskId: undefined,
+        mergeLockedAt: undefined,
+        tags: ["merged"],
+      }),
+    );
+  });
+});
+
 describe("tasks.kickOff", () => {
   it("transitions task to in_progress and logs kickoff activity", async () => {
     const handler = getKickOffHandler();
@@ -126,7 +444,7 @@ describe("tasks.kickOff", () => {
 
     expect(patch).toHaveBeenCalledWith(
       "task-1",
-      expect.objectContaining({ status: "in_progress" })
+      expect.objectContaining({ status: "in_progress" }),
     );
     expect(insert).toHaveBeenCalledWith(
       "activities",
@@ -134,7 +452,7 @@ describe("tasks.kickOff", () => {
         taskId: "task-1",
         eventType: "task_started",
         description: "Task kicked off with 2 steps",
-      })
+      }),
     );
   });
 
@@ -150,7 +468,7 @@ describe("tasks.kickOff", () => {
     }));
 
     await expect(
-      handler({ db: { get, patch, insert } }, { taskId: "task-1", stepCount: 1 })
+      handler({ db: { get, patch, insert } }, { taskId: "task-1", stepCount: 1 }),
     ).rejects.toThrow(/Cannot kick off task in status/);
     expect(patch).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
@@ -171,10 +489,7 @@ describe("tasks.pauseTask", () => {
     const taskId = await handler({ db: { get, patch, insert } }, { taskId: "task-1" });
 
     expect(taskId).toBe("task-1");
-    expect(patch).toHaveBeenCalledWith(
-      "task-1",
-      expect.objectContaining({ status: "review" })
-    );
+    expect(patch).toHaveBeenCalledWith("task-1", expect.objectContaining({ status: "review" }));
     // awaitingKickoff must NOT be set (paused state has no awaitingKickoff)
     const patchArg = (patch as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(patchArg.awaitingKickoff).toBeUndefined();
@@ -184,7 +499,7 @@ describe("tasks.pauseTask", () => {
         taskId: "task-1",
         eventType: "review_requested",
         description: "User paused task execution",
-      })
+      }),
     );
   });
 
@@ -198,9 +513,9 @@ describe("tasks.pauseTask", () => {
       title: "Already Paused",
     }));
 
-    await expect(
-      handler({ db: { get, patch, insert } }, { taskId: "task-1" })
-    ).rejects.toThrow(/Cannot pause task in status/);
+    await expect(handler({ db: { get, patch, insert } }, { taskId: "task-1" })).rejects.toThrow(
+      /Cannot pause task in status/,
+    );
     expect(patch).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
   });
@@ -215,9 +530,9 @@ describe("tasks.pauseTask", () => {
     const patch = vi.fn(async () => undefined);
     const insert = vi.fn(async () => "activity-1");
 
-    await expect(
-      handler({ db: { get, patch, insert } }, { taskId: "task-1" })
-    ).rejects.toThrow(/Cannot pause task in status/);
+    await expect(handler({ db: { get, patch, insert } }, { taskId: "task-1" })).rejects.toThrow(
+      /Cannot pause task in status/,
+    );
   });
 });
 
@@ -238,7 +553,7 @@ describe("tasks.resumeTask", () => {
     expect(taskId).toBe("task-1");
     expect(patch).toHaveBeenCalledWith(
       "task-1",
-      expect.objectContaining({ status: "in_progress" })
+      expect.objectContaining({ status: "in_progress" }),
     );
     expect(insert).toHaveBeenCalledWith(
       "activities",
@@ -246,7 +561,7 @@ describe("tasks.resumeTask", () => {
         taskId: "task-1",
         eventType: "task_started",
         description: "User resumed task execution",
-      })
+      }),
     );
   });
 
@@ -261,9 +576,9 @@ describe("tasks.resumeTask", () => {
       awaitingKickoff: true,
     }));
 
-    await expect(
-      handler({ db: { get, patch, insert } }, { taskId: "task-1" })
-    ).rejects.toThrow(/Cannot use resumeTask on a pre-kickoff task/);
+    await expect(handler({ db: { get, patch, insert } }, { taskId: "task-1" })).rejects.toThrow(
+      /Cannot use resumeTask on a pre-kickoff task/,
+    );
     expect(patch).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
   });
@@ -278,9 +593,9 @@ describe("tasks.resumeTask", () => {
     const patch = vi.fn(async () => undefined);
     const insert = vi.fn(async () => "activity-1");
 
-    await expect(
-      handler({ db: { get, patch, insert } }, { taskId: "task-1" })
-    ).rejects.toThrow(/Cannot resume task in status/);
+    await expect(handler({ db: { get, patch, insert } }, { taskId: "task-1" })).rejects.toThrow(
+      /Cannot resume task in status/,
+    );
     expect(patch).not.toHaveBeenCalled();
   });
 
@@ -302,7 +617,7 @@ describe("tasks.resumeTask", () => {
       expect.objectContaining({
         status: "in_progress",
         executionPlan: updatedPlan,
-      })
+      }),
     );
   });
 });
@@ -433,7 +748,85 @@ describe("tasks.retry", () => {
       expect.objectContaining({
         status: "inbox",
         assignedAgent: undefined,
-      })
+      }),
     );
+  });
+});
+
+function getApproveHandler() {
+  return (
+    approve as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<void>;
+    }
+  )._handler;
+}
+
+function getApproveAndKickOffHandler() {
+  return (
+    approveAndKickOff as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
+    }
+  )._handler;
+}
+
+describe("tasks.approve", () => {
+  it("rejects approval for manual tasks", async () => {
+    const handler = getApproveHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "review",
+      isManual: true,
+      trustLevel: "human_approved",
+      title: "Manual merge task",
+    }));
+
+    await expect(handler({ db: { get, patch, insert } }, { taskId: "task-1" })).rejects.toThrow(
+      /Cannot approve a manual task/,
+    );
+    expect(patch).not.toHaveBeenCalled();
+  });
+});
+
+describe("tasks.approveAndKickOff", () => {
+  it("accepts manual tasks in review for kick-off", async () => {
+    const handler = getApproveAndKickOffHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "review",
+      isManual: true,
+      title: "Manual merge task",
+      executionPlan: { steps: [{ tempId: "s1" }] },
+    }));
+
+    const taskId = await handler(
+      { db: { get, patch, insert } },
+      { taskId: "task-1", executionPlan: { steps: [{ tempId: "s1" }] } },
+    );
+
+    expect(taskId).toBe("task-1");
+    expect(patch).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({ status: "in_progress" }),
+    );
+  });
+
+  it("rejects tasks that are neither awaitingKickoff nor isManual", async () => {
+    const handler = getApproveAndKickOffHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "review",
+      title: "Regular paused task",
+    }));
+
+    await expect(handler({ db: { get, patch, insert } }, { taskId: "task-1" })).rejects.toThrow(
+      /requires awaitingKickoff or isManual/,
+    );
+    expect(patch).not.toHaveBeenCalled();
   });
 });

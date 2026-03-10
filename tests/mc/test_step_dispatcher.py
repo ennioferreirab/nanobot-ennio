@@ -286,7 +286,7 @@ class TestStepDispatcher:
         assert state["step-1"]["status"] == StepStatus.COMPLETED
         bridge.update_task_status.assert_called_once_with(
             "task-1",
-            TaskStatus.DONE,
+            TaskStatus.REVIEW,
             None,
             "All 1 steps completed",
         )
@@ -308,9 +308,43 @@ class TestStepDispatcher:
             "nanobot",
         )
         bridge.create_activity.assert_any_call(
-            ActivityEventType.TASK_COMPLETED,
-            "Task completed -- all 1 steps finished",
+            ActivityEventType.REVIEW_REQUESTED,
+            "Execution completed -- all 1 steps finished; awaiting explicit approval",
             "task-1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_dispatch_human_step_waits_for_human_and_does_not_complete_task(self) -> None:
+        bridge, state = _make_stateful_bridge(
+            [_step("step-human-1", "Approve output", assigned_agent="human", order=1)]
+        )
+        dispatcher = StepDispatcher(bridge)
+
+        from mc.application.execution.request import ExecutionResult
+
+        snap_patch, collect_patch = _patch_executor_helpers()
+        with (
+            patch("mc.contexts.execution.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
+            _patch_context_builder(),
+            patch(
+                "mc.contexts.execution.step_dispatcher._run_step_agent",
+                new=AsyncMock(
+                    return_value=ExecutionResult(
+                        success=True,
+                        output="Waiting for human action.",
+                        transition_status="waiting_human",
+                    )
+                ),
+            ),
+            snap_patch,
+            collect_patch,
+        ):
+            await dispatcher.dispatch_steps("task-1", ["step-human-1"])
+
+        assert state["step-human-1"]["status"] == StepStatus.WAITING_HUMAN
+        bridge.post_step_completion.assert_not_called()
+        assert not any(
+            call.args[1] == TaskStatus.DONE for call in bridge.update_task_status.call_args_list
         )
 
     @pytest.mark.asyncio
@@ -483,7 +517,7 @@ class TestStepDispatcher:
 
         bridge.update_task_status.assert_called_once_with(
             "task-1",
-            TaskStatus.DONE,
+            TaskStatus.REVIEW,
             None,
             "All 2 steps completed",
         )
@@ -855,7 +889,7 @@ class TestStepOutputFileSync:
         # Task must also complete
         bridge.update_task_status.assert_called_once_with(
             "task-1",
-            TaskStatus.DONE,
+            TaskStatus.REVIEW,
             None,
             "All 1 steps completed",
         )

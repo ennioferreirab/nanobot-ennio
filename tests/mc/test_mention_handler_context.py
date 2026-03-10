@@ -10,6 +10,7 @@ Story 13.2: Full Context for Mentioned Agents.
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -242,6 +243,87 @@ class TestHandleMentionTaskFiles:
         result = await run_mention(task_title="No files task")
 
         assert "[Task Files]" not in result.content
+
+    @pytest.mark.asyncio
+    async def test_includes_merged_source_file_paths_and_threads(self, mock_bridge, run_mention):
+        """Merged tasks expose source metadata, files, and thread sections with absolute paths."""
+        mock_bridge.get_task.return_value = {
+            "title": "Merged Task C",
+            "description": "Continue from merged context",
+            "status": "inbox",
+            "is_merge_task": True,
+            "merge_source_task_ids": ["task_a", "task_b"],
+            "merge_source_labels": ["A", "B"],
+            "files": [],
+        }
+
+        source_tasks = {
+            "task_a": {
+                "title": "Task A",
+                "description": "First source",
+                "status": "done",
+                "files": [
+                    {"name": "source-a.pdf", "subfolder": "attachments"},
+                ],
+            },
+            "task_b": {
+                "title": "Task B",
+                "description": "Second source",
+                "status": "done",
+                "files": [
+                    {"name": "source-b.md", "subfolder": "output"},
+                ],
+            },
+        }
+
+        def query_side_effect(query_name: str, params: dict):
+            if query_name == "tasks:getById":
+                return source_tasks.get(params["task_id"])
+            return None
+
+        def message_side_effect(task_id: str):
+            if task_id == "task_a":
+                return [{
+                    "author_name": "agent-a",
+                    "author_type": "agent",
+                    "timestamp": "2026-01-01T10:00:00Z",
+                    "content": "Source A complete",
+                    "type": "step_completion",
+                    "artifacts": [{"path": "output/report-a.md", "action": "created"}],
+                }]
+            if task_id == "task_b":
+                return [{
+                    "author_name": "agent-b",
+                    "author_type": "agent",
+                    "timestamp": "2026-01-01T10:05:00Z",
+                    "content": "Source B complete",
+                    "type": "step_completion",
+                    "artifacts": [{"path": "output/report-b.md", "action": "created"}],
+                }]
+            return [{
+                "author_name": "User",
+                "author_type": "user",
+                "message_type": "user_message",
+                "content": "Please continue",
+            }]
+
+        mock_bridge.query.side_effect = query_side_effect
+        mock_bridge.get_task_messages.side_effect = message_side_effect
+
+        result = await run_mention(task_title="Merged Task C")
+
+        source_a_path = str(Path.home() / ".nanobot" / "tasks" / "task_a" / "attachments" / "source-a.pdf")
+        source_b_path = str(Path.home() / ".nanobot" / "tasks" / "task_b" / "output" / "source-b.md")
+
+        assert "[Merged Task Origins]" in result.content
+        assert "[Source Task A Files]" in result.content
+        assert "[Source Task B Files]" in result.content
+        assert "[Source Thread A]" in result.content
+        assert "[Source Thread B]" in result.content
+        assert source_a_path in result.content
+        assert source_b_path in result.content
+        assert str(Path.home() / ".nanobot" / "tasks" / "task_a" / "output" / "report-a.md") in result.content
+        assert str(Path.home() / ".nanobot" / "tasks" / "task_b" / "output" / "report-b.md") in result.content
 
 
 class TestBuildMentionContextRemoved:

@@ -61,8 +61,8 @@ def _mock_result(output: str = "done", is_error: bool = False) -> CCTaskResult:
 
 class TestTrustLevel:
     @pytest.mark.asyncio
-    async def test_trust_autonomous_transitions_done(self):
-        """trust_level=autonomous should transition task to DONE."""
+    async def test_trust_autonomous_transitions_review(self):
+        """trust_level=autonomous should transition task to REVIEW pending approval."""
         bridge = _make_bridge()
         executor = _make_executor(bridge)
 
@@ -90,7 +90,7 @@ class TestTrustLevel:
             )
 
         status_calls = bridge.update_task_status.call_args_list
-        assert any(c.args[1] == TaskStatus.DONE for c in status_calls)
+        assert any(c.args[1] == TaskStatus.REVIEW for c in status_calls)
 
     @pytest.mark.asyncio
     async def test_trust_review_transitions_review(self):
