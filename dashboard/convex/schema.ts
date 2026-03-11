@@ -1,6 +1,17 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+export const taskFileMetadataValidator = v.object({
+  name: v.string(),
+  type: v.string(),
+  size: v.number(),
+  subfolder: v.string(),
+  uploadedAt: v.string(),
+  restoredAt: v.optional(v.string()),
+});
+
+export const taskFilesValidator = v.optional(v.array(taskFileMetadataValidator));
+
 export default defineSchema({
   boards: defineTable({
     name: v.string(),
@@ -63,17 +74,7 @@ export default defineSchema({
     mergedIntoTaskId: v.optional(v.id("tasks")),
     mergePreviousStatus: v.optional(v.string()),
     mergeLockedAt: v.optional(v.string()),
-    files: v.optional(
-      v.array(
-        v.object({
-          name: v.string(),
-          type: v.string(),
-          size: v.number(),
-          subfolder: v.string(),
-          uploadedAt: v.string(),
-        }),
-      ),
-    ),
+    files: taskFilesValidator,
     createdAt: v.string(),
     updatedAt: v.string(),
   })
