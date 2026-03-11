@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ConvexError } from "convex/values";
 
 import {
+  addMergeSource,
   approve,
   approveAndKickOff,
   create,
@@ -10,6 +11,8 @@ import {
   kickOff,
   manualMove,
   pauseTask,
+  removeMergeSource,
+  searchMergeCandidates,
   resumeTask,
   retry,
   softDelete,
@@ -90,6 +93,30 @@ function getCreateMergedTaskHandler() {
   return (
     createMergedTask as unknown as {
       _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
+    }
+  )._handler;
+}
+
+function getAddMergeSourceHandler() {
+  return (
+    addMergeSource as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<void>;
+    }
+  )._handler;
+}
+
+function getRemoveMergeSourceHandler() {
+  return (
+    removeMergeSource as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<void>;
+    }
+  )._handler;
+}
+
+function getSearchMergeCandidatesHandler() {
+  return (
+    searchMergeCandidates as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<unknown[]>;
     }
   )._handler;
 }
@@ -382,6 +409,306 @@ describe("tasks.createMergedTask", () => {
         mergeSourceLabels: ["A", "B"],
       }),
     );
+  });
+});
+
+describe("tasks.addMergeSource", () => {
+  it("adds a direct source to an existing merged task and relabels direct sources contiguously", async () => {
+    const handler = getAddMergeSourceHandler();
+    const patch = vi.fn(async () => undefined);
+    const get = vi.fn(async (id: string) => {
+      if (id === "merge-task") {
+        return {
+          _id: "merge-task",
+          title: "Merge: A + B",
+          status: "review",
+          isMergeTask: true,
+          mergeSourceTaskIds: ["task-a", "task-b"],
+          mergeSourceLabels: ["A", "B"],
+          tags: ["merged"],
+        };
+      }
+      if (id === "task-a") {
+        return { _id: "task-a", title: "Task A", status: "done" };
+      }
+      if (id === "task-b") {
+        return { _id: "task-b", title: "Task B", status: "done" };
+      }
+      if (id === "task-c") {
+        return {
+          _id: "task-c",
+          title: "Task C",
+          status: "done",
+          tags: ["gamma"],
+          isMergeTask: false,
+        };
+      }
+      return null;
+    });
+
+    await expect(
+      handler({ db: { get, patch } }, { taskId: "merge-task", sourceTaskId: "task-c" }),
+    ).resolves.toBeUndefined();
+
+    expect(patch).toHaveBeenCalledWith(
+      "merge-task",
+      expect.objectContaining({
+        mergeSourceTaskIds: ["task-a", "task-b", "task-c"],
+        mergeSourceLabels: ["A", "B", "C"],
+        updatedAt: expect.any(String),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "task-c",
+      expect.objectContaining({
+        mergedIntoTaskId: "merge-task",
+        mergePreviousStatus: "done",
+        mergeLockedAt: expect.any(String),
+        tags: ["gamma", "merged"],
+        updatedAt: expect.any(String),
+      }),
+    );
+  });
+
+  it("rejects adding a source whose lineage already exists in the merged task tree", async () => {
+    const handler = getAddMergeSourceHandler();
+    const patch = vi.fn(async () => undefined);
+    const get = vi.fn(async (id: string) => {
+      if (id === "merge-task") {
+        return {
+          _id: "merge-task",
+          title: "Merge: Root",
+          status: "review",
+          isMergeTask: true,
+          mergeSourceTaskIds: ["child-merge", "task-d"],
+          mergeSourceLabels: ["A", "B"],
+        };
+      }
+      if (id === "child-merge") {
+        return {
+          _id: "child-merge",
+          title: "Merge: A + B",
+          status: "review",
+          isMergeTask: true,
+          mergeSourceTaskIds: ["task-a", "task-b"],
+          mergeSourceLabels: ["A", "B"],
+        };
+      }
+      if (id === "task-d") return { _id: "task-d", title: "Task D", status: "done" };
+      if (id === "candidate-merge") {
+        return {
+          _id: "candidate-merge",
+          title: "Merge: B + E",
+          status: "review",
+          isMergeTask: true,
+          mergeSourceTaskIds: ["task-b", "task-e"],
+          mergeSourceLabels: ["A", "B"],
+        };
+      }
+      if (id === "task-a" || id === "task-b" || id === "task-e") {
+        return { _id: id, title: id, status: "done" };
+      }
+      return null;
+    });
+
+    await expect(
+      handler({ db: { get, patch } }, { taskId: "merge-task", sourceTaskId: "candidate-merge" }),
+    ).rejects.toThrow(/already exists in the merge tree|duplicate lineage/i);
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("rejects adding a source to a merge task that is already merged into another task", async () => {
+    const handler = getAddMergeSourceHandler();
+    const patch = vi.fn(async () => undefined);
+    const get = vi.fn(async (id: string) => {
+      if (id === "merge-task") {
+        return {
+          _id: "merge-task",
+          title: "Merge: Child",
+          status: "review",
+          isMergeTask: true,
+          mergeSourceTaskIds: ["task-a", "task-b"],
+          mergeSourceLabels: ["A", "B"],
+          mergedIntoTaskId: "parent-merge",
+        };
+      }
+      if (id === "task-c") {
+        return {
+          _id: "task-c",
+          title: "Task C",
+          status: "done",
+        };
+      }
+      return null;
+    });
+
+    await expect(
+      handler({ db: { get, patch } }, { taskId: "merge-task", sourceTaskId: "task-c" }),
+    ).rejects.toThrow(/already merged into another task/i);
+    expect(patch).not.toHaveBeenCalled();
+  });
+});
+
+describe("tasks.removeMergeSource", () => {
+  it("removes a direct source and restores it to its previous status", async () => {
+    const handler = getRemoveMergeSourceHandler();
+    const patch = vi.fn(async () => undefined);
+    const get = vi.fn(async (id: string) => {
+      if (id === "merge-task") {
+        return {
+          _id: "merge-task",
+          title: "Merge: A + B + C",
+          status: "review",
+          isMergeTask: true,
+          mergeSourceTaskIds: ["task-a", "task-b", "task-c"],
+          mergeSourceLabels: ["A", "B", "C"],
+        };
+      }
+      if (id === "task-c") {
+        return {
+          _id: "task-c",
+          title: "Task C",
+          status: "done",
+          tags: ["gamma", "merged"],
+          mergedIntoTaskId: "merge-task",
+          mergePreviousStatus: "assigned",
+          isMergeTask: false,
+        };
+      }
+      return { _id: id, title: id, status: "done" };
+    });
+
+    await expect(
+      handler({ db: { get, patch } }, { taskId: "merge-task", sourceTaskId: "task-c" }),
+    ).resolves.toBeUndefined();
+
+    expect(patch).toHaveBeenCalledWith(
+      "merge-task",
+      expect.objectContaining({
+        mergeSourceTaskIds: ["task-a", "task-b"],
+        mergeSourceLabels: ["A", "B"],
+        updatedAt: expect.any(String),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "task-c",
+      expect.objectContaining({
+        status: "assigned",
+        mergedIntoTaskId: undefined,
+        mergeLockedAt: undefined,
+        mergePreviousStatus: undefined,
+        tags: ["gamma"],
+        updatedAt: expect.any(String),
+      }),
+    );
+  });
+
+  it("rejects removal when only two direct sources remain", async () => {
+    const handler = getRemoveMergeSourceHandler();
+    const patch = vi.fn(async () => undefined);
+    const get = vi.fn(async (id: string) => {
+      if (id === "merge-task") {
+        return {
+          _id: "merge-task",
+          title: "Merge: A + B",
+          status: "review",
+          isMergeTask: true,
+          mergeSourceTaskIds: ["task-a", "task-b"],
+          mergeSourceLabels: ["A", "B"],
+        };
+      }
+      if (id === "task-a") {
+        return {
+          _id: "task-a",
+          title: "Task A",
+          status: "done",
+          mergedIntoTaskId: "merge-task",
+          mergePreviousStatus: "review",
+        };
+      }
+      return null;
+    });
+
+    await expect(
+      handler({ db: { get, patch } }, { taskId: "merge-task", sourceTaskId: "task-a" }),
+    ).rejects.toThrow(/at least 2 direct sources/i);
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("rejects removing a source from a merge task that is already merged into another task", async () => {
+    const handler = getRemoveMergeSourceHandler();
+    const patch = vi.fn(async () => undefined);
+    const get = vi.fn(async (id: string) => {
+      if (id === "merge-task") {
+        return {
+          _id: "merge-task",
+          title: "Merge: Child",
+          status: "review",
+          isMergeTask: true,
+          mergeSourceTaskIds: ["task-a", "task-b", "task-c"],
+          mergeSourceLabels: ["A", "B", "C"],
+          mergedIntoTaskId: "parent-merge",
+        };
+      }
+      return null;
+    });
+
+    await expect(
+      handler({ db: { get, patch } }, { taskId: "merge-task", sourceTaskId: "task-c" }),
+    ).rejects.toThrow(/already merged into another task/i);
+    expect(patch).not.toHaveBeenCalled();
+  });
+});
+
+describe("tasks.searchMergeCandidates", () => {
+  it("excludes tasks already present anywhere in the target merged task tree", async () => {
+    const handler = getSearchMergeCandidatesHandler();
+    const tasks = [
+      {
+        _id: "merge-task",
+        title: "Merge Root",
+        status: "review",
+        updatedAt: "2026-03-11T10:00:00Z",
+        isMergeTask: true,
+        mergeSourceTaskIds: ["child-merge", "task-d"],
+        mergeSourceLabels: ["A", "B"],
+      },
+      {
+        _id: "child-merge",
+        title: "Merge Child",
+        status: "review",
+        updatedAt: "2026-03-11T09:00:00Z",
+        isMergeTask: true,
+        mergeSourceTaskIds: ["task-a", "task-b"],
+        mergeSourceLabels: ["A", "B"],
+      },
+      { _id: "task-a", title: "Task A", status: "done", updatedAt: "2026-03-11T08:00:00Z" },
+      { _id: "task-b", title: "Task B", status: "done", updatedAt: "2026-03-11T07:00:00Z" },
+      { _id: "task-d", title: "Task D", status: "done", updatedAt: "2026-03-11T06:00:00Z" },
+      {
+        _id: "candidate-merge",
+        title: "Candidate Merge",
+        status: "review",
+        updatedAt: "2026-03-11T05:00:00Z",
+        isMergeTask: true,
+        mergeSourceTaskIds: ["task-b", "task-e"],
+        mergeSourceLabels: ["A", "B"],
+      },
+      { _id: "task-e", title: "Task E", status: "done", updatedAt: "2026-03-11T04:00:00Z" },
+      { _id: "task-f", title: "Task F", status: "done", updatedAt: "2026-03-11T03:00:00Z" },
+    ];
+
+    const get = vi.fn(async (id: string) => tasks.find((task) => task._id === id) ?? null);
+    const query = vi.fn(() => ({
+      collect: vi.fn(async () => tasks),
+    }));
+
+    const results = await handler(
+      { db: { get, query } },
+      { query: "", excludeTaskId: "merge-task", targetTaskId: "merge-task" },
+    );
+
+    expect(results.map((task) => (task as { _id: string })._id)).toEqual(["task-e", "task-f"]);
   });
 });
 

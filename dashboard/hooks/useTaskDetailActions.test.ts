@@ -22,6 +22,11 @@ vi.mock("../convex/_generated/api", () => ({
       pauseTask: "tasks:pauseTask",
       resumeTask: "tasks:resumeTask",
       retry: "tasks:retry",
+      createMergedTask: "tasks:createMergedTask",
+      addMergeSource: "tasks:addMergeSource",
+      removeMergeSource: "tasks:removeMergeSource",
+      saveExecutionPlan: "tasks:saveExecutionPlan",
+      startInboxTask: "tasks:startInboxTask",
       updateTags: "tasks:updateTags",
       updateTitle: "tasks:updateTitle",
       updateDescription: "tasks:updateDescription",
@@ -52,6 +57,9 @@ describe("useTaskDetailActions", () => {
     expect(typeof result.current.addTaskFiles).toBe("function");
     expect(typeof result.current.removeTaskFile).toBe("function");
     expect(typeof result.current.createActivity).toBe("function");
+    expect(typeof result.current.createMergedTask).toBe("function");
+    expect(typeof result.current.addMergeSource).toBe("function");
+    expect(typeof result.current.removeMergeSource).toBe("function");
   });
 
   it("starts with no loading/error state", () => {
@@ -62,6 +70,10 @@ describe("useTaskDetailActions", () => {
     expect(result.current.pauseError).toBe("");
     expect(result.current.isResuming).toBe(false);
     expect(result.current.resumeError).toBe("");
+    expect(result.current.isAddingMergeSource).toBe(false);
+    expect(result.current.addMergeSourceError).toBe("");
+    expect(result.current.isRemovingMergeSource).toBe(false);
+    expect(result.current.removeMergeSourceError).toBe("");
   });
 
   it("calls approve mutation with correct args", async () => {
@@ -150,6 +162,60 @@ describe("useTaskDetailActions", () => {
     expect(mockMutationFns["tasks:retry"]).toHaveBeenCalledWith({
       taskId: "task1",
     });
+  });
+
+  it("calls addMergeSource mutation and clears loading state", async () => {
+    const { result } = renderHook(() => useTaskDetailActions());
+    await act(async () => {
+      await result.current.addMergeSource("task1" as any, "task2" as any);
+    });
+    expect(mockMutationFns["tasks:addMergeSource"]).toHaveBeenCalledWith({
+      taskId: "task1",
+      sourceTaskId: "task2",
+    });
+    expect(result.current.isAddingMergeSource).toBe(false);
+  });
+
+  it("calls removeMergeSource mutation and clears loading state", async () => {
+    const { result } = renderHook(() => useTaskDetailActions());
+    await act(async () => {
+      await result.current.removeMergeSource("task1" as any, "task2" as any);
+    });
+    expect(mockMutationFns["tasks:removeMergeSource"]).toHaveBeenCalledWith({
+      taskId: "task1",
+      sourceTaskId: "task2",
+    });
+    expect(result.current.isRemovingMergeSource).toBe(false);
+  });
+
+  it("sets addMergeSourceError on failure", async () => {
+    mockMutationFns["tasks:addMergeSource"] = vi
+      .fn()
+      .mockRejectedValue(new Error("Attach blocked"));
+    const { result } = renderHook(() => useTaskDetailActions());
+    await act(async () => {
+      try {
+        await result.current.addMergeSource("task1" as any, "task2" as any);
+      } catch {
+        // expected
+      }
+    });
+    expect(result.current.addMergeSourceError).toBe("Attach failed: Attach blocked");
+  });
+
+  it("sets removeMergeSourceError on failure", async () => {
+    mockMutationFns["tasks:removeMergeSource"] = vi
+      .fn()
+      .mockRejectedValue(new Error("Need at least two"));
+    const { result } = renderHook(() => useTaskDetailActions());
+    await act(async () => {
+      try {
+        await result.current.removeMergeSource("task1" as any, "task2" as any);
+      } catch {
+        // expected
+      }
+    });
+    expect(result.current.removeMergeSourceError).toBe("Remove failed: Need at least two");
   });
 
   it("calls updateTags mutation", () => {

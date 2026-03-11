@@ -39,6 +39,7 @@ type TaskDetailReadModel = {
   tagAttributes: Doc<"tagAttributes">[];
   tagAttributeValues: Doc<"tagAttributeValues">[];
   mergedIntoTask: MergedTaskRef | null;
+  directMergeSources?: MergeSourceRef[];
   mergeSources: MergeSourceRef[];
   mergeSourceThreads: MergeSourceThread[];
   mergeSourceFiles: DetailFileRef[];
@@ -68,6 +69,7 @@ export interface TaskDetailViewData {
   tagAttributesList: Doc<"tagAttributes">[] | undefined;
   tagAttrValues: Doc<"tagAttributeValues">[] | undefined;
   mergedIntoTask: MergedTaskRef | null | undefined;
+  directMergeSources: MergeSourceRef[] | undefined;
   mergeSources: MergeSourceRef[] | undefined;
   mergeSourceThreads: MergeSourceThread[] | undefined;
   displayFiles: DetailFileRef[];
@@ -94,6 +96,7 @@ export function useTaskDetailView(taskId: Id<"tasks"> | null): TaskDetailViewDat
   const tagAttributesList = detailView?.tagAttributes;
   const tagAttrValues = detailView?.tagAttributeValues;
   const mergedIntoTask = detailView?.mergedIntoTask;
+  const directMergeSources = detailView?.directMergeSources ?? detailView?.mergeSources;
   const mergeSources = detailView?.mergeSources;
   const mergeSourceThreads = detailView?.mergeSourceThreads;
 
@@ -123,6 +126,7 @@ export function useTaskDetailView(taskId: Id<"tasks"> | null): TaskDetailViewDat
     tagAttributesList,
     tagAttrValues,
     mergedIntoTask,
+    directMergeSources,
     mergeSources,
     mergeSourceThreads,
     displayFiles,

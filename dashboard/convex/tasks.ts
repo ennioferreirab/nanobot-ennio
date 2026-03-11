@@ -42,6 +42,10 @@ function getMergeSourceLabel(labels: string[] | undefined, index: number): strin
   return labels?.[index] ?? defaultMergeSourceLabel(index);
 }
 
+function buildContiguousMergeSourceLabels(sourceTaskIds: Array<Id<"tasks"> | string>): string[] {
+  return sourceTaskIds.map((_, index) => defaultMergeSourceLabel(index));
+}
+
 function dedupeTags(...tagSets: Array<string[] | undefined>): string[] | undefined {
   const merged = Array.from(new Set(tagSets.flatMap((tags) => tags ?? [])));
   return merged.length > 0 ? merged : undefined;
@@ -67,6 +71,80 @@ function assertMergeableSourceTask(
   if (task.mergedIntoTaskId) {
     throw new ConvexError(`Source task ${label} is already merged into another task`);
   }
+}
+
+function assertExistingMergeTask(
+  task: Doc<"tasks"> | null,
+  label: string,
+): asserts task is Doc<"tasks"> & { isMergeTask: true; mergeSourceTaskIds: Id<"tasks">[] } {
+  if (!task) {
+    throw new ConvexError(`${label} not found`);
+  }
+  if (task.isMergeTask !== true || !Array.isArray(task.mergeSourceTaskIds)) {
+    throw new ConvexError(`${label} is not an existing merge task`);
+  }
+  if (task.mergedIntoTaskId) {
+    throw new ConvexError(`${label} is already merged into another task`);
+  }
+}
+
+async function collectMergeLineageTaskIds(
+  ctx: { db: { get: (id: Id<"tasks">) => Promise<Doc<"tasks"> | null> } },
+  sourceTaskIds: Id<"tasks">[] | string[] | undefined,
+  seen = new Set<string>(),
+): Promise<Set<string>> {
+  if (!Array.isArray(sourceTaskIds) || sourceTaskIds.length === 0) return seen;
+
+  for (const sourceTaskId of sourceTaskIds) {
+    const normalizedId = String(sourceTaskId);
+    if (seen.has(normalizedId)) continue;
+    seen.add(normalizedId);
+
+    const sourceTask = await ctx.db.get(sourceTaskId as Id<"tasks">);
+    if (
+      sourceTask?.isMergeTask === true &&
+      Array.isArray(sourceTask.mergeSourceTaskIds) &&
+      sourceTask.mergeSourceTaskIds.length > 0
+    ) {
+      await collectMergeLineageTaskIds(ctx, sourceTask.mergeSourceTaskIds as Id<"tasks">[], seen);
+    }
+  }
+
+  return seen;
+}
+
+function hasLineageOverlap(sourceIds: Set<string>, targetIds: Set<string>): boolean {
+  for (const sourceId of sourceIds) {
+    if (targetIds.has(sourceId)) return true;
+  }
+  return false;
+}
+
+async function restoreDetachedMergeSource(
+  ctx: Pick<MutationCtx, "db">,
+  mergeTaskId: Id<"tasks">,
+  sourceTaskId: Id<"tasks">,
+  now: string,
+): Promise<void> {
+  const sourceTask = await ctx.db.get(sourceTaskId);
+  if (!sourceTask || sourceTask.mergedIntoTaskId !== mergeTaskId) return;
+
+  const restoredStatus: TaskStatus =
+    typeof sourceTask.mergePreviousStatus === "string"
+      ? (sourceTask.mergePreviousStatus as TaskStatus)
+      : sourceTask.status;
+
+  await ctx.db.patch(sourceTaskId, {
+    status: restoredStatus,
+    mergedIntoTaskId: undefined,
+    mergeLockedAt: undefined,
+    mergePreviousStatus: undefined,
+    tags:
+      sourceTask.isMergeTask === true
+        ? dedupeTags(sourceTask.tags as string[] | undefined, ["merged"])
+        : removeTag(sourceTask.tags as string[] | undefined, "merged"),
+    updatedAt: now,
+  });
 }
 
 async function cascadeMergeSourceTasksToDone(
@@ -279,21 +357,47 @@ export const searchMergeCandidates = query({
   args: {
     query: v.string(),
     excludeTaskId: v.id("tasks"),
+    targetTaskId: v.optional(v.id("tasks")),
   },
   handler: async (ctx, args) => {
     const normalized = args.query.trim().toLowerCase();
     const tasks = await ctx.db.query("tasks").collect();
-    return tasks
-      .filter((task) => {
-        if (task._id === args.excludeTaskId) return false;
-        if (task.status === "deleted") return false;
-        if (task.mergedIntoTaskId) return false;
-        if (!normalized) return true;
-        return (
-          task.title.toLowerCase().includes(normalized) ||
-          (task.description ?? "").toLowerCase().includes(normalized)
-        );
-      })
+    const targetTask = args.targetTaskId ? await ctx.db.get(args.targetTaskId) : null;
+    const targetLineage =
+      targetTask?.isMergeTask === true
+        ? await collectMergeLineageTaskIds(
+            ctx,
+            targetTask.mergeSourceTaskIds as Id<"tasks">[] | undefined,
+          )
+        : new Set<string>();
+    const filtered = [];
+    for (const task of tasks) {
+      if (task._id === args.excludeTaskId) continue;
+      if (task.status === "deleted") continue;
+      if (task.mergedIntoTaskId) continue;
+      if (args.targetTaskId && task._id === args.targetTaskId) continue;
+      if (targetLineage.has(String(task._id))) continue;
+      if (args.targetTaskId) {
+        const candidateLineage = new Set<string>([String(task._id)]);
+        if (task.isMergeTask === true && Array.isArray(task.mergeSourceTaskIds)) {
+          await collectMergeLineageTaskIds(
+            ctx,
+            task.mergeSourceTaskIds as Id<"tasks">[],
+            candidateLineage,
+          );
+        }
+        if (hasLineageOverlap(candidateLineage, targetLineage)) continue;
+      }
+      if (
+        normalized &&
+        !task.title.toLowerCase().includes(normalized) &&
+        !(task.description ?? "").toLowerCase().includes(normalized)
+      ) {
+        continue;
+      }
+      filtered.push(task);
+    }
+    return filtered
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, 10);
   },
@@ -464,6 +568,89 @@ export const createMergedTask = mutation({
     });
 
     return mergedTaskId;
+  },
+});
+
+export const addMergeSource = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    sourceTaskId: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    if (args.taskId === args.sourceTaskId) {
+      throw new ConvexError("Cannot merge a task into itself");
+    }
+
+    const [mergeTask, sourceTask] = await Promise.all([
+      ctx.db.get(args.taskId),
+      ctx.db.get(args.sourceTaskId),
+    ]);
+    assertExistingMergeTask(mergeTask, "Target merge task");
+    assertMergeableSourceTask(sourceTask, "source task");
+
+    const currentDirectSources = mergeTask.mergeSourceTaskIds as Id<"tasks">[];
+    if (currentDirectSources.some((sourceId) => sourceId === args.sourceTaskId)) {
+      throw new ConvexError("Source task is already a direct source of this merge task");
+    }
+
+    const targetLineage = await collectMergeLineageTaskIds(ctx, currentDirectSources);
+    const candidateLineage = new Set<string>([String(args.sourceTaskId)]);
+    if (sourceTask.isMergeTask === true && Array.isArray(sourceTask.mergeSourceTaskIds)) {
+      await collectMergeLineageTaskIds(
+        ctx,
+        sourceTask.mergeSourceTaskIds as Id<"tasks">[],
+        candidateLineage,
+      );
+    }
+
+    if (hasLineageOverlap(candidateLineage, targetLineage)) {
+      throw new ConvexError("Source task duplicate lineage already exists in the merge tree");
+    }
+
+    const nextDirectSources = [...currentDirectSources, args.sourceTaskId];
+    const now = new Date().toISOString();
+
+    await ctx.db.patch(args.taskId, {
+      mergeSourceTaskIds: nextDirectSources,
+      mergeSourceLabels: buildContiguousMergeSourceLabels(nextDirectSources),
+      updatedAt: now,
+    });
+    await ctx.db.patch(args.sourceTaskId, {
+      mergedIntoTaskId: args.taskId,
+      mergePreviousStatus: sourceTask.status,
+      mergeLockedAt: now,
+      tags: dedupeTags(sourceTask.tags as string[] | undefined, ["merged"]),
+      updatedAt: now,
+    });
+  },
+});
+
+export const removeMergeSource = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    sourceTaskId: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    const mergeTask = await ctx.db.get(args.taskId);
+    assertExistingMergeTask(mergeTask, "Target merge task");
+
+    const currentDirectSources = mergeTask.mergeSourceTaskIds as Id<"tasks">[];
+    if (!currentDirectSources.some((sourceId) => sourceId === args.sourceTaskId)) {
+      throw new ConvexError("Source task is not a direct source of this merge task");
+    }
+    if (currentDirectSources.length <= 2) {
+      throw new ConvexError("Merged tasks must keep at least 2 direct sources");
+    }
+
+    const nextDirectSources = currentDirectSources.filter((sourceId) => sourceId !== args.sourceTaskId);
+    const now = new Date().toISOString();
+
+    await ctx.db.patch(args.taskId, {
+      mergeSourceTaskIds: nextDirectSources,
+      mergeSourceLabels: buildContiguousMergeSourceLabels(nextDirectSources),
+      updatedAt: now,
+    });
+    await restoreDetachedMergeSource(ctx, args.taskId, args.sourceTaskId, now);
   },
 });
 
@@ -1508,6 +1695,23 @@ export const getDetailView = query({
         task.mergedIntoTaskId ? ctx.db.get(task.mergedIntoTaskId) : Promise.resolve(null),
       ]);
 
+    const directMergeSources = Array.isArray(task.mergeSourceTaskIds)
+      ? (
+          await Promise.all(
+            task.mergeSourceTaskIds.map(async (sourceTaskId, index) => {
+              const sourceTask = await ctx.db.get(sourceTaskId);
+              if (!sourceTask) return null;
+              return {
+                taskId: sourceTaskId,
+                taskTitle: sourceTask.title,
+                label: getMergeSourceLabel(task.mergeSourceLabels as string[] | undefined, index),
+              };
+            }),
+          )
+        ).filter((source): source is { taskId: Id<"tasks">; taskTitle: string; label: string } =>
+          source !== null,
+        )
+      : [];
     const resolvedMergeSources = await resolveMergeSourceTree(
       ctx,
       task.mergeSourceTaskIds as string[] | undefined,
@@ -1536,6 +1740,7 @@ export const getDetailView = query({
       steps: sortedSteps,
       files: task.files ?? [],
       mergedIntoTask,
+      directMergeSources,
       mergeSources: resolvedMergeSources.map((source) => ({
         taskId: source.taskId,
         taskTitle: source.taskTitle,
