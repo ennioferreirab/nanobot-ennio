@@ -2180,6 +2180,48 @@ describe("TaskDetailSheet", () => {
     expect(timeline.className).toContain("min-h-0");
   });
 
+  it("shows user messages sent from the lead agent conversation before the first plan exists", async () => {
+    const user = userEvent.setup();
+    const manualReviewTask = {
+      ...baseTask,
+      status: "review" as const,
+      isManual: true,
+      executionPlan: undefined,
+    };
+    const leadAgentConversationMessage = {
+      ...baseMessage,
+      _id: "plan-msg-user-bootstrap" as never,
+      authorName: "User",
+      authorType: "user" as const,
+      content: "Please create the first plan and then launch logo agents.",
+      messageType: "user_message" as const,
+      type: "user_message" as const,
+      leadAgentConversation: true,
+    };
+    const regularThreadMessage = {
+      ...baseMessage,
+      _id: "thread-msg-regular" as never,
+      authorName: "User",
+      authorType: "user" as const,
+      content: "This should stay out of the lead agent panel.",
+      messageType: "user_message" as const,
+      type: "user_message" as const,
+    };
+    oneRenderPass(manualReviewTask, [leadAgentConversationMessage, regularThreadMessage]);
+
+    render(<TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />);
+
+    await user.click(screen.getByRole("tab", { name: /Execution Plan/i }));
+
+    expect(screen.getByTestId("plan-review-panel")).toBeInTheDocument();
+    expect(
+      screen.getByText("Please create the first plan and then launch logo agents."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("This should stay out of the lead agent panel."),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not auto-switch to plan tab for non-awaitingKickoff tasks (thread tab is active by default)", () => {
     oneRenderPass(baseTask);
 

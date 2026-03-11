@@ -25,6 +25,9 @@ function isPlanTimelineMessage(message: Doc<"messages">): boolean {
   if (message.type === "lead_agent_plan" || message.type === "lead_agent_chat") {
     return true;
   }
+  if ((message as Doc<"messages"> & { leadAgentConversation?: boolean }).leadAgentConversation === true) {
+    return true;
+  }
   return Boolean(message.planReview);
 }
 

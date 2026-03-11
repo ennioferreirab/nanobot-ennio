@@ -172,6 +172,7 @@ export default defineSchema({
         decision: v.optional(v.union(v.literal("approved"), v.literal("rejected"))),
       }),
     ),
+    leadAgentConversation: v.optional(v.boolean()),
     timestamp: v.string(),
   })
     .index("by_taskId", ["taskId"])
