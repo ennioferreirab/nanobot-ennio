@@ -112,6 +112,7 @@ function buildDetailView(task: TaskDoc, messages: unknown[] = []) {
     steps: [],
     files: [],
     mergedIntoTask: null,
+    directMergeSources: [],
     mergeSources: [],
     mergeSourceThreads: [],
     mergeSourceFiles: [],
@@ -284,6 +285,10 @@ describe("TaskDetailSheet", () => {
       ) {
         return {
           ...buildDetailView(mergeTask, [baseMessage]),
+          directMergeSources: [
+            { taskId: "task-a", taskTitle: "Task A", label: "A" },
+            { taskId: "task-b", taskTitle: "Task B", label: "B" },
+          ],
           mergeSources: [
             { taskId: "task-a", taskTitle: "Task A", label: "A" },
             { taskId: "task-b", taskTitle: "Task B", label: "B" },
@@ -359,6 +364,262 @@ describe("TaskDetailSheet", () => {
     expect(screen.getAllByText("B").length).toBeGreaterThan(0);
   });
 
+  it("renders attach controls in config for existing merged tasks and adds a source", async () => {
+    const user = userEvent.setup();
+    const mergeTask = {
+      ...baseTask,
+      _id: "task-c" as never,
+      title: "Merged Task C",
+      status: "review" as const,
+      isMergeTask: true,
+      files: [],
+    };
+
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "taskId" in (args as Record<string, unknown>)
+      ) {
+        return {
+          ...buildDetailView(mergeTask),
+          directMergeSources: [
+            { taskId: "task-a", taskTitle: "Task A", label: "A" },
+            { taskId: "task-b", taskTitle: "Task B", label: "B" },
+          ],
+          mergeSources: [
+            { taskId: "task-a", taskTitle: "Task A", label: "A" },
+            { taskId: "task-b", taskTitle: "Task B", label: "B" },
+          ],
+        };
+      }
+      return [
+        {
+          _id: "task-d",
+          title: "Task D",
+          description: "Another source",
+        },
+      ];
+    });
+
+    render(<TaskDetailSheet taskId={"task-c" as never} onClose={() => {}} />);
+
+    await user.click(screen.getByRole("tab", { name: /Config/i }));
+
+    expect(screen.getByPlaceholderText("Search task to attach...")).toBeInTheDocument();
+
+    await user.click(screen.getByText("Task D"));
+    await user.click(screen.getByRole("button", { name: "Attach Task" }));
+
+    await waitFor(() => {
+      expect(mockMutationFn).toHaveBeenCalledWith({
+        taskId: "task-c",
+        sourceTaskId: "task-d",
+      });
+    });
+  });
+
+  it("renders remove controls for merged tasks with more than two direct sources", async () => {
+    const user = userEvent.setup();
+    const mergeTask = {
+      ...baseTask,
+      _id: "task-c" as never,
+      title: "Merged Task C",
+      status: "review" as const,
+      isMergeTask: true,
+      files: [],
+    };
+
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "taskId" in (args as Record<string, unknown>)
+      ) {
+        return {
+          ...buildDetailView(mergeTask),
+          directMergeSources: [
+            { taskId: "task-a", taskTitle: "Task A", label: "A" },
+            { taskId: "task-b", taskTitle: "Task B", label: "B" },
+            { taskId: "task-d", taskTitle: "Task D", label: "C" },
+          ],
+          mergeSources: [
+            { taskId: "task-a", taskTitle: "Task A", label: "A" },
+            { taskId: "task-b", taskTitle: "Task B", label: "B" },
+            { taskId: "task-d", taskTitle: "Task D", label: "C" },
+          ],
+        };
+      }
+      return [];
+    });
+
+    render(<TaskDetailSheet taskId={"task-c" as never} onClose={() => {}} />);
+
+    await user.click(screen.getByRole("tab", { name: /Config/i }));
+    await user.click(screen.getByRole("button", { name: "Remove merge source C" }));
+
+    await waitFor(() => {
+      expect(mockMutationFn).toHaveBeenCalledWith({
+        taskId: "task-c",
+        sourceTaskId: "task-d",
+      });
+    });
+  });
+
+  it("shows a warning instead of remove controls when a merged task has only two direct sources", async () => {
+    const user = userEvent.setup();
+    const mergeTask = {
+      ...baseTask,
+      _id: "task-c" as never,
+      title: "Merged Task C",
+      status: "review" as const,
+      isMergeTask: true,
+      files: [],
+    };
+
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "taskId" in (args as Record<string, unknown>)
+      ) {
+        return {
+          ...buildDetailView(mergeTask),
+          directMergeSources: [
+            { taskId: "task-a", taskTitle: "Task A", label: "A" },
+            { taskId: "task-b", taskTitle: "Task B", label: "B" },
+          ],
+          mergeSources: [
+            { taskId: "task-a", taskTitle: "Task A", label: "A" },
+            { taskId: "task-b", taskTitle: "Task B", label: "B" },
+          ],
+        };
+      }
+      return [];
+    });
+
+    render(<TaskDetailSheet taskId={"task-c" as never} onClose={() => {}} />);
+
+    await user.click(screen.getByRole("tab", { name: /Config/i }));
+
+    expect(screen.getByText(/Merged tasks must keep at least 2 direct sources/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove merge source A" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove merge source B" })).not.toBeInTheDocument();
+  });
+
+  it("uses only direct merge sources for removal controls when nested sources are present", async () => {
+    const user = userEvent.setup();
+    const mergeTask = {
+      ...baseTask,
+      _id: "task-c" as never,
+      title: "Merged Task C",
+      status: "review" as const,
+      isMergeTask: true,
+      files: [],
+    };
+
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "taskId" in (args as Record<string, unknown>)
+      ) {
+        return {
+          ...buildDetailView(mergeTask),
+          directMergeSources: [
+            { taskId: "child-merge", taskTitle: "Child Merge", label: "A" },
+            { taskId: "task-d", taskTitle: "Task D", label: "B" },
+          ],
+          mergeSources: [
+            { taskId: "child-merge", taskTitle: "Child Merge", label: "A" },
+            { taskId: "task-a", taskTitle: "Task A", label: "A.A" },
+            { taskId: "task-b", taskTitle: "Task B", label: "A.B" },
+            { taskId: "task-d", taskTitle: "Task D", label: "B" },
+          ],
+        };
+      }
+      return [];
+    });
+
+    render(<TaskDetailSheet taskId={"task-c" as never} onClose={() => {}} />);
+
+    await user.click(screen.getByRole("tab", { name: /Config/i }));
+
+    expect(screen.getByText(/Merged tasks must keep at least 2 direct sources/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove merge source A.A" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove merge source A.B" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove merge source A" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove merge source B" })).not.toBeInTheDocument();
+  });
+
+  it("renders collapsed source thread sections for merge task C even with no direct messages", () => {
+    const mergeTask = {
+      ...baseTask,
+      _id: "task-c" as never,
+      title: "Merged Task C",
+      status: "review" as const,
+      isMergeTask: true,
+      files: [],
+    };
+
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "taskId" in (args as Record<string, unknown>)
+      ) {
+        return {
+          ...buildDetailView(mergeTask, []),
+          mergeSourceThreads: [
+            {
+              taskId: "task-a",
+              taskTitle: "Task A",
+              label: "A",
+              messages: [
+                {
+                  ...baseMessage,
+                  _id: "msg-a1",
+                  taskId: "task-a",
+                  content: "Source thread A message",
+                },
+              ],
+            },
+            {
+              taskId: "task-b",
+              taskTitle: "Task B",
+              label: "B",
+              messages: [
+                {
+                  ...baseMessage,
+                  _id: "msg-b1",
+                  taskId: "task-b",
+                  content: "Source thread B message",
+                },
+              ],
+            },
+          ],
+        };
+      }
+      return [];
+    });
+
+    render(<TaskDetailSheet taskId={"task-c" as never} onClose={() => {}} />);
+
+    expect(screen.getByText("Thread A")).toBeInTheDocument();
+    expect(screen.getByText("Thread B")).toBeInTheDocument();
+    expect(screen.getByText("No messages yet. Agent activity will appear here.")).toBeInTheDocument();
+  });
+
   it("shows an editable visual merge step for manual merged tasks in review", async () => {
     const manualMergeTask = {
       ...baseTask,
@@ -395,6 +656,15 @@ describe("TaskDetailSheet", () => {
       ) {
         return {
           ...buildDetailView(manualMergeTask),
+          directMergeSources: [
+            { taskId: "task-a", taskTitle: "Pensar na evolucao da memoria", label: "A" },
+            {
+              taskId: "task-b",
+              taskTitle:
+                "Precisa de criar um parse , ou teste para o CC identificar as skills compativeis com os agentes do nanobot",
+              label: "B",
+            },
+          ],
           mergeSources: [
             { taskId: "task-a", taskTitle: "Pensar na evolucao da memoria", label: "A" },
             {
@@ -455,6 +725,10 @@ describe("TaskDetailSheet", () => {
       ) {
         return {
           ...buildDetailView(manualMergeTask),
+          directMergeSources: [
+            { taskId: "task-a", taskTitle: "Task A", label: "A" },
+            { taskId: "task-b", taskTitle: "Task B", label: "B" },
+          ],
           mergeSources: [
             { taskId: "task-a", taskTitle: "Task A", label: "A" },
             { taskId: "task-b", taskTitle: "Task B", label: "B" },
@@ -783,6 +1057,69 @@ describe("TaskDetailSheet", () => {
     expect(screen.getByText("Outputs")).toBeInTheDocument();
     expect(screen.getByText("notes.pdf")).toBeInTheDocument();
     expect(screen.getByText("result.py")).toBeInTheDocument();
+  });
+
+  it("does not emit duplicate key warnings for merge-source attachments with the same filename", async () => {
+    const user = userEvent.setup();
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const mergeTask = {
+      ...baseTask,
+      _id: "task-c" as never,
+      title: "Merged Task C",
+      status: "review" as const,
+      isMergeTask: true,
+      files: [],
+    };
+
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) return [];
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "taskId" in (args as Record<string, unknown>)
+      ) {
+        return {
+          ...buildDetailView(mergeTask),
+          mergeSourceFiles: [
+            {
+              name: "DIRETRIZES_EMPRESA.md",
+              type: "text/markdown",
+              size: 1024,
+              subfolder: "attachments",
+              sourceTaskId: "task-a",
+              sourceTaskTitle: "Task A",
+              sourceLabel: "A",
+            },
+            {
+              name: "DIRETRIZES_EMPRESA.md",
+              type: "text/markdown",
+              size: 2048,
+              subfolder: "attachments",
+              sourceTaskId: "task-b",
+              sourceTaskTitle: "Task B",
+              sourceLabel: "B",
+            },
+          ],
+        };
+      }
+      return [];
+    });
+
+    render(<TaskDetailSheet taskId={"task-c" as never} onClose={() => {}} />);
+
+    await user.click(screen.getByRole("tab", { name: "Files (2)" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("DIRETRIZES_EMPRESA.md")).toHaveLength(2);
+    });
+    expect(
+      consoleErrorSpy.mock.calls.some(([message]) =>
+        String(message).includes("Encountered two children with the same key"),
+      ),
+    ).toBe(false);
+
+    consoleErrorSpy.mockRestore();
   });
 
   it("renders file type icons correctly for PDF, image, and code files", async () => {

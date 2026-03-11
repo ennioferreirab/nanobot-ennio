@@ -98,6 +98,14 @@ function hasExecutablePlanSteps(plan: ExecutionPlan | undefined): boolean {
   return Boolean(plan?.steps?.length);
 }
 
+function getDisplayFileKey(file: {
+  name: string;
+  subfolder: string;
+  sourceTaskId?: Id<"tasks">;
+}) {
+  return `${file.sourceTaskId ?? "local"}:${file.subfolder}:${file.name}`;
+}
+
 interface TaskDetailSheetProps {
   taskId: Id<"tasks"> | null;
   onClose: () => void;
@@ -118,6 +126,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
     tagAttributesList,
     tagAttrValues,
     mergedIntoTask,
+    directMergeSources,
     mergeSources,
     mergeSourceThreads,
     displayFiles,
@@ -158,6 +167,12 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
     createMergedTask,
     isCreatingMergeTask,
     createMergeTaskError,
+    addMergeSource,
+    isAddingMergeSource,
+    addMergeSourceError,
+    removeMergeSource,
+    isRemovingMergeSource,
+    removeMergeSourceError,
   } = actions;
 
   const { activePlan, localPlan, setLocalPlan, activeTab, setActiveTab } = planState;
@@ -210,14 +225,21 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
   const isMergeLockedSource = Boolean(task?.mergedIntoTaskId);
   const mergeCandidates = useQuery(
     api.tasks.searchMergeCandidates,
-    task ? { query: mergeQuery, excludeTaskId: task._id } : "skip",
+    task
+      ? task.isMergeTask
+        ? { query: mergeQuery, excludeTaskId: task._id, targetTaskId: task._id }
+        : { query: mergeQuery, excludeTaskId: task._id }
+      : "skip",
   );
-  const mergeAlias = task?.isMergeTask ? buildMergeAliasDisplay(mergeSources) : undefined;
+  const mergeAlias = task?.isMergeTask ? buildMergeAliasDisplay(directMergeSources) : undefined;
   const planForDisplay = activePlan ?? taskExecutionPlan ?? null;
   const hasManualMergePlanReady =
     taskStatus === "review" &&
     task?.isManual &&
     hasExecutablePlanSteps(localPlan ?? taskExecutionPlan);
+  const hasSourceThreads = (mergeSourceThreads?.length ?? 0) > 0;
+  const directSourceCount = directMergeSources?.length ?? 0;
+  const canRemoveDirectSources = directSourceCount > 2;
 
   // Track if user is at bottom via IntersectionObserver
   useEffect(() => {
@@ -247,6 +269,8 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
     setIsEditingDescription(false);
     setShowDeleteConfirm(false);
     setDeleteTaskError("");
+    setMergeQuery("");
+    setSelectedMergeTaskId("");
   }, [taskId]);
 
   const handleSaveTitle = async () => {
@@ -369,7 +393,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
 
   const handleDeleteFile = async (file: { name: string; subfolder: string }) => {
     if (!task || !isTaskLoaded) return;
-    const key = `${file.subfolder}-${file.name}`;
+    const key = getDisplayFileKey(file);
     setDeletingFiles((prev) => new Set(prev).add(key));
     setDeleteError("");
     try {
@@ -399,6 +423,26 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
       onTaskOpen?.(mergedTaskId);
     } catch {
       // error handled in hook state
+    }
+  };
+
+  const handleAddMergeSource = async () => {
+    if (!task || !isTaskLoaded || !selectedMergeTaskId) return;
+    try {
+      await addMergeSource(task._id, selectedMergeTaskId);
+      setSelectedMergeTaskId("");
+      setMergeQuery("");
+    } catch {
+      // error is set in the hook
+    }
+  };
+
+  const handleRemoveMergeSource = async (sourceTaskId: Id<"tasks">) => {
+    if (!task || !isTaskLoaded) return;
+    try {
+      await removeMergeSource(task._id, sourceTaskId);
+    } catch {
+      // error is set in the hook
     }
   };
 
@@ -926,12 +970,17 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                     <p className="text-sm text-muted-foreground text-center py-8">
                       Loading messages...
                     </p>
-                  ) : messages.length === 0 ? (
+                  ) : messages.length === 0 && !hasSourceThreads ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
                       No messages yet. Agent activity will appear here.
                     </p>
                   ) : (
                     <div className="flex flex-col gap-2">
+                      {messages.length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-8">
+                          No messages yet. Agent activity will appear here.
+                        </p>
+                      )}
                       {messages.map((msg) => (
                         <motion.div
                           key={msg._id}
@@ -1012,17 +1061,23 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                 <ScrollArea className="flex-1 px-6 py-4">
                   <div className="space-y-4">
                     {task?.isMergeTask ? (
-                      <div>
-                        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                          Merge Sources
-                        </h4>
-                        <div className="mt-2 space-y-2">
-                          {(mergeSources ?? []).map((source) => (
+                      <div className="space-y-4 rounded-md border border-border p-3">
+                        <div>
+                          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            Merge Sources
+                          </h4>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Manage direct source tasks for this merged task. Source labels are
+                            recalculated automatically after changes.
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          {(directMergeSources ?? []).map((source) => (
                             <div
                               key={source.taskId}
                               className="flex items-center gap-2 text-sm text-foreground"
                             >
-                              <span>
+                              <span className="flex-1 min-w-0">
                                 {source.label}: {source.taskTitle}
                               </span>
                               <button
@@ -1033,8 +1088,100 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                               >
                                 link
                               </button>
+                              {canRemoveDirectSources && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => void handleRemoveMergeSource(source.taskId)}
+                                  disabled={isRemovingMergeSource}
+                                  aria-label={`Remove merge source ${source.label}`}
+                                  className="h-7 px-2 text-destructive hover:text-destructive"
+                                >
+                                  {isRemovingMergeSource ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <X className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              )}
                             </div>
                           ))}
+                        </div>
+                        {!canRemoveDirectSources && (
+                          <p className="text-xs text-muted-foreground">
+                            Merged tasks must keep at least 2 direct sources.
+                          </p>
+                        )}
+                        {removeMergeSourceError && (
+                          <p className="text-xs text-red-500">{removeMergeSourceError}</p>
+                        )}
+
+                        <Separator />
+
+                        <div className="space-y-2">
+                          <div>
+                            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                              Attach Another Task
+                            </h4>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Add another eligible task as a direct source of this merge.
+                            </p>
+                          </div>
+                          <Input
+                            value={mergeQuery}
+                            onChange={(event) => setMergeQuery(event.target.value)}
+                            placeholder="Search task to attach..."
+                            disabled={isAddingMergeSource}
+                          />
+                          <div className="max-h-40 overflow-auto rounded-md border border-border">
+                            {(mergeCandidates ?? []).length === 0 ? (
+                              <p className="px-3 py-2 text-xs text-muted-foreground">
+                                No tasks available to attach.
+                              </p>
+                            ) : (
+                              (mergeCandidates ?? []).map((candidate) => (
+                                <button
+                                  key={candidate._id}
+                                  type="button"
+                                  onClick={() => setSelectedMergeTaskId(candidate._id)}
+                                  className={`flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-muted/50 ${
+                                    selectedMergeTaskId === candidate._id ? "bg-muted" : ""
+                                  }`}
+                                  disabled={isAddingMergeSource}
+                                >
+                                  <span>{candidate.title}</span>
+                                  {candidate.description && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {candidate.description}
+                                    </span>
+                                  )}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => void handleAddMergeSource()}
+                              disabled={!selectedMergeTaskId || isAddingMergeSource}
+                            >
+                              {isAddingMergeSource ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  Attaching...
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="h-3.5 w-3.5" />
+                                  Attach Task
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                          {addMergeSourceError && (
+                            <p className="text-xs text-red-500">{addMergeSourceError}</p>
+                          )}
                         </div>
                       </div>
                     ) : (
@@ -1370,7 +1517,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                           ) : (
                             <div className="flex flex-col gap-1">
                               {attachments.map((file) => {
-                                const key = `${file.subfolder}-${file.name}`;
+                                const key = getDisplayFileKey(file);
                                 const isDeleting = deletingFiles.has(key);
                                 return (
                                   <div
@@ -1425,7 +1572,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                             <div className="flex flex-col gap-1">
                               {outputs.map((file) => (
                                 <div
-                                  key={`${file.subfolder}-${file.name}`}
+                                  key={getDisplayFileKey(file)}
                                   className="flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer hover:bg-muted/50 animate-in fade-in duration-300"
                                   onClick={() => setViewerFile(file)}
                                 >

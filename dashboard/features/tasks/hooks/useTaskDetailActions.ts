@@ -98,6 +98,12 @@ export interface TaskDetailActionsResult {
   ) => Promise<Id<"tasks">>;
   isCreatingMergeTask: boolean;
   createMergeTaskError: string;
+  addMergeSource: (taskId: Id<"tasks">, sourceTaskId: Id<"tasks">) => Promise<void>;
+  isAddingMergeSource: boolean;
+  addMergeSourceError: string;
+  removeMergeSource: (taskId: Id<"tasks">, sourceTaskId: Id<"tasks">) => Promise<void>;
+  isRemovingMergeSource: boolean;
+  removeMergeSourceError: string;
 }
 
 /**
@@ -120,6 +126,8 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
   const createActivityMutation = useMutation(api.activities.create);
   const removeTagAttrValuesMutation = useMutation(api.tagAttributeValues.removeByTaskAndTag);
   const createMergedTaskMutation = useMutation(api.tasks.createMergedTask);
+  const addMergeSourceMutation = useMutation(api.tasks.addMergeSource);
+  const removeMergeSourceMutation = useMutation(api.tasks.removeMergeSource);
 
   const [isKickingOff, setIsKickingOff] = useState(false);
   const [kickOffError, setKickOffError] = useState("");
@@ -134,6 +142,10 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
   const [startInboxError, setStartInboxError] = useState("");
   const [isCreatingMergeTask, setIsCreatingMergeTask] = useState(false);
   const [createMergeTaskError, setCreateMergeTaskError] = useState("");
+  const [isAddingMergeSource, setIsAddingMergeSource] = useState(false);
+  const [addMergeSourceError, setAddMergeSourceError] = useState("");
+  const [isRemovingMergeSource, setIsRemovingMergeSource] = useState(false);
+  const [removeMergeSourceError, setRemoveMergeSourceError] = useState("");
 
   const approve = useCallback(
     async (taskId: Id<"tasks">) => {
@@ -310,6 +322,40 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
     [createMergedTaskMutation],
   );
 
+  const addMergeSource = useCallback(
+    async (taskId: Id<"tasks">, sourceTaskId: Id<"tasks">) => {
+      setIsAddingMergeSource(true);
+      setAddMergeSourceError("");
+      try {
+        await addMergeSourceMutation({ taskId, sourceTaskId });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        setAddMergeSourceError(`Attach failed: ${message}`);
+        throw err;
+      } finally {
+        setIsAddingMergeSource(false);
+      }
+    },
+    [addMergeSourceMutation],
+  );
+
+  const removeMergeSource = useCallback(
+    async (taskId: Id<"tasks">, sourceTaskId: Id<"tasks">) => {
+      setIsRemovingMergeSource(true);
+      setRemoveMergeSourceError("");
+      try {
+        await removeMergeSourceMutation({ taskId, sourceTaskId });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        setRemoveMergeSourceError(`Remove failed: ${message}`);
+        throw err;
+      } finally {
+        setIsRemovingMergeSource(false);
+      }
+    },
+    [removeMergeSourceMutation],
+  );
+
   return {
     approve,
     kickOff,
@@ -339,5 +385,11 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
     createMergedTask,
     isCreatingMergeTask,
     createMergeTaskError,
+    addMergeSource,
+    isAddingMergeSource,
+    addMergeSourceError,
+    removeMergeSource,
+    isRemovingMergeSource,
+    removeMergeSourceError,
   };
 }
