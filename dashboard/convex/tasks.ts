@@ -3,6 +3,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { v, ConvexError } from "convex/values";
 
+import { taskFileMetadataValidator, taskFilesValidator } from "./schema";
 import {
   isValidTaskTransition,
   logTaskCreated,
@@ -272,17 +273,7 @@ export const create = mutation({
     sourceAgent: v.optional(v.string()),
     autoTitle: v.optional(v.boolean()),
     supervisionMode: v.optional(v.union(v.literal("autonomous"), v.literal("supervised"))),
-    files: v.optional(
-      v.array(
-        v.object({
-          name: v.string(),
-          type: v.string(),
-          size: v.number(),
-          subfolder: v.string(),
-          uploadedAt: v.string(),
-        }),
-      ),
-    ),
+    files: taskFilesValidator,
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
@@ -1471,15 +1462,7 @@ export const clearAllDone = mutation({
 export const updateTaskOutputFiles = internalMutation({
   args: {
     taskId: v.id("tasks"),
-    outputFiles: v.array(
-      v.object({
-        name: v.string(),
-        type: v.string(),
-        size: v.number(),
-        subfolder: v.string(),
-        uploadedAt: v.string(),
-      }),
-    ),
+    outputFiles: v.array(taskFileMetadataValidator),
   },
   handler: async (ctx, { taskId, outputFiles }) => {
     const task = await ctx.db.get(taskId);
@@ -1495,15 +1478,7 @@ export const updateTaskOutputFiles = internalMutation({
 export const addTaskFiles = mutation({
   args: {
     taskId: v.id("tasks"),
-    files: v.array(
-      v.object({
-        name: v.string(),
-        type: v.string(),
-        size: v.number(),
-        subfolder: v.string(),
-        uploadedAt: v.string(),
-      }),
-    ),
+    files: v.array(taskFileMetadataValidator),
   },
   handler: async (ctx, { taskId, files }) => {
     const task = await ctx.db.get(taskId);
