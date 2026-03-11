@@ -21,7 +21,7 @@ const SAMPLE_JOB = {
   enabled: true,
   schedule: { kind: "every", everyMs: 60000, atMs: null, expr: null, tz: null },
   payload: { kind: "agent_turn", message: "Hello", deliver: true, channel: null, to: null },
-  state: { nextRunAtMs: null, lastRunAtMs: null, lastStatus: null, lastError: null },
+  state: { nextRunAtMs: null, lastRunAtMs: null, lastStatus: null, lastError: null, lastTaskId: "task-1" },
   createdAtMs: 0,
   updatedAtMs: 0,
   deleteAfterRun: false,
@@ -100,5 +100,6 @@ describe("GET /api/cron", () => {
     expect(job.schedule).toEqual({ kind: "cron", expr: "55 16 * * *", tz: "America/Sao_Paulo", atMs: null, everyMs: null });
     expect(job.payload.message).toBe("Boa tarde!");
     expect(job.state.lastStatus).toBeNull();
+    expect(job.state.lastTaskId).toBeNull();
   });
 });

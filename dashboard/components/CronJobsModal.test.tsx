@@ -14,6 +14,7 @@ const SAMPLE_JOB = {
     lastRunAtMs: Date.now() - 7200000,
     lastStatus: "ok" as const,
     lastError: null,
+    lastTaskId: null,
   },
   createdAtMs: 0,
   updatedAtMs: 0,
@@ -176,7 +177,7 @@ describe("CronJobsModal", () => {
     mockFetchWith({ jobs: [SAMPLE_JOB] });
     render(<CronJobsModal open={true} onClose={vi.fn()} onTaskClick={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("Check GitHub Stars")).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: "Open originating task" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open related task" })).not.toBeInTheDocument();
   });
 
   it("clicking task link button calls onClose and onTaskClick with correct id", async () => {
@@ -186,8 +187,23 @@ describe("CronJobsModal", () => {
     const onTaskClick = vi.fn();
     render(<CronJobsModal open={true} onClose={onClose} onTaskClick={onTaskClick} />);
     await waitFor(() => expect(screen.getByText("Check GitHub Stars")).toBeInTheDocument());
-    await userEvent.click(screen.getByRole("button", { name: "Open originating task" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open related task" }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onTaskClick).toHaveBeenCalledWith("task-abc-123");
+  });
+
+  it("prefers lastTaskId over originating taskId in the Task column", async () => {
+    const jobWithLastRunTask = {
+      ...SAMPLE_JOB,
+      payload: { ...SAMPLE_JOB.payload, taskId: "task-origin-1" },
+      state: { ...SAMPLE_JOB.state, lastTaskId: "task-last-run-9" },
+    };
+    mockFetchWith({ jobs: [jobWithLastRunTask] });
+    const onClose = vi.fn();
+    const onTaskClick = vi.fn();
+    render(<CronJobsModal open={true} onClose={onClose} onTaskClick={onTaskClick} />);
+    await waitFor(() => expect(screen.getByText("Check GitHub Stars")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: "Open related task" }));
+    expect(onTaskClick).toHaveBeenCalledWith("task-last-run-9");
   });
 });

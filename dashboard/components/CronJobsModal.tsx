@@ -45,6 +45,7 @@ interface CronJobState {
   lastRunAtMs: number | null;
   lastStatus: "ok" | "error" | "skipped" | null;
   lastError: string | null;
+  lastTaskId: string | null;
 }
 
 interface CronJob {
@@ -150,6 +151,7 @@ export function CronJobsModal({ open, onClose, onTaskClick }: Props) {
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const resolveTaskId = (job: CronJob) => job.state.lastTaskId ?? job.payload.taskId;
 
   useEffect(() => {
     if (!open) return;
@@ -418,10 +420,10 @@ export function CronJobsModal({ open, onClose, onTaskClick }: Props) {
                       )}
                     </td>
                     <td className="py-2 pr-4">
-                      {job.payload.taskId ? (
-                        <Button variant="ghost" size="icon" aria-label="Open originating task"
+                      {resolveTaskId(job) ? (
+                        <Button variant="ghost" size="icon" aria-label="Open related task"
                           className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          onClick={() => { onClose(); onTaskClick(job.payload.taskId!); }}>
+                          onClick={() => { onClose(); onTaskClick(resolveTaskId(job)!); }}>
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Button>
                       ) : (

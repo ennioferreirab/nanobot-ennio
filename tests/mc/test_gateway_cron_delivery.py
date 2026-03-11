@@ -133,7 +133,8 @@ class TestOnCronJobDelivery:
 
         job = _make_cron_job(deliver=True, channel="telegram", to="123456", message="hi")
         captured["bridge"].mutation = MagicMock(return_value="task-reg-1")
-        await on_job(job)
+        returned_task_id = await on_job(job)
+        assert returned_task_id == "task-reg-1"
 
         on_task_completed = captured["executor_kwargs"].get("on_task_completed")
         assert on_task_completed is not None
@@ -256,15 +257,17 @@ class TestOnCronJobDelivery:
         assert on_job is not None
 
         job = _make_cron_job(agent="youtube-summarizer", message="summarize videos")
-        await on_job(job)
+        returned_task_id = await on_job(job)
+        assert returned_task_id is None
 
-        # Verify bridge.mutation was called with assigned_agent
-        captured["bridge"].mutation.assert_called_once()
-        call_args = captured["bridge"].mutation.call_args
-        assert call_args[0][0] == "tasks:create"
-        create_args = call_args[0][1]
+        create_calls = [
+            call for call in captured["bridge"].mutation.call_args_list if call.args[0] == "tasks:create"
+        ]
+        assert len(create_calls) == 1
+        create_args = create_calls[0].args[1]
         assert create_args["title"] == "summarize videos"
         assert create_args["assigned_agent"] == "youtube-summarizer"
+        assert create_args["active_cron_job_id"] == "job1"
 
     @pytest.mark.asyncio
     async def test_cron_job_without_agent_creates_task_without_assigned_agent(self):
@@ -278,10 +281,13 @@ class TestOnCronJobDelivery:
         job = _make_cron_job(message="do something")
         await on_job(job)
 
-        captured["bridge"].mutation.assert_called_once()
-        call_args = captured["bridge"].mutation.call_args
-        create_args = call_args[0][1]
+        create_calls = [
+            call for call in captured["bridge"].mutation.call_args_list if call.args[0] == "tasks:create"
+        ]
+        assert len(create_calls) == 1
+        create_args = create_calls[0].args[1]
         assert "assigned_agent" not in create_args
+        assert create_args["active_cron_job_id"] == "job1"
 
     @pytest.mark.asyncio
     async def test_cron_job_requeue_fallback_with_agent(self):
@@ -304,6 +310,32 @@ class TestOnCronJobDelivery:
         assert call_args[0][0] == "tasks:create"
         create_args = call_args[0][1]
         assert create_args.get("assigned_agent") == "youtube-summarizer"
+        assert create_args["active_cron_job_id"] == "job1"
+
+    @pytest.mark.asyncio
+    async def test_cron_job_requeue_marks_active_cron_job_before_assignment(self):
+        captured: dict = {}
+        await _run_gateway_and_capture(captured)
+
+        on_job = captured.get("on_job")
+        assert on_job is not None
+
+        captured["bridge"].query = MagicMock(
+            return_value={"_id": "t1", "status": "done", "assigned_agent": "nanobot"}
+        )
+        captured["bridge"].mutation = MagicMock(return_value=None)
+        captured["bridge"].send_message = MagicMock()
+        captured["bridge"].update_task_status = MagicMock()
+
+        job = _make_cron_job(task_id="t1", message="rerun")
+        returned_task_id = await on_job(job)
+
+        assert returned_task_id == "t1"
+        captured["bridge"].mutation.assert_called_once_with(
+            "tasks:markActiveCronJob",
+            {"task_id": "t1", "cron_job_id": "job1"},
+        )
+        captured["bridge"].update_task_status.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_on_task_completed_delivers_when_result_non_empty(self):

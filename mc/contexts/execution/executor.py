@@ -127,6 +127,15 @@ def _provider_error_action(exc: Exception) -> str:
     return "Check provider configuration in ~/.nanobot/config.json"
 
 
+def _resolve_completion_status(task_data: dict[str, Any] | None) -> TaskStatus:
+    """Cron-triggered runs should finish directly in done."""
+    if not isinstance(task_data, dict):
+        return TaskStatus.REVIEW
+    if task_data.get("active_cron_job_id") or task_data.get("activeCronJobId"):
+        return TaskStatus.DONE
+    return TaskStatus.REVIEW
+
+
 def _make_provider(model: str | None = None):
     """Create the LLM provider from the user's nanobot config.
 
@@ -1126,9 +1135,7 @@ class TaskExecutor(CCExecutorMixin):
                         cron_parent_task_id,
                     )
 
-            # Execution completion never implies approval. Tasks always land in
-            # review until a human explicitly approves them.
-            final_status = TaskStatus.REVIEW
+            final_status = _resolve_completion_status(task_data)
 
             # Activity event (task_completed) is written by the Convex
             # tasks:updateStatus mutation — no duplicate create_activity here.

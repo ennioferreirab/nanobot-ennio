@@ -234,17 +234,18 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
 
     async def _requeue_cron_task(
         b: "ConvexBridge",
+        cron_job_id: str,
         task_id: str,
         message: str,
         agent: str | None = None,
-    ) -> bool:
+    ) -> str | None:
         """Re-queue an existing task for cron execution.
 
         Injects the cron trigger message into the task's thread so the agent
         sees it as a new user turn, then resets status to 'assigned' so the
         executor picks it up again. Skips if the task is already active.
 
-        Returns True if the task was actually re-queued, False otherwise.
+        Returns the task id that will run, or None if the task was skipped.
         """
         from mc.types import (
             AuthorType,
@@ -262,8 +263,8 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
             create_args: dict = {"title": message}
             if agent:
                 create_args["assigned_agent"] = agent
-            await asyncio.to_thread(b.mutation, "tasks:create", create_args)
-            return False
+            create_args["active_cron_job_id"] = cron_job_id
+            return await asyncio.to_thread(b.mutation, "tasks:create", create_args)
 
         if not task:
             logger.warning(
@@ -273,8 +274,8 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
             create_args = {"title": message}
             if agent:
                 create_args["assigned_agent"] = agent
-            await asyncio.to_thread(b.mutation, "tasks:create", create_args)
-            return False
+            create_args["active_cron_job_id"] = cron_job_id
+            return await asyncio.to_thread(b.mutation, "tasks:create", create_args)
 
         current_status = task.get("status", "")
         if current_status in ("in_progress", "assigned", "deleted"):
@@ -283,7 +284,7 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
                 task_id,
                 current_status,
             )
-            return False
+            return None
 
         agent_name = agent or task.get("assigned_agent") or NANOBOT_AGENT_NAME
         if is_lead_agent(agent_name):
@@ -307,6 +308,12 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
 
         # Reset task to 'assigned' — the executor will pick it up and run the agent
         await asyncio.to_thread(
+            b.mutation,
+            "tasks:markActiveCronJob",
+            {"task_id": task_id, "cron_job_id": cron_job_id},
+        )
+
+        await asyncio.to_thread(
             b.update_task_status,
             task_id,
             "assigned",
@@ -316,7 +323,7 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
         if _plan_negotiation_supervisor is not None:
             _plan_negotiation_supervisor.mark_cron_requeued(task_id)
         logger.info("[gateway] Cron re-queued task %s → assigned to %s", task_id, agent_name)
-        return True
+        return task_id
 
     async def on_cron_job(job: CronJob) -> str | None:
         """Re-queue the originating task (if linked) or create a new task when a cron job fires."""
@@ -324,19 +331,19 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
         task_id_for_delivery: str | None = None
         try:
             if job.payload.task_id:
-                requeued = await _requeue_cron_task(
+                task_id_for_delivery = await _requeue_cron_task(
                     bridge,
+                    job.id,
                     job.payload.task_id,
                     job.payload.message,
                     agent=job.payload.agent,
                 )
-                if requeued:
-                    task_id_for_delivery = job.payload.task_id
             else:
                 # No linked task — create a new task (classic cron behavior)
                 create_args: dict = {"title": job.payload.message}
                 if job.payload.agent:
                     create_args["assigned_agent"] = job.payload.agent
+                create_args["active_cron_job_id"] = job.id
                 new_id = await asyncio.to_thread(
                     bridge.mutation,
                     "tasks:create",
@@ -359,7 +366,7 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
                 job.payload.to,
             )
 
-        return None
+        return task_id_for_delivery
 
     cron.on_job = on_cron_job
     await cron.start()

@@ -744,6 +744,24 @@ class TestCompleteCCTask:
         status_args = bridge.update_task_status.call_args[0]
         assert status_args[1] == TaskStatus.REVIEW
 
+    @pytest.mark.asyncio
+    async def test_complete_cron_run_transitions_to_done(self):
+        bridge = _make_bridge()
+        executor = _make_executor(bridge)
+        result = _cc_result(output="Great success", cost_usd=0.001)
+
+        await executor._complete_cc_task(
+            "t1",
+            "My task",
+            "agent-x",
+            result,
+            task_data={"active_cron_job_id": "cron-job-1"},
+        )
+
+        bridge.update_task_status.assert_called_once()
+        status_args = bridge.update_task_status.call_args[0]
+        assert status_args[1] == TaskStatus.DONE
+
 
 # ---------------------------------------------------------------------------
 # _on_task_completed callback
