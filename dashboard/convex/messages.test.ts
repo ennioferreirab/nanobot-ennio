@@ -252,5 +252,27 @@ describe("messages.postUserPlanMessage", () => {
       kind: "feedback",
       planGeneratedAt: "2026-03-10T10:00:00Z",
     });
+    expect(msgInsert?.value.leadAgentConversation).toBe(true);
+  });
+
+  it("marks the first lead-agent conversation message even before a plan exists", async () => {
+    const handler = getPlanHandler();
+    const { ctx, inserts } = makeCtx({
+      _id: "task-1",
+      status: "review",
+      title: "Manual review task",
+      isManual: true,
+    });
+
+    await handler(ctx, {
+      taskId: "task-1",
+      content: "Please draft the first execution plan for this task.",
+    });
+
+    const msgInsert = inserts.find((entry) => entry.table === "messages");
+    expect(msgInsert?.value.authorType).toBe("user");
+    expect(msgInsert?.value.type).toBe("user_message");
+    expect(msgInsert?.value.planReview).toBeUndefined();
+    expect(msgInsert?.value.leadAgentConversation).toBe(true);
   });
 });

@@ -46,6 +46,8 @@ const planReviewValidator = v.optional(v.object({
   decision: v.optional(v.union(v.literal("approved"), v.literal("rejected"))),
 }));
 
+const leadAgentConversationValidator = v.optional(v.boolean());
+
 function assertTaskThreadWritable(task: { status: string; mergedIntoTaskId?: string }) {
   if (task.status === "deleted") {
     throw new ConvexError("Cannot send messages on deleted tasks");
@@ -103,6 +105,7 @@ export const create = internalMutation({
     artifacts: artifactsValidator,
     fileAttachments: fileAttachmentsValidator,
     planReview: planReviewValidator,
+    leadAgentConversation: leadAgentConversationValidator,
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("messages", {
@@ -117,6 +120,7 @@ export const create = internalMutation({
       artifacts: args.artifacts,
       fileAttachments: args.fileAttachments,
       planReview: args.planReview,
+      leadAgentConversation: args.leadAgentConversation,
     });
   },
 });
@@ -217,6 +221,7 @@ export const postLeadAgentMessage = internalMutation({
       messageType: "system_event", // Legacy field
       type: args.type,             // New unified thread type
       planReview: args.planReview,
+      leadAgentConversation: true,
       timestamp,
     });
 
@@ -289,6 +294,7 @@ export const postUserPlanMessage = mutation({
       type: "user_message",
       fileAttachments: args.fileAttachments,
       planReview,
+      leadAgentConversation: true,
       timestamp,
     });
 

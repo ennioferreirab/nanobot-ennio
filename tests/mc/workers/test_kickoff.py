@@ -248,7 +248,7 @@ class TestKickoffWorkerResume:
                 {
                     "id": "step-1",
                     "title": "Do something",
-                    "order": 1,
+                    "order": "1",
                     "status": StepStatus.COMPLETED,
                     "blocked_by": [],
                 }
@@ -448,3 +448,44 @@ class TestKickoffWorkerProcessBatch:
 
         # Should skip because ID was pre-registered
         materializer.materialize.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reprocesses_same_task_id_when_updated_at_changes(self) -> None:
+        bridge = _make_bridge()
+        bridge.get_steps_by_task.return_value = [
+            {"id": "step-1", "status": StepStatus.PLANNED, "blocked_by": []},
+        ]
+        materializer = _make_materializer()
+        dispatcher = _make_dispatcher()
+        worker = KickoffResumeWorker(_make_ctx(bridge), materializer, dispatcher)
+
+        scheduled_coroutines: list[object] = []
+
+        def _capture_create_task(coro):
+            scheduled_coroutines.append(coro)
+            coro.close()
+            return MagicMock()
+
+        task = {
+            "id": "task-1",
+            "title": "Resumed",
+            "updated_at": "2026-03-11T06:00:00Z",
+            "execution_plan": _make_plan_dict(),
+        }
+        updated_task = {
+            **task,
+            "updated_at": "2026-03-11T06:00:05Z",
+        }
+
+        with (
+            patch("mc.workers.kickoff.asyncio.to_thread", new=_sync_to_thread),
+            patch(
+                "mc.workers.kickoff.asyncio.create_task",
+                side_effect=_capture_create_task,
+            ),
+        ):
+            await worker.process_batch([task])
+            await worker.process_batch([updated_task])
+
+        materializer.materialize.assert_not_called()
+        assert len(scheduled_coroutines) == 2

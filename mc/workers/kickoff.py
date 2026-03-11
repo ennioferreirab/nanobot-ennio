@@ -26,6 +26,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _coerce_order(value: Any) -> int | None:
+    """Best-effort coercion for step order values coming from Convex."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_title(value: Any) -> str:
+    """Normalize step titles for matching existing materialized steps."""
+    return str(value or "").strip()
+
+
 class KickoffResumeWorker:
     """Watches for kicked-off or resumed tasks that need step dispatch."""
 
@@ -41,10 +54,12 @@ class KickoffResumeWorker:
         self._bridge = ctx.bridge
         self._plan_materializer = plan_materializer
         self._step_dispatcher = step_dispatcher
-        # Shared with planning worker to avoid double-dispatch
+        # Shared with planning worker to avoid double-dispatch on the first
+        # in_progress observation after autonomous planning.
         self._known_kickoff_ids = (
             known_kickoff_ids if known_kickoff_ids is not None else set()
         )
+        self._processed_signatures: dict[str, str] = {}
 
     async def process_batch(self, tasks: list[dict[str, Any]]) -> None:
         """Process a batch of in_progress tasks from a subscription update.
@@ -55,15 +70,29 @@ class KickoffResumeWorker:
         2. Resume (resumeTask): task has existing steps in assigned/blocked status
            (already materialized) -> dispatch_steps to continue execution.
         """
-        # Prune IDs no longer in_progress so re-entries are handled.
+        # Prune state for tasks that are no longer in_progress so re-entries are handled.
         current_ids = {t.get("id") for t in tasks if t.get("id")}
         self._known_kickoff_ids &= current_ids
+        self._processed_signatures = {
+            task_id: signature
+            for task_id, signature in self._processed_signatures.items()
+            if task_id in current_ids
+        }
 
         for task_data in tasks:
             task_id = task_data.get("id")
-            if not task_id or task_id in self._known_kickoff_ids:
+            if not task_id:
                 continue
-            self._known_kickoff_ids.add(task_id)
+            signature = self._task_signature(task_data)
+
+            if task_id in self._known_kickoff_ids and task_id not in self._processed_signatures:
+                self._processed_signatures[task_id] = signature
+                self._known_kickoff_ids.discard(task_id)
+                continue
+
+            if self._processed_signatures.get(task_id) == signature:
+                continue
+            self._processed_signatures[task_id] = signature
 
             # Only process tasks with an execution plan
             if not task_data.get("execution_plan"):
@@ -77,6 +106,18 @@ class KickoffResumeWorker:
                     task_id,
                     exc_info=True,
                 )
+
+    @staticmethod
+    def _task_signature(task_data: dict[str, Any]) -> str:
+        """Build a version signature so fast review/in_progress flips are reprocessed."""
+        updated_at = task_data.get("updated_at") or task_data.get("updatedAt") or ""
+        execution_plan = task_data.get("execution_plan") or {}
+        generated_at = ""
+        if isinstance(execution_plan, dict):
+            generated_at = str(
+                execution_plan.get("generated_at") or execution_plan.get("generatedAt") or ""
+            )
+        return f"{updated_at}|{generated_at}"
 
     async def _process_task(
         self, task_id: str, task_data: dict[str, Any]
@@ -230,8 +271,8 @@ class KickoffResumeWorker:
         used_step_ids: set[str] = set()
         existing_by_order: dict[int, list[dict[str, Any]]] = {}
         for step in steps:
-            order = step.get("order")
-            if isinstance(order, int):
+            order = _coerce_order(step.get("order"))
+            if order is not None:
                 existing_by_order.setdefault(order, []).append(step)
 
         temp_id_to_real_id: dict[str, str] = {}
@@ -250,7 +291,11 @@ class KickoffResumeWorker:
                 if step.get("id") and str(step.get("id")) not in used_step_ids
             ]
             matched_step = next(
-                (step for step in candidates if step.get("title") == plan_step.title),
+                (
+                    step
+                    for step in candidates
+                    if _normalize_title(step.get("title")) == _normalize_title(plan_step.title)
+                ),
                 candidates[0] if len(candidates) == 1 else None,
             )
             if matched_step and matched_step.get("id"):
