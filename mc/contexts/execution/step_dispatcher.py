@@ -51,6 +51,15 @@ def _coerce_step_run_result(value: Any) -> tuple[str, bool, str | None]:
     return content, is_error, error_message
 
 
+def _resolve_completion_status(task_data: dict[str, Any] | None) -> TaskStatus:
+    """Cron-triggered runs should finish directly in done."""
+    if not isinstance(task_data, dict):
+        return TaskStatus.REVIEW
+    if task_data.get("active_cron_job_id") or task_data.get("activeCronJobId"):
+        return TaskStatus.DONE
+    return TaskStatus.REVIEW
+
+
 def _maybe_inject_orientation(
     agent_name: str,
     agent_prompt: str | None,
@@ -236,22 +245,29 @@ class StepDispatcher:
             )
             if all_completed:
                 step_count = len(final_steps)
+                task_data = await asyncio.to_thread(
+                    self._bridge.query,
+                    "tasks:getById",
+                    {"task_id": task_id},
+                )
+                final_status = _resolve_completion_status(task_data)
                 await asyncio.to_thread(
                     self._bridge.update_task_status,
                     task_id,
-                    TaskStatus.REVIEW,
+                    final_status,
                     None,
                     f"All {step_count} steps completed",
                 )
-                await asyncio.to_thread(
-                    self._bridge.create_activity,
-                    ActivityEventType.REVIEW_REQUESTED,
-                    (
-                        f"Execution completed -- all {step_count} steps finished; "
-                        "awaiting explicit approval"
-                    ),
-                    task_id,
-                )
+                if final_status == TaskStatus.REVIEW:
+                    await asyncio.to_thread(
+                        self._bridge.create_activity,
+                        ActivityEventType.REVIEW_REQUESTED,
+                        (
+                            f"Execution completed -- all {step_count} steps finished; "
+                            "awaiting explicit approval"
+                        ),
+                        task_id,
+                    )
         except Exception as exc:
             logger.error(
                 "[dispatcher] Dispatch failed for task %s",

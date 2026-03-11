@@ -53,6 +53,15 @@ def _human_size(bytes_count: int) -> str:
     return f"{bytes_count / (1024 * 1024):.1f} MB"
 
 
+def _resolve_completion_status(task_data: dict[str, Any] | None) -> TaskStatus:
+    """Cron-triggered runs should finish directly in done."""
+    if not isinstance(task_data, dict):
+        return TaskStatus.REVIEW
+    if task_data.get("active_cron_job_id") or task_data.get("activeCronJobId"):
+        return TaskStatus.DONE
+    return TaskStatus.REVIEW
+
+
 class CCExecutorMixin:
     """Mixin providing Claude Code backend methods for TaskExecutor.
 
@@ -315,7 +324,7 @@ class CCExecutorMixin:
             )
         else:
             await self._complete_cc_task(
-                task_id, title, agent_name, result, trust_level=trust_level
+                task_id, title, agent_name, result, task_data=task_data, trust_level=trust_level
             )
             try:
                 artifacts = await asyncio.to_thread(collect_output_artifacts, task_id, pre_snapshot)
@@ -503,6 +512,7 @@ class CCExecutorMixin:
         title: str,
         agent_name: str,
         result: "CCTaskResult",
+        task_data: dict[str, Any] | None = None,
         trust_level: str = "autonomous",
     ) -> None:
         """Post completion message, cost activity, store session, and transition task status."""
@@ -530,9 +540,7 @@ class CCExecutorMixin:
         if result.session_id:
             await self._store_cc_session(agent_name, task_id, result.session_id)
 
-        # Execution completion never implies approval. Tasks always land in
-        # review until a human explicitly approves them.
-        final_status = TaskStatus.REVIEW
+        final_status = _resolve_completion_status(task_data)
         await asyncio.to_thread(
             self._bridge.update_task_status,
             task_id,

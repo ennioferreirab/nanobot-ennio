@@ -73,7 +73,7 @@ def test_parse_old_job_without_agent_defaults_none(tmp_path) -> None:
                     "taskId": None,
                     # intentionally missing "agent" key
                 },
-                "state": {"nextRunAtMs": None, "lastRunAtMs": None, "lastStatus": None, "lastError": None},
+                "state": {"nextRunAtMs": None, "lastRunAtMs": None, "lastStatus": None, "lastError": None, "lastTaskId": None},
                 "createdAtMs": 0,
                 "updatedAtMs": 0,
                 "deleteAfterRun": False,
@@ -86,3 +86,25 @@ def test_parse_old_job_without_agent_defaults_none(tmp_path) -> None:
     jobs = service.list_jobs(include_disabled=True)
     assert len(jobs) == 1
     assert jobs[0].payload.agent is None
+
+
+@pytest.mark.asyncio
+async def test_execute_job_persists_last_task_id(tmp_path) -> None:
+    store_path = tmp_path / "cron" / "jobs.json"
+
+    async def _on_job(_job) -> str:
+        return "task-123"
+
+    service = CronService(store_path, on_job=_on_job)
+    job = service.add_job(
+        name="persist task",
+        schedule=CronSchedule(kind="every", every_ms=60_000),
+        message="hello",
+    )
+
+    await service._execute_job(job)
+    service._save_store()
+
+    reloaded = CronService(store_path).list_jobs(include_disabled=True)
+    assert len(reloaded) == 1
+    assert reloaded[0].state.last_task_id == "task-123"

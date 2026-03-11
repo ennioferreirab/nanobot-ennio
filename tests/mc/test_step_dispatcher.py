@@ -312,6 +312,41 @@ class TestStepDispatcher:
         )
 
     @pytest.mark.asyncio
+    async def test_dispatch_single_step_completes_cron_task_to_done(self) -> None:
+        bridge, state = _make_stateful_bridge([_step("step-1", "Analyze", order=1)])
+        bridge.query.return_value = {
+            "title": "Main Task",
+            "status": "in_progress",
+            "active_cron_job_id": "cron-job-1",
+        }
+        dispatcher = StepDispatcher(bridge)
+
+        snap_patch, collect_patch = _patch_executor_helpers()
+        with (
+            patch("mc.contexts.execution.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
+            _patch_context_builder(),
+            patch(
+                "mc.contexts.execution.step_dispatcher._run_step_agent",
+                new=AsyncMock(return_value="step output"),
+            ),
+            snap_patch,
+            collect_patch,
+        ):
+            await dispatcher.dispatch_steps("task-1", ["step-1"])
+
+        assert state["step-1"]["status"] == StepStatus.COMPLETED
+        bridge.update_task_status.assert_called_once_with(
+            "task-1",
+            TaskStatus.DONE,
+            None,
+            "All 1 steps completed",
+        )
+        assert not any(
+            call.args[0] == ActivityEventType.REVIEW_REQUESTED
+            for call in bridge.create_activity.call_args_list
+        )
+
+    @pytest.mark.asyncio
     async def test_dispatch_human_step_stays_assigned_and_does_not_complete_task(self) -> None:
         """Human steps must NEVER spawn a process, change status, or auto-complete.
 

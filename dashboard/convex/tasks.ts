@@ -270,6 +270,7 @@ export const create = mutation({
     isManual: v.optional(v.boolean()),
     boardId: v.optional(v.id("boards")),
     cronParentTaskId: v.optional(v.string()),
+    activeCronJobId: v.optional(v.string()),
     sourceAgent: v.optional(v.string()),
     autoTitle: v.optional(v.boolean()),
     supervisionMode: v.optional(v.union(v.literal("autonomous"), v.literal("supervised"))),
@@ -315,6 +316,7 @@ export const create = mutation({
       ...(isManual ? { isManual: true } : {}),
       ...(boardId ? { boardId } : {}),
       ...(args.cronParentTaskId !== undefined ? { cronParentTaskId: args.cronParentTaskId } : {}),
+      ...(args.activeCronJobId !== undefined ? { activeCronJobId: args.activeCronJobId } : {}),
       ...(args.sourceAgent ? { sourceAgent: args.sourceAgent } : {}),
       ...(args.files ? { files: args.files } : {}),
       ...(args.autoTitle ? { autoTitle: true } : {}),
@@ -486,6 +488,24 @@ export const updateExecutionPlan = internalMutation({
     }
     await ctx.db.patch(args.taskId, {
       executionPlan: args.executionPlan,
+      updatedAt: new Date().toISOString(),
+    });
+  },
+});
+
+export const markActiveCronJob = internalMutation({
+  args: {
+    taskId: v.id("tasks"),
+    cronJobId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new ConvexError("Task not found");
+    }
+
+    await ctx.db.patch(args.taskId, {
+      activeCronJobId: args.cronJobId,
       updatedAt: new Date().toISOString(),
     });
   },
@@ -1286,6 +1306,9 @@ export const updateStatus = internalMutation({
     }
     if (args.awaitingKickoff !== undefined) {
       patch.awaitingKickoff = args.awaitingKickoff || undefined;
+    }
+    if (["done", "review", "crashed", "failed", "deleted"].includes(newStatus)) {
+      patch.activeCronJobId = undefined;
     }
     await ctx.db.patch(args.taskId, patch);
 

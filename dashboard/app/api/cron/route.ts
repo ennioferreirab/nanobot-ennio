@@ -7,7 +7,15 @@ type RawJob = Record<string, unknown>;
 
 function normalizeJob(raw: RawJob): RawJob {
   // Already new format — has nested schedule/payload/state
-  if (raw.schedule && raw.payload && raw.state) return raw;
+  if (raw.schedule && raw.payload && raw.state) {
+    return {
+      ...raw,
+      state: {
+        ...(raw.state as Record<string, unknown>),
+        lastTaskId: (raw.state as Record<string, unknown>).lastTaskId ?? null,
+      },
+    };
+  }
 
   // Legacy flat format: { id, cron_expr, tz, message, created_at, enabled }
   const createdAtMs =
@@ -42,6 +50,7 @@ function normalizeJob(raw: RawJob): RawJob {
       lastRunAtMs: null,
       lastStatus: null,
       lastError: null,
+      lastTaskId: null,
     },
     createdAtMs,
     updatedAtMs: raw.updatedAtMs ?? 0,

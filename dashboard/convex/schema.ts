@@ -65,6 +65,7 @@ export default defineSchema({
     awaitingKickoff: v.optional(v.boolean()),
     deletedAt: v.optional(v.string()),
     previousStatus: v.optional(v.string()),
+    activeCronJobId: v.optional(v.string()),
     boardId: v.optional(v.id("boards")),
     cronParentTaskId: v.optional(v.string()),
     sourceAgent: v.optional(v.string()),

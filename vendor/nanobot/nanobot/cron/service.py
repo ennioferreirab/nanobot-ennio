@@ -93,6 +93,7 @@ def _parse_raw_job(j: dict) -> CronJob:
         last_run_at_ms=raw_state.get("lastRunAtMs"),
         last_status=raw_state.get("lastStatus"),
         last_error=raw_state.get("lastError"),
+        last_task_id=raw_state.get("lastTaskId"),
     )
 
     # --- id ---
@@ -213,6 +214,7 @@ class CronService:
                         "lastRunAtMs": j.state.last_run_at_ms,
                         "lastStatus": j.state.last_status,
                         "lastError": j.state.last_error,
+                        "lastTaskId": j.state.last_task_id,
                     },
                     "createdAtMs": j.created_at_ms,
                     "updatedAtMs": j.updated_at_ms,
@@ -309,6 +311,7 @@ class CronService:
 
             job.state.last_status = "ok"
             job.state.last_error = None
+            job.state.last_task_id = response if isinstance(response, str) and response else None
             logger.info("Cron: job '{}' completed", job.name)
 
         except Exception as e:
