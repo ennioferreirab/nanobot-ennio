@@ -923,6 +923,7 @@ Backend guardrails:
 Dashboard guardrails:
 
 - `dashboard/tests/architecture.test.ts`
+- `dashboard/e2e/dashboard-smoke.spec.ts`
 
 What these guardrails enforce today:
 
@@ -938,6 +939,7 @@ What these guardrails enforce today:
 - dashboard feature components avoid direct `convex/react` imports
 - dashboard hooks do not import feature UI components
 - dashboard feature owners do not import removed root hook aliases
+- the main dashboard shell journey remains executable in a committed browser regression
 
 ## Current Boundaries and Expectations
 

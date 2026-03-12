@@ -32,18 +32,18 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { ThreadMessage } from "@/features/thread/components/ThreadMessage";
-import { ExecutionPlanTab, type ExecutionPlanViewMode } from "@/features/tasks/components/ExecutionPlanTab";
+import { ThreadMessage } from "@/components/ThreadMessage";
+import { ExecutionPlanTab, type ExecutionPlanViewMode } from "@/components/ExecutionPlanTab";
 import { TAG_COLORS } from "@/lib/constants";
 import { InlineRejection } from "@/components/InlineRejection";
 import { DocumentViewerModal } from "@/components/DocumentViewerModal";
-import { ThreadInput } from "@/features/thread/components/ThreadInput";
+import { ThreadInput } from "@/components/ThreadInput";
 import { TagAttributeEditor } from "@/components/TagAttributeEditor";
 import { PlanReviewPanel } from "@/features/tasks/components/PlanReviewPanel";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useTaskDetailView } from "@/features/tasks/hooks/useTaskDetailView";
-import { useTaskDetailActions } from "@/features/tasks/hooks/useTaskDetailActions";
-import { usePlanEditorState } from "@/features/tasks/hooks/usePlanEditorState";
+import { useTaskDetailView } from "@/hooks/useTaskDetailView";
+import { useTaskDetailActions } from "@/hooks/useTaskDetailActions";
+import { usePlanEditorState } from "@/hooks/usePlanEditorState";
 import type { ExecutionPlan } from "@/lib/types";
 
 const formatSize = (bytes: number) =>
@@ -191,7 +191,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
       setShowDeleteConfirm(false);
       onClose();
     } catch {
-      // The action hook owns mutation-level error state.
+      // error state is owned by the action hook
     }
   };
 
@@ -1161,9 +1161,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                       liveSteps={liveSteps ?? undefined}
                       messages={messages}
                       onPrimaryAction={planPanelPrimaryAction?.onClick}
-                      onRejectPlan={(content) =>
-                        task ? submitPlanReviewFeedback(task._id, content) : Promise.resolve()
-                      }
+                      onRejectPlan={(content) => submitPlanReviewFeedback(task._id, content)}
                       task={task}
                     />
                   )}
