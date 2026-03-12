@@ -164,11 +164,11 @@ development_status:
   # Finishes the useful decoupling work still missing in the integrated root:
   # removes backend compatibility roots, closes dashboard Convex boundaries,
   # deletes ambiguous dashboard wrappers/hooks, and adds durable browser regression.
-  epic-22: in-progress
-  22-1-remove-backend-legacy-compatibility-packages: ready-for-dev
-  22-2-close-dashboard-feature-convex-boundaries: ready-for-dev
-  22-3-delete-dashboard-legacy-wrappers-and-root-feature-hooks: ready-for-dev
-  22-4-split-hotspots-and-add-versioned-functional-regression: ready-for-dev
+  epic-22: done
+  22-1-remove-backend-legacy-compatibility-packages: done
+  22-2-close-dashboard-feature-convex-boundaries: done
+  22-3-delete-dashboard-legacy-wrappers-and-root-feature-hooks: done
+  22-4-split-hotspots-and-add-versioned-functional-regression: done
   epic-22-retrospective: optional
 
   # Epic 23: Selective Convergence Integration
