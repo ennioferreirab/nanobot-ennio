@@ -12,6 +12,14 @@ import {
   softDeleteTask,
 } from "./lib/taskArchive";
 import {
+  createTask,
+  markTaskStalled,
+  toggleTaskFavorite,
+  updateTaskDescription,
+  updateTaskTags,
+  updateTaskTitle,
+} from "./lib/taskMetadata";
+import {
   appendTaskFiles,
   removeAttachmentTaskFile,
   replaceTaskOutputFiles,
@@ -37,6 +45,15 @@ import {
   pauseTaskExecution,
   resumeTaskExecution,
 } from "./lib/taskStatus";
+import {
+  clearTaskExecutionPlan,
+  kickOffTask,
+  markTaskActiveCronJob,
+  saveTaskExecutionPlan,
+  startManualInboxTask,
+  updateTaskExecutionPlan,
+  type ExecutionPlanInput,
+} from "./lib/taskPlanning";
 import { logActivity } from "./lib/workflowHelpers";
 import {
   approveTask,
@@ -77,65 +94,7 @@ export const create = mutation({
     files: taskFilesValidator,
   },
   handler: async (ctx, args) => {
-    const now = new Date().toISOString();
-
-    // Manual tasks: force autonomous, no agent assignment
-    const isManual = args.isManual === true;
-    const assignedAgent = isManual ? undefined : args.assignedAgent;
-    // All non-manual tasks start in "inbox" so the user sees them immediately.
-    // The inbox routing loop handles auto-title then transitions to "planning" or "assigned".
-    // Manual tasks stay in "inbox" (user-managed via drag-and-drop).
-    const initialStatus = isManual ? "inbox" : "inbox";
-    const trustLevel = isManual
-      ? "autonomous"
-      : ((args.trustLevel ?? "autonomous") as "autonomous" | "human_approved");
-    const supervisionMode = isManual ? "autonomous" : (args.supervisionMode ?? "autonomous");
-
-    // Resolve boardId: use provided value or fall back to default board
-    let boardId = args.boardId;
-    if (!boardId) {
-      const defaultBoard = await ctx.db
-        .query("boards")
-        .withIndex("by_isDefault", (q) => q.eq("isDefault", true))
-        .first();
-      if (defaultBoard && !defaultBoard.deletedAt) {
-        boardId = defaultBoard._id;
-      }
-    }
-
-    // Create the task
-    const taskId = await ctx.db.insert("tasks", {
-      title: args.title,
-      description: args.description,
-      status: initialStatus,
-      assignedAgent,
-      trustLevel,
-      supervisionMode,
-      reviewers: isManual ? undefined : args.reviewers,
-      tags: args.tags,
-      ...(isManual ? { isManual: true } : {}),
-      ...(boardId ? { boardId } : {}),
-      ...(args.cronParentTaskId !== undefined ? { cronParentTaskId: args.cronParentTaskId } : {}),
-      ...(args.activeCronJobId !== undefined ? { activeCronJobId: args.activeCronJobId } : {}),
-      ...(args.sourceAgent ? { sourceAgent: args.sourceAgent } : {}),
-      ...(args.files ? { files: args.files } : {}),
-      ...(args.autoTitle ? { autoTitle: true } : {}),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Write activity event via lifecycle helper
-    await logTaskCreated(ctx, {
-      taskId,
-      title: args.title,
-      isManual,
-      assignedAgent,
-      trustLevel,
-      supervisionMode,
-      timestamp: now,
-    });
-
-    return taskId;
+    return await createTask(ctx, args);
   },
 });
 
@@ -207,13 +166,7 @@ export const list = query({
 export const toggleFavorite = mutation({
   args: { taskId: v.id("tasks") },
   handler: async (ctx, args) => {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) throw new ConvexError("Task not found");
-    if (task.status === "deleted") throw new ConvexError("Cannot favorite a deleted task");
-    await ctx.db.patch(args.taskId, {
-      isFavorite: task.isFavorite ? undefined : true,
-      updatedAt: new Date().toISOString(),
-    });
+    await toggleTaskFavorite(ctx, args.taskId);
   },
 });
 
@@ -265,14 +218,7 @@ export const updateExecutionPlan = internalMutation({
     executionPlan: v.any(),
   },
   handler: async (ctx, args) => {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) {
-      throw new ConvexError("Task not found");
-    }
-    await ctx.db.patch(args.taskId, {
-      executionPlan: args.executionPlan,
-      updatedAt: new Date().toISOString(),
-    });
+    await updateTaskExecutionPlan(ctx, args.taskId, args.executionPlan);
   },
 });
 
@@ -282,15 +228,7 @@ export const markActiveCronJob = internalMutation({
     cronJobId: v.string(),
   },
   handler: async (ctx, args) => {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) {
-      throw new ConvexError("Task not found");
-    }
-
-    await ctx.db.patch(args.taskId, {
-      activeCronJobId: args.cronJobId,
-      updatedAt: new Date().toISOString(),
-    });
+    await markTaskActiveCronJob(ctx, args.taskId, args.cronJobId);
   },
 });
 
@@ -476,28 +414,7 @@ export const saveExecutionPlan = mutation({
     executionPlan: executionPlanSchema,
   },
   handler: async (ctx, args) => {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) {
-      throw new ConvexError("Task not found");
-    }
-    const allowed = ["inbox", "review"];
-    if (!allowed.includes(task.status)) {
-      throw new ConvexError(
-        `Cannot save execution plan on task in status '${task.status}'. Allowed: ${allowed.join(", ")}`,
-      );
-    }
-    if (
-      !args.executionPlan ||
-      !Array.isArray(args.executionPlan.steps) ||
-      args.executionPlan.steps.length === 0
-    ) {
-      throw new ConvexError("Execution plan must have at least one step");
-    }
-    await ctx.db.patch(args.taskId, {
-      executionPlan: args.executionPlan,
-      updatedAt: new Date().toISOString(),
-    });
-    return args.taskId;
+    return await saveTaskExecutionPlan(ctx, args.taskId, args.executionPlan as ExecutionPlanInput);
   },
 });
 
@@ -510,54 +427,7 @@ export const clearExecutionPlan = mutation({
     taskId: v.id("tasks"),
   },
   handler: async (ctx, args) => {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) {
-      throw new ConvexError("Task not found");
-    }
-    if (task.isManual !== true) {
-      throw new ConvexError("Only manual tasks can clear an execution plan.");
-    }
-    if (task.status !== "review" && task.status !== "inbox" && task.status !== "in_progress") {
-      throw new ConvexError("Cannot clear an execution plan from the current task status.");
-    }
-
-    const now = new Date().toISOString();
-    const nextStatus = task.status === "in_progress" ? "review" : task.status;
-    await ctx.db.patch(args.taskId, {
-      status: nextStatus,
-      executionPlan: undefined,
-      awaitingKickoff: undefined,
-      stalledAt: undefined,
-      updatedAt: now,
-    });
-
-    const steps = await ctx.db
-      .query("steps")
-      .withIndex("by_taskId", (q) => q.eq("taskId", args.taskId))
-      .collect();
-    for (const step of steps) {
-      if (step.status === "deleted") {
-        continue;
-      }
-      await ctx.db.patch(step._id, {
-        status: "deleted",
-        deletedAt: now,
-      });
-    }
-
-    await ctx.db.insert("messages", {
-      taskId: args.taskId,
-      authorName: "System",
-      authorType: "system",
-      content:
-        nextStatus === "review"
-          ? "Execution plan cleared. The task returned to review so you can build a fresh plan."
-          : "Execution plan cleared. Start a new Lead Agent conversation to build the next plan.",
-      messageType: "system_event",
-      timestamp: now,
-    });
-
-    return args.taskId;
+    return await clearTaskExecutionPlan(ctx, args.taskId);
   },
 });
 
@@ -572,56 +442,11 @@ export const startInboxTask = mutation({
     executionPlan: v.optional(executionPlanSchema),
   },
   handler: async (ctx, args) => {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) {
-      throw new ConvexError("Task not found");
-    }
-    if (task.status !== "inbox") {
-      throw new ConvexError(`Cannot start task in status '${task.status}'. Expected: inbox`);
-    }
-    if (task.isManual !== true) {
-      throw new ConvexError(
-        "Only manual inbox tasks can be started with a plan. Non-manual tasks are routed automatically.",
-      );
-    }
-
-    // Use provided plan, or fall back to plan already saved on the task
-    const rawPlan =
-      args.executionPlan ?? (task.executionPlan as typeof args.executionPlan | undefined);
-    const planToSave = rawPlan;
-    if (!planToSave || !Array.isArray(planToSave.steps) || planToSave.steps.length === 0) {
-      throw new ConvexError(
-        "Cannot start task without an execution plan. Add at least one step first.",
-      );
-    }
-    // Validate that the fallback plan has the required fields
-    for (const step of planToSave.steps) {
-      const typedStep = step as Record<string, unknown>;
-      if (!typedStep.tempId || !typedStep.title || !typedStep.assignedAgent) {
-        throw new ConvexError(
-          "Existing execution plan has invalid steps. Please rebuild the plan.",
-        );
-      }
-    }
-
-    const now = new Date().toISOString();
-    const patch: Record<string, unknown> = {
-      status: "in_progress",
-      updatedAt: now,
-    };
-    if (args.executionPlan) {
-      patch.executionPlan = planToSave;
-    }
-    await ctx.db.patch(args.taskId, patch);
-
-    await ctx.db.insert("activities", {
-      taskId: args.taskId,
-      eventType: "task_started",
-      description: "User started inbox task with manual execution plan",
-      timestamp: now,
-    });
-
-    return args.taskId;
+    return await startManualInboxTask(
+      ctx,
+      args.taskId,
+      args.executionPlan as ExecutionPlanInput | undefined,
+    );
   },
 });
 
@@ -631,25 +456,7 @@ export const updateTags = mutation({
     tags: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) throw new ConvexError("Task not found");
-    const uniqueTags = [...new Set(args.tags)];
-
-    if (uniqueTags.length > 0) {
-      const registeredTags = await ctx.db.query("taskTags").withIndex("by_name").collect();
-      const registeredNames = new Set(registeredTags.map((t) => t.name));
-      const invalid = uniqueTags.filter((t) => !registeredNames.has(t));
-      if (invalid.length > 0) {
-        throw new ConvexError(
-          `Tags not registered: ${invalid.join(", ")}. Use the dashboard to create tags first.`,
-        );
-      }
-    }
-
-    await ctx.db.patch(args.taskId, {
-      tags: uniqueTags.length > 0 ? uniqueTags : undefined,
-      updatedAt: new Date().toISOString(),
-    });
+    await updateTaskTags(ctx, args.taskId, args.tags);
   },
 });
 
@@ -659,33 +466,7 @@ export const kickOff = internalMutation({
     stepCount: v.number(),
   },
   handler: async (ctx, args) => {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) {
-      throw new ConvexError("Task not found");
-    }
-
-    const allowedStatuses = ["planning", "review", "ready", "inbox", "assigned"] as const;
-    if (!allowedStatuses.includes(task.status as (typeof allowedStatuses)[number])) {
-      throw new ConvexError(
-        `Cannot kick off task in status '${task.status}'. Expected one of: ${allowedStatuses.join(", ")}`,
-      );
-    }
-    if (args.stepCount < 0) {
-      throw new ConvexError("stepCount must be >= 0");
-    }
-
-    const now = new Date().toISOString();
-    await ctx.db.patch(args.taskId, {
-      status: "in_progress",
-      updatedAt: now,
-    });
-
-    await logActivity(ctx, {
-      taskId: args.taskId,
-      eventType: "task_started",
-      description: `Task kicked off with ${args.stepCount} step${args.stepCount === 1 ? "" : "s"}`,
-      timestamp: now,
-    });
+    await kickOffTask(ctx, args.taskId, args.stepCount);
   },
 });
 
@@ -850,9 +631,7 @@ export const markStalled = internalMutation({
     stalledAt: v.string(),
   },
   handler: async (ctx, args) => {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) throw new ConvexError("Task not found");
-    await ctx.db.patch(args.taskId, { stalledAt: args.stalledAt });
+    await markTaskStalled(ctx, args.taskId, args.stalledAt);
   },
 });
 
@@ -944,13 +723,7 @@ export const updateTitle = mutation({
     title: v.string(),
   },
   handler: async (ctx, args) => {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) throw new ConvexError("Task not found");
-    await ctx.db.patch(args.taskId, {
-      title: args.title,
-      autoTitle: undefined,
-      updatedAt: new Date().toISOString(),
-    });
+    await updateTaskTitle(ctx, args.taskId, args.title);
   },
 });
 
@@ -963,12 +736,7 @@ export const updateDescription = mutation({
     description: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) throw new ConvexError("Task not found");
-    await ctx.db.patch(args.taskId, {
-      description: args.description,
-      updatedAt: new Date().toISOString(),
-    });
+    await updateTaskDescription(ctx, args.taskId, args.description);
   },
 });
 
