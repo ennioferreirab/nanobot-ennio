@@ -26,6 +26,14 @@ HOTSPOT_SPLIT_FILES = {
     / "contexts"
     / "execution"
     / "completion_reporting.py",
+    "mc/contexts/execution/executor_agent_config.py": MC_ROOT
+    / "contexts"
+    / "execution"
+    / "executor_agent_config.py",
+    "mc/contexts/execution/executor_routing.py": MC_ROOT
+    / "contexts"
+    / "execution"
+    / "executor_routing.py",
     "mc/contexts/execution/message_builder.py": MC_ROOT
     / "contexts"
     / "execution"
