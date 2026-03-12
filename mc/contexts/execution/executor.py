@@ -17,6 +17,18 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from mc.application.execution.completion_status import resolve_completion_status
+from mc.contexts.execution.executor_agent_config import (
+    build_executor_agent_roster as _build_executor_agent_roster_impl,
+    get_iana_timezone as _get_iana_timezone_impl,
+    load_agent_config as _load_agent_config_impl,
+    load_agent_data as _load_agent_data_impl,
+    maybe_inject_orientation as _maybe_inject_orientation_impl,
+    render_agent_roster as _render_agent_roster_impl,
+)
+from mc.contexts.execution.executor_routing import (
+    pickup_task as _pickup_task_impl,
+    reroute_lead_agent_task as _reroute_lead_agent_task_impl,
+)
 from mc.contexts.execution.agent_runner import (  # noqa: F401
     AgentRunResult,
     _coerce_agent_run_result,
@@ -40,16 +52,14 @@ from mc.contexts.execution.provider_errors import (  # noqa: F401
 from mc.contexts.planning.planner import TaskPlanner
 from mc.types import (
     ActivityEventType,
-    AuthorType,
     AgentData,
-    NANOBOT_AGENT_NAME,
+    AuthorType,
     LEAD_AGENT_NAME,
     LeadAgentExecutionError,
     MessageType,
     TaskStatus,
-    TrustLevel,
-    is_lead_agent,
     task_safe_id,
+    is_lead_agent,
 )
 
 if TYPE_CHECKING:
@@ -65,9 +75,7 @@ _PROVIDER_ERRORS = PROVIDER_ERRORS
 
 def _get_iana_timezone() -> str | None:
     """Resolve IANA timezone name from system (e.g. 'America/Vancouver')."""
-    from mc.infrastructure.orientation_helpers import get_iana_timezone
-
-    return get_iana_timezone()
+    return _get_iana_timezone_impl()
 
 
 def build_executor_agent_roster() -> str:
@@ -76,9 +84,7 @@ def build_executor_agent_roster() -> str:
     Reads ~/.nanobot/agents/*/config.yaml, excludes system agents and lead-agent.
     Returns formatted list for agent orientation interpolation.
     """
-    from mc.infrastructure.orientation_helpers import build_agent_roster
-
-    return build_agent_roster()
+    return _build_executor_agent_roster_impl()
 
 
 def _provider_error_action(exc: Exception) -> str:
@@ -229,127 +235,11 @@ class TaskExecutor(CCExecutorMixin):
 
     async def _pickup_task(self, task_data: dict[str, Any]) -> None:
         """Transition assigned task to in_progress and start execution."""
-        task_id = task_data["id"]
-        title = task_data.get("title", "Untitled")
-        description = task_data.get("description")
-        agent_name = task_data.get("assigned_agent") or NANOBOT_AGENT_NAME
-        trust_level = task_data.get("trust_level", TrustLevel.AUTONOMOUS)
-        try:
-            if is_lead_agent(agent_name):
-                await self._handle_lead_agent_task(task_data)
-                return
-
-            # Transition to in_progress.
-            # Activity event (task_started) is written by the Convex
-            # tasks:updateStatus mutation — no duplicate create_activity here.
-            await asyncio.to_thread(
-                self._bridge.update_task_status,
-                task_id,
-                TaskStatus.IN_PROGRESS,
-                agent_name,
-                f"Agent {agent_name} started work on '{title}'",
-            )
-
-            # Write system message to task thread (messages are separate from activities)
-            await asyncio.to_thread(
-                self._bridge.send_message,
-                task_id,
-                "System",
-                AuthorType.SYSTEM,
-                f"Agent {agent_name} has started work on this task.",
-                MessageType.SYSTEM_EVENT,
-            )
-
-            logger.info(
-                "[executor] Task '%s' picked up by '%s' — now in_progress",
-                title, agent_name,
-            )
-
-            await self._execute_task(
-                task_id, title, description, agent_name, trust_level, task_data
-            )
-        finally:
-            self._known_assigned_ids.discard(task_id)
+        await _pickup_task_impl(self, task_data, planner_cls=TaskPlanner)
 
     async def _handle_lead_agent_task(self, task_data: dict[str, Any]) -> None:
         """Re-route lead-agent tasks through the planner."""
-        from mc.infrastructure.config import filter_agent_fields
-
-        task_id = task_data["id"]
-        title = task_data.get("title", "Untitled")
-        description = task_data.get("description")
-
-        logger.warning(
-            "[executor] Lead Agent dispatch intercepted for task '%s'. "
-            "Pure orchestrator invariant enforced; rerouting via planner.",
-            title,
-        )
-
-        try:
-            agents_data = await asyncio.to_thread(self._bridge.list_agents)
-            agents = [AgentData(**filter_agent_fields(a)) for a in agents_data]
-            agents = [a for a in agents if a.enabled is not False]
-        except Exception:
-            logger.warning(
-                "[executor] Failed to list agents while rerouting lead-agent "
-                "task '%s'; using planner fallback",
-                title,
-                exc_info=True,
-            )
-            agents = []
-
-        planner = TaskPlanner(self._bridge)
-        plan = await planner.plan_task(
-            title=title,
-            description=description,
-            agents=agents,
-            files=task_data.get("files") or [],
-        )
-
-        rerouted_agent = next(
-            (
-                step.assigned_agent
-                for step in plan.steps
-                if step.assigned_agent and not is_lead_agent(step.assigned_agent)
-            ),
-            None,
-        )
-        if not rerouted_agent:
-            rerouted_agent = NANOBOT_AGENT_NAME
-            logger.warning(
-                "[executor] Lead-agent reroute produced no executable assignee; "
-                "using '%s' for task '%s'",
-                rerouted_agent,
-                title,
-            )
-
-        await asyncio.to_thread(
-            self._bridge.update_execution_plan,
-            task_id,
-            plan.to_dict(),
-        )
-        await asyncio.to_thread(
-            self._bridge.update_task_status,
-            task_id,
-            TaskStatus.ASSIGNED,
-            rerouted_agent,
-            (
-                f"Lead Agent dispatch intercepted for '{title}'. "
-                f"Pure orchestrator invariant enforced; task re-routed to "
-                f"{rerouted_agent} via planner."
-            ),
-        )
-        await asyncio.to_thread(
-            self._bridge.send_message,
-            task_id,
-            "System",
-            AuthorType.SYSTEM,
-            (
-                "Lead Agent is a pure orchestrator and cannot execute tasks "
-                f"directly. Task re-routed to {rerouted_agent}."
-            ),
-            MessageType.SYSTEM_EVENT,
-        )
+        await _reroute_lead_agent_task_impl(self._bridge, task_data, planner_cls=TaskPlanner)
 
     def _load_agent_config(
         self, agent_name: str
@@ -362,22 +252,7 @@ class TaskExecutor(CCExecutorMixin):
             filtering"), or the actual list from config (possibly empty,
             meaning "only always-on skills").
         """
-        from mc.infrastructure.config import AGENTS_DIR
-        from mc.infrastructure.agents.yaml_validator import validate_agent_file
-
-        config_file = AGENTS_DIR / agent_name / "config.yaml"
-        if not config_file.exists():
-            return None, None, None
-
-        result = validate_agent_file(config_file)
-        if isinstance(result, list):
-            # Validation errors — use defaults
-            logger.warning(
-                "[executor] Agent '%s' config invalid: %s", agent_name, result
-            )
-            return None, None, None
-
-        return result.prompt, result.model, result.skills
+        return _load_agent_config_impl(agent_name)
 
     def _load_agent_data(self, agent_name: str) -> "AgentData | None":
         """Load full AgentData from an agent's YAML config file.
@@ -385,14 +260,7 @@ class TaskExecutor(CCExecutorMixin):
         Returns the validated AgentData (including backend field) or None when
         the config file does not exist or fails validation.
         """
-        from mc.infrastructure.config import AGENTS_DIR
-        from mc.infrastructure.agents.yaml_validator import validate_agent_file
-
-        config_path = AGENTS_DIR / agent_name / "config.yaml"
-        if not config_path.exists():
-            return None
-        result = validate_agent_file(config_path)
-        return result if isinstance(result, AgentData) else None
+        return _load_agent_data_impl(agent_name)
 
     async def _handle_provider_error(
         self,
@@ -464,45 +332,13 @@ class TaskExecutor(CCExecutorMixin):
         extract name, display_name, role, and skills. Returns a formatted
         string suitable for injection into the lead-agent context.
         """
-        from mc.infrastructure.config import AGENTS_DIR
-        from mc.infrastructure.agents.yaml_validator import validate_agent_file
-
-        lines: list[str] = ["## Available Agents\n"]
-        if not AGENTS_DIR.is_dir():
-            return ""
-        for agent_dir in sorted(AGENTS_DIR.iterdir()):
-            if not agent_dir.is_dir():
-                continue
-            name = agent_dir.name
-            config_path = agent_dir / "config.yaml"
-            if not config_path.exists():
-                continue
-            result = validate_agent_file(config_path)
-            if isinstance(result, list):
-                # Invalid config — skip
-                continue
-            skill_str = ", ".join(result.skills) if result.skills else "—"
-            line = f"- `{result.name}` ({result.display_name}) — {result.role}"
-            line += f"\n  Skills: {skill_str}"
-            lines.append(line)
-        return "\n".join(lines)
+        return _render_agent_roster_impl()
 
     def _maybe_inject_orientation(
         self, agent_name: str, agent_prompt: str | None
     ) -> str | None:
         """Prepend global orientation for non-lead-agent MC agents."""
-        from mc.infrastructure.orientation import load_orientation
-
-        orientation = load_orientation(agent_name)
-        if not orientation:
-            return agent_prompt
-
-        logger.info(
-            "[executor] Global orientation injected for agent '%s'", agent_name
-        )
-        if agent_prompt:
-            return f"{orientation}\n\n---\n\n{agent_prompt}"
-        return orientation
+        return _maybe_inject_orientation_impl(agent_name, agent_prompt)
 
     async def _execute_task(
         self,

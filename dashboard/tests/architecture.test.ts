@@ -308,6 +308,8 @@ describe("Architecture: story 22.4 hotspot seams exist", () => {
       "convex/lib/taskDetailView.ts",
       "convex/lib/taskFiles.ts",
       "convex/lib/taskArchive.ts",
+      "convex/lib/taskMetadata.ts",
+      "convex/lib/taskPlanning.ts",
       "convex/lib/taskReview.ts",
       "convex/lib/taskStatus.ts",
     ];
