@@ -22,7 +22,7 @@ vi.mock("../../convex/_generated/api", () => ({
 }));
 
 import { useQuery, useMutation } from "convex/react";
-import { ThreadInput } from "../../features/thread/components/ThreadInput";
+import { ThreadInput } from "../../components/ThreadInput";
 
 const mockUseQuery = useQuery as ReturnType<typeof vi.fn>;
 const mockUseMutation = useMutation as ReturnType<typeof vi.fn>;
@@ -183,12 +183,7 @@ describe("AgentMentionAutocomplete (via ThreadInput)", () => {
 
   it("does NOT show autocomplete in plan-chat mode", async () => {
     const user = userEvent.setup();
-    render(
-      <ThreadInput
-        mode="lead-agent"
-        task={makeTask({ status: "review", awaitingKickoff: true })}
-      />,
-    );
+    render(<ThreadInput task={makeTask({ status: "review", awaitingKickoff: true })} mode="lead-agent" />);
     const textarea = screen.getByPlaceholderText(/Ask the Lead Agent to change the plan/i);
     await user.click(textarea);
     await user.type(textarea, "@");

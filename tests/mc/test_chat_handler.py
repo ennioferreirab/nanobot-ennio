@@ -352,7 +352,6 @@ class TestChatHandlerPollingLoop:
         from mc.contexts.conversation.chat_handler import ChatHandler
 
         bridge = _make_bridge()
-        handler = ChatHandler(bridge)
 
         call_count = 0
         second_poll_done = asyncio.Event()
@@ -372,6 +371,11 @@ class TestChatHandlerPollingLoop:
             patch("mc.contexts.conversation.chat_handler.ACTIVE_POLL_INTERVAL_SECONDS", 0),
             patch("mc.contexts.conversation.chat_handler.SLEEP_POLL_INTERVAL_SECONDS", 0),
         ):
+            handler = ChatHandler(
+                bridge,
+                active_poll_interval_seconds=0,
+                sleep_poll_interval_seconds=0,
+            )
             task = asyncio.create_task(handler.run())
             try:
                 await asyncio.wait_for(second_poll_done.wait(), timeout=5.0)

@@ -1063,6 +1063,7 @@ describe("TaskDetailSheet", () => {
   });
 
   it("offers plan and manual merge actions in config", async () => {
+    const user = userEvent.setup();
     const mutate = vi.fn().mockResolvedValue("task-c");
     mockMutationFn.mockImplementation(mutate);
     mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
@@ -1086,16 +1087,17 @@ describe("TaskDetailSheet", () => {
 
     render(<TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />);
 
-    await userEvent.click(screen.getByRole("tab", { name: /Config/i }));
-    await userEvent.click(screen.getByText("Merge target"));
+    await user.click(screen.getByRole("tab", { name: /Config/i }));
+    expect(screen.getByPlaceholderText("Search task to merge...")).toBeInTheDocument();
+    await user.click(screen.getByText("Merge target"));
+    await user.click(screen.getByRole("button", { name: /Generate Plan Then Send To Review/i }));
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /Generate Plan Then Send To Review/i }),
-    );
-    expect(mutate).toHaveBeenCalledWith({
-      primaryTaskId: "task1",
-      secondaryTaskId: "task-merge-target",
-      mode: "plan",
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        primaryTaskId: "task1",
+        secondaryTaskId: "task-merge-target",
+        mode: "plan",
+      });
     });
   });
 

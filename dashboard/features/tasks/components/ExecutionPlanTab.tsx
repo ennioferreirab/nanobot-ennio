@@ -468,7 +468,7 @@ export function ExecutionPlanTab({
         }
       }
     },
-    [deleteStep, executionPlan, isLiveMode, isReviewMode, onLocalPlanChange, steps],
+    [isReviewMode, isLiveMode, executionPlan, onLocalPlanChange, steps, deleteStep],
   );
 
   // Editable plan steps for canvas operations
@@ -703,7 +703,7 @@ export function ExecutionPlanTab({
         }
       }
     },
-    [addStep, executionPlan, isLiveMode, isReviewMode, onLocalPlanChange, taskId],
+    [isReviewMode, isLiveMode, executionPlan, onLocalPlanChange, taskId, addStep],
   );
 
   // Find the step data for the currently editing step

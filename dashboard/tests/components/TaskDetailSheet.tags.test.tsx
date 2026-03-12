@@ -31,6 +31,7 @@ vi.mock("../../convex/_generated/api", () => ({
       postUserPlanMessage: "messages:postUserPlanMessage",
     },
     activities: { create: "activities:create" },
+    messages: { postUserPlanMessage: "messages:postUserPlanMessage" },
     tagAttributeValues: {
       removeByTaskAndTag: "tagAttributeValues:removeByTaskAndTag",
     },
@@ -195,7 +196,7 @@ function makeDetailView(
 
 describe("TaskDetailSheet — tag editing (Story 9-3)", () => {
   const mockUpdateTags = vi.fn();
-  const noop = vi.fn();
+  const noop = vi.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
     vi.clearAllMocks();

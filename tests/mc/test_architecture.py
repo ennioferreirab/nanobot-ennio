@@ -20,6 +20,21 @@ FOUNDATION_FILES = {
     / "thread_context.py",
 }
 
+HOTSPOT_SPLIT_FILES = {
+    "mc/contexts/execution/agent_runner.py": MC_ROOT / "contexts" / "execution" / "agent_runner.py",
+    "mc/contexts/execution/message_builder.py": MC_ROOT
+    / "contexts"
+    / "execution"
+    / "message_builder.py",
+    "mc/contexts/execution/provider_errors.py": MC_ROOT
+    / "contexts"
+    / "execution"
+    / "provider_errors.py",
+    "mc/cli/lifecycle.py": MC_ROOT / "cli" / "lifecycle.py",
+    "mc/cli/tasks.py": MC_ROOT / "cli" / "tasks.py",
+    "mc/cli/schema_docs.py": MC_ROOT / "cli" / "schema_docs.py",
+}
+
 PROTECTED_DIRECTORIES = [
     "application",
     "contexts",
@@ -129,6 +144,11 @@ def test_foundation_modules_do_not_import_runtime_gateway(
         if module == "mc.runtime.gateway" or module.startswith("mc.runtime.gateway.")
     ]
     assert gateway_imports == [], f"{relative_path} imports mc.runtime.gateway: {gateway_imports}"
+
+
+@pytest.mark.parametrize("relative_path", HOTSPOT_SPLIT_FILES)
+def test_story_22_4_hotspot_split_files_exist(relative_path: str) -> None:
+    assert HOTSPOT_SPLIT_FILES[relative_path].exists(), f"{relative_path} should exist"
 
 
 @pytest.mark.parametrize("directory", PROTECTED_DIRECTORIES)

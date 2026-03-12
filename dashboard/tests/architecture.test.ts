@@ -53,10 +53,7 @@ function listFeatureFiles(featureName: string, subdir: "components" | "hooks"): 
     .map((f: string) => path.join(dir, f));
 }
 
-const FEATURE_COMPONENT_DIRECT_CONVEX_IMPORT_EXCEPTIONS = new Set([
-  "features/tasks/components/ExecutionPlanTab.tsx",
-  "features/tasks/components/TaskCard.tsx",
-]);
+const FEATURE_COMPONENT_DIRECT_CONVEX_IMPORT_EXCEPTIONS = new Set<string>();
 
 const LEGACY_ROOT_COMPONENT_WRAPPERS = [
   "components/AgentConfigSheet.tsx",
@@ -248,6 +245,24 @@ describe("Architecture: root wrapper cleanup stays converged", () => {
     expect(content).toContain(`from "@/features/settings/components/TagsPanel"`);
     expect(content).toContain(`from "@/features/boards/components/BoardSettingsSheet"`);
     expect(content).toContain(`from "@/features/search/components/SearchBar"`);
+  });
+});
+
+describe("Architecture: story 22.4 hotspot seams exist", () => {
+  it("dashboard/convex/lib contains split task hotspot owners", () => {
+    const requiredFiles = [
+      "convex/lib/taskMerge.ts",
+      "convex/lib/taskDetailView.ts",
+      "convex/lib/taskFiles.ts",
+      "convex/lib/taskStatus.ts",
+    ];
+
+    for (const relativePath of requiredFiles) {
+      expect(
+        fs.existsSync(path.join(DASHBOARD_ROOT, relativePath)),
+        `${relativePath} should exist as an internal owner extracted from convex/tasks.ts`,
+      ).toBe(true);
+    }
   });
 });
 
