@@ -144,9 +144,24 @@ describe("compileAgentSpec", () => {
     expect(result.compiledFromVersion).toBe(7);
   });
 
-  it("sets compiledAt to a valid ISO 8601 timestamp", () => {
+  it("sets compiledAt to a valid ISO 8601 timestamp when not provided", () => {
     const result = compileAgentSpec(minimalSpec, "spec-abc", 1);
     expect(() => new Date(result.compiledAt).toISOString()).not.toThrow();
+  });
+
+  it("uses the provided compiledAt timestamp for deterministic output", () => {
+    const fixedTimestamp = "2026-01-15T12:00:00.000Z";
+    const result = compileAgentSpec(minimalSpec, "spec-abc", 1, fixedTimestamp);
+    expect(result.compiledAt).toBe(fixedTimestamp);
+  });
+
+  it("falls back to current time when compiledAt is not provided", () => {
+    const before = Date.now();
+    const result = compileAgentSpec(minimalSpec, "spec-abc", 1);
+    const after = Date.now();
+    const compiledAtMs = new Date(result.compiledAt).getTime();
+    expect(compiledAtMs).toBeGreaterThanOrEqual(before);
+    expect(compiledAtMs).toBeLessThanOrEqual(after);
   });
 
   it("carries over name and displayName from spec", () => {

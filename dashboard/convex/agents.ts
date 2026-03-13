@@ -53,15 +53,22 @@ export const upsertByName = mutation({
       const patch: Record<string, unknown> = {
         displayName: args.displayName,
         role: args.role,
-        soul: args.soul,
         model: args.model,
         interactiveProvider: args.interactiveProvider,
         lastActiveAt: timestamp,
         // Preserve existing enabled value on update (don't reset on re-sync)
       };
-      // Set prompt only if agent has none yet (first-time bootstrap)
-      if (!existing.prompt && args.prompt) {
-        patch.prompt = args.prompt;
+      // When the agent has a compiled projection, prompt and soul are
+      // authoritative from the spec compiler — never overwrite them from YAML.
+      if (!existing.compiledFromSpecId) {
+        // Set prompt only if agent has none yet (first-time bootstrap)
+        if (!existing.prompt && args.prompt) {
+          patch.prompt = args.prompt;
+        }
+        // Set soul from YAML only for non-compiled agents.
+        if (args.soul !== undefined) {
+          patch.soul = args.soul;
+        }
       }
       // Bootstrap skills from YAML only when the existing document has no
       // skills yet. After that, dashboard edits remain authoritative.
@@ -412,6 +419,13 @@ export const publishProjection = mutation({
     const timestamp = new Date().toISOString();
 
     if (existing) {
+      // Guard: refuse to publish to a soft-deleted agent. A deleted agent must
+      // be explicitly restored before it can receive new projection data.
+      if (existing.deletedAt) {
+        throw new Error(
+          `Cannot publish projection to deleted agent '${args.name}' — restore it first.`,
+        );
+      }
       const patch: Record<string, unknown> = {
         displayName: args.displayName,
         role: args.role,
