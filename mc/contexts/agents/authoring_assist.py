@@ -214,7 +214,7 @@ def advance_agent_phase(current: AuthoringPhase, spec: dict[str, Any]) -> Author
         return AuthoringPhase.SUMMARY
 
     spec_key = _AGENT_PHASE_TO_SPEC_KEY.get(current)
-    if spec_key and not (spec.get(spec_key, "") or "").strip():
+    if spec_key and not str(spec.get(spec_key, "") or "").strip():
         return current
 
     current_idx = _AGENT_PHASE_ORDER.index(current)
@@ -228,10 +228,15 @@ def advance_squad_phase(current: str, spec: dict[str, Any]) -> str:
     if current == "approval":
         return "approval"
 
-    if not (spec.get(current, "") or "").strip():
+    if not str(spec.get(current, "") or "").strip():
         return current
 
-    current_idx = _SQUAD_PHASE_ORDER.index(current)
+    try:
+        current_idx = _SQUAD_PHASE_ORDER.index(current)
+    except ValueError:
+        # Unknown phase — default to the first phase
+        return _SQUAD_PHASE_ORDER[0]
+
     if current_idx + 1 < len(_SQUAD_PHASE_ORDER):
         return _SQUAD_PHASE_ORDER[current_idx + 1]
     return current
@@ -315,25 +320,35 @@ async def generate_agent_assist_response(
     if model:
         kwargs["model"] = model
 
-    _response = await provider.chat(  # noqa: F841
+    response = await provider.chat(
         messages=llm_messages,
         temperature=0.5,
         max_tokens=1024,
         **kwargs,
     )
 
-    # Extract the user's last message as the phase's draft content
+    # Extract the LLM response content; fall back to the raw user message if absent.
+    llm_content: str = ""
+    try:
+        llm_content = (response.content or "").strip()
+    except Exception:
+        pass
+
+    # Extract the user's last message as a fallback for the phase's draft content
     last_user_msg = ""
     for msg in reversed(messages):
         if msg.get("role") == "user":
             last_user_msg = msg.get("content", "")
             break
 
+    # Use the LLM interpretation if available; otherwise fall back to the raw user input.
+    draft_content = llm_content if llm_content else last_user_msg.strip()
+
     # Build the draft patch: update the current phase's spec key
     spec_key = _AGENT_PHASE_TO_SPEC_KEY.get(phase)
     patch_fields: dict[str, Any] = {}
-    if spec_key and last_user_msg.strip():
-        patch_fields[spec_key] = last_user_msg.strip()
+    if spec_key and draft_content:
+        patch_fields[spec_key] = draft_content
 
     # Merge the patch into the current spec for readiness computation
     merged_spec = {**current_spec, **patch_fields}
@@ -378,24 +393,34 @@ async def generate_squad_assist_response(
     if model:
         kwargs["model"] = model
 
-    _response = await provider.chat(  # noqa: F841
+    response = await provider.chat(
         messages=llm_messages,
         temperature=0.5,
         max_tokens=1024,
         **kwargs,
     )
 
-    # Extract last user message
+    # Extract the LLM response content; fall back to raw user message if absent.
+    llm_content: str = ""
+    try:
+        llm_content = (response.content or "").strip()
+    except Exception:
+        pass
+
+    # Extract last user message as fallback
     last_user_msg = ""
     for msg in reversed(messages):
         if msg.get("role") == "user":
             last_user_msg = msg.get("content", "")
             break
 
+    # Use the LLM interpretation if available; otherwise fall back to the raw user input.
+    draft_content = llm_content if llm_content else last_user_msg.strip()
+
     # Build draft patch for squad phase
     patch_fields: dict[str, Any] = {}
-    if phase in _SQUAD_PHASE_ORDER and last_user_msg.strip():
-        patch_fields[phase] = last_user_msg.strip()
+    if phase in _SQUAD_PHASE_ORDER and draft_content:
+        patch_fields[phase] = draft_content
 
     merged_spec = {**current_spec, **patch_fields}
     next_phase = advance_squad_phase(phase, merged_spec)
