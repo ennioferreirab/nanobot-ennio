@@ -464,3 +464,117 @@ class TestGenerateSquadAssistResponse:
 
         assert "recommended_next_phase" in result
         assert "summary_sections" in result
+
+
+# ---------------------------------------------------------------------------
+# H1: LLM response used for draft patch
+# ---------------------------------------------------------------------------
+
+
+class TestLLMResponseUsedForDraftPatch:
+    """Verify that LLM response content is used to build the draft patch."""
+
+    @pytest.mark.asyncio
+    async def test_agent_draft_patch_uses_llm_content(self) -> None:
+        llm_summary = "This agent is a specialized finance analyst that tracks boletos."
+        mock_response = MagicMock()
+        mock_response.content = llm_summary
+
+        provider = MagicMock()
+        provider.chat = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "I want a finance agent"}]
+        result = await generate_agent_assist_response(
+            provider=provider,
+            messages=messages,
+            current_spec={},
+            phase=AuthoringPhase.PURPOSE,
+        )
+
+        # The draft patch should contain the LLM interpretation, not the raw user message
+        assert result.draft_patch.fields.get("purpose") == llm_summary
+
+    @pytest.mark.asyncio
+    async def test_agent_draft_patch_falls_back_to_user_msg_when_llm_content_empty(
+        self,
+    ) -> None:
+        mock_response = MagicMock()
+        mock_response.content = ""
+
+        provider = MagicMock()
+        provider.chat = AsyncMock(return_value=mock_response)
+
+        user_text = "I want a finance agent"
+        messages = [{"role": "user", "content": user_text}]
+        result = await generate_agent_assist_response(
+            provider=provider,
+            messages=messages,
+            current_spec={},
+            phase=AuthoringPhase.PURPOSE,
+        )
+
+        # Falls back to raw user message when LLM returns empty content
+        assert result.draft_patch.fields.get("purpose") == user_text
+
+    @pytest.mark.asyncio
+    async def test_squad_draft_patch_uses_llm_content(self) -> None:
+        llm_summary = "A three-agent squad: lead, researcher, and writer."
+        mock_response = MagicMock()
+        mock_response.content = llm_summary
+
+        provider = MagicMock()
+        provider.chat = AsyncMock(return_value=mock_response)
+
+        result = await generate_squad_assist_response(
+            provider=provider,
+            messages=[{"role": "user", "content": "I need a research squad"}],
+            current_spec={},
+            phase="team_design",
+        )
+
+        assert result["draft_patch"]["fields"].get("team_design") == llm_summary
+
+
+# ---------------------------------------------------------------------------
+# H3: advance_agent_phase handles non-string spec values
+# ---------------------------------------------------------------------------
+
+
+class TestAdvanceAgentPhaseNonStringValues:
+    """Verify advance_agent_phase does not crash on non-string spec values."""
+
+    def test_handles_integer_spec_value(self) -> None:
+        # Should not crash; integer value is falsy-ish when cast to str "0" still has content
+        spec = {"purpose": 42}
+        # Integers cast to "42" which is non-empty — should advance
+        next_phase = advance_agent_phase(AuthoringPhase.PURPOSE, spec)
+        assert next_phase == AuthoringPhase.OPERATING_CONTEXT
+
+    def test_handles_list_spec_value(self) -> None:
+        spec = {"purpose": ["item1", "item2"]}
+        # Lists cast to str which is non-empty — should advance
+        next_phase = advance_agent_phase(AuthoringPhase.PURPOSE, spec)
+        assert next_phase == AuthoringPhase.OPERATING_CONTEXT
+
+    def test_handles_none_spec_value(self) -> None:
+        spec: dict[str, Any] = {"purpose": None}
+        # None → str(None or "") → "" — stays in phase
+        next_phase = advance_agent_phase(AuthoringPhase.PURPOSE, spec)
+        assert next_phase == AuthoringPhase.PURPOSE
+
+
+# ---------------------------------------------------------------------------
+# M4: advance_squad_phase handles unknown phase strings
+# ---------------------------------------------------------------------------
+
+
+class TestAdvanceSquadPhaseUnknownPhase:
+    """Verify advance_squad_phase does not crash on unknown phase strings."""
+
+    def test_unknown_phase_returns_first_phase(self) -> None:
+        next_phase = advance_squad_phase("unknown_phase", {"unknown_phase": "some content"})
+        assert next_phase == "team_design"
+
+    def test_empty_string_phase_returns_first_phase(self) -> None:
+        next_phase = advance_squad_phase("", {"": "some content"})
+        assert next_phase == "team_design"
