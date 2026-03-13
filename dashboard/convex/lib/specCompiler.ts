@@ -161,12 +161,16 @@ export function compileSoulFromSpec(spec: AgentSpecInput): string {
  * @param spec - The structured authoring input.
  * @param specId - The Convex document ID of the `agentSpecs` record.
  * @param specVersion - The version number of the spec at compile time.
+ * @param compiledAt - Optional ISO 8601 timestamp to use as the compilation
+ *   time. When provided (e.g. in tests), it is used as-is so the function
+ *   remains deterministic. When omitted, `new Date().toISOString()` is called.
  * @returns A projection payload ready to be written into the `agents` table.
  */
 export function compileAgentSpec(
   spec: AgentSpecInput,
   specId: string,
   specVersion: number,
+  compiledAt?: string,
 ): AgentRuntimeProjection {
   const projection: AgentRuntimeProjection = {
     name: spec.name,
@@ -177,7 +181,7 @@ export function compileAgentSpec(
     skills: spec.skills,
     compiledFromSpecId: specId,
     compiledFromVersion: specVersion,
-    compiledAt: new Date().toISOString(),
+    compiledAt: compiledAt ?? new Date().toISOString(),
   };
 
   if (spec.model !== undefined) {

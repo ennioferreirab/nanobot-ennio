@@ -148,6 +148,53 @@ describe("agents.upsertByName", () => {
     const agentPatch = patches[0]?.patch;
     expect(agentPatch?.skills).toEqual(["youtube-watcher", "cron"]);
   });
+
+  it("skips updating soul for compiled agents (compiledFromSpecId is set)", async () => {
+    const handler = getHandler();
+    const { ctx, patches } = makeCtx({
+      _id: "agent-doc-id",
+      name: "compiled-agent",
+      prompt: "compiled prompt",
+      soul: "compiled soul from spec",
+      skills: ["skill-a"],
+      compiledFromSpecId: "spec-id-xyz",
+    });
+
+    await handler(ctx, {
+      name: "compiled-agent",
+      displayName: "Compiled Agent",
+      role: "Worker",
+      prompt: "YAML prompt — should not overwrite",
+      soul: "YAML soul — should not overwrite",
+      skills: ["skill-a"],
+    });
+
+    const agentPatch = patches[0]?.patch;
+    expect(agentPatch?.soul).toBeUndefined();
+    expect(agentPatch?.prompt).toBeUndefined();
+  });
+
+  it("updates soul for non-compiled agents from YAML", async () => {
+    const handler = getHandler();
+    const { ctx, patches } = makeCtx({
+      _id: "agent-doc-id",
+      name: "yaml-agent",
+      prompt: "some prompt",
+      soul: "old soul",
+      skills: [],
+    });
+
+    await handler(ctx, {
+      name: "yaml-agent",
+      displayName: "YAML Agent",
+      role: "Worker",
+      soul: "new soul from YAML",
+      skills: [],
+    });
+
+    const agentPatch = patches[0]?.patch;
+    expect(agentPatch?.soul).toBe("new soul from YAML");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -270,6 +317,21 @@ describe("agents.publishProjection", () => {
 
     const agentPatch = patches[0]?.patch;
     expect(agentPatch?.skills).toEqual(["git", "code-review"]);
+  });
+
+  it("throws when publishing to a soft-deleted agent", async () => {
+    const { ctx } = makeCtx({
+      _id: "agent-deleted-id",
+      name: "code-reviewer",
+      prompt: "old prompt",
+      skills: [],
+      deletedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const handler = getPublishHandler();
+    await expect(handler(ctx, baseProjectionArgs)).rejects.toThrow(
+      "Cannot publish projection to deleted agent",
+    );
   });
 
   it("writes an activity event after publish", async () => {
