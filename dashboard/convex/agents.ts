@@ -389,6 +389,74 @@ export const clearAgentArchive = internalMutation({
   },
 });
 
+export const publishProjection = mutation({
+  args: {
+    name: v.string(),
+    displayName: v.string(),
+    role: v.string(),
+    prompt: v.string(),
+    soul: v.string(),
+    skills: v.array(v.string()),
+    model: v.optional(v.string()),
+    interactiveProvider: v.optional(interactiveProviderValidator),
+    compiledFromSpecId: v.string(),
+    compiledFromVersion: v.number(),
+    compiledAt: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("agents")
+      .withIndex("by_name", (q) => q.eq("name", args.name))
+      .first();
+
+    const timestamp = new Date().toISOString();
+
+    if (existing) {
+      const patch: Record<string, unknown> = {
+        displayName: args.displayName,
+        role: args.role,
+        // publishProjection always overwrites prompt/soul with the compiled values.
+        prompt: args.prompt,
+        soul: args.soul,
+        skills: args.skills,
+        compiledFromSpecId: args.compiledFromSpecId,
+        compiledFromVersion: args.compiledFromVersion,
+        compiledAt: args.compiledAt,
+        lastActiveAt: timestamp,
+      };
+      if (args.model !== undefined) patch.model = args.model;
+      if (args.interactiveProvider !== undefined)
+        patch.interactiveProvider = args.interactiveProvider;
+      await ctx.db.patch(existing._id, patch);
+    } else {
+      await ctx.db.insert("agents", {
+        name: args.name,
+        displayName: args.displayName,
+        role: args.role,
+        prompt: args.prompt,
+        soul: args.soul,
+        skills: args.skills,
+        status: "idle",
+        enabled: true,
+        model: args.model,
+        interactiveProvider: args.interactiveProvider,
+        compiledFromSpecId: args.compiledFromSpecId,
+        compiledFromVersion: args.compiledFromVersion,
+        compiledAt: args.compiledAt,
+        lastActiveAt: timestamp,
+      });
+    }
+
+    // Write activity event
+    await ctx.db.insert("activities", {
+      agentName: args.name,
+      eventType: "agent_config_updated",
+      description: `Agent '${args.displayName}' runtime projection published from spec '${args.compiledFromSpecId}' v${args.compiledFromVersion}`,
+      timestamp,
+    });
+  },
+});
+
 export const deactivateExcept = internalMutation({
   args: {
     activeNames: v.array(v.string()),
