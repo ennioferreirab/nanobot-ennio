@@ -44,7 +44,7 @@ function makeCtx(taskExists = true) {
 
   const get = vi.fn(async (id: string) => {
     if (!taskExists) return null;
-    return { _id: id, title: "Test task", status: "inbox", updatedAt: "2026-01-01T00:00:00.000Z" };
+    return { _id: id, title: "Test task", status: "review", updatedAt: "2026-01-01T00:00:00.000Z" };
   });
 
   const patch = vi.fn(async (id: string, p: Record<string, unknown>) => {
@@ -117,9 +117,7 @@ describe("launchSquadMission", () => {
     const inserts: { table: string; value: Record<string, unknown> }[] = [];
     const patches: { id: string; patch: Record<string, unknown> }[] = [];
 
-    const agentsBySpecId = new Map(
-      (opts.agentSpecs ?? []).map((a) => [String(a._id), a]),
-    );
+    const agentsBySpecId = new Map((opts.agentSpecs ?? []).map((a) => [String(a._id), a]));
 
     const get = vi.fn(async (id: string) => {
       if (opts.squadSpec && id === opts.squadSpec._id) return opts.squadSpec;
@@ -128,12 +126,10 @@ describe("launchSquadMission", () => {
       return null;
     });
 
-    const insert = vi.fn(
-      async (table: string, value: Record<string, unknown>) => {
-        inserts.push({ table, value });
-        return table === "tasks" ? "task-mission-id-1" : "activity-id-1";
-      },
-    );
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      inserts.push({ table, value });
+      return table === "tasks" ? "task-mission-id-1" : "activity-id-1";
+    });
 
     const patch = vi.fn(async (id: string, p: Record<string, unknown>) => {
       patches.push({ id, patch: p });
@@ -157,15 +153,12 @@ describe("launchSquadMission", () => {
       agentSpecs: [mockAgentSpec1, mockAgentSpec2],
     });
 
-    const taskId = await launchSquadMission(
-      ctx as Parameters<typeof launchSquadMission>[0],
-      {
-        squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
-        workflowSpecId: "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
-        boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
-        title: "Mission: review release",
-      },
-    );
+    const taskId = await launchSquadMission(ctx as unknown as Parameters<typeof launchSquadMission>[0], {
+      squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
+      workflowSpecId: "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
+      boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
+      title: "Mission: review release",
+    });
 
     expect(taskId).toBe("task-mission-id-1");
     const taskInsert = inserts.find((i) => i.table === "tasks");
@@ -182,15 +175,12 @@ describe("launchSquadMission", () => {
       agentSpecs: [mockAgentSpec1, mockAgentSpec2],
     });
 
-    await launchSquadMission(
-      ctx as Parameters<typeof launchSquadMission>[0],
-      {
-        squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
-        workflowSpecId: "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
-        boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
-        title: "Mission",
-      },
-    );
+    await launchSquadMission(ctx as unknown as Parameters<typeof launchSquadMission>[0], {
+      squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
+      workflowSpecId: "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
+      boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
+      title: "Mission",
+    });
 
     const planPatch = patches.find((p) => "executionPlan" in p.patch);
     expect(planPatch).toBeDefined();
@@ -205,16 +195,14 @@ describe("launchSquadMission", () => {
     });
 
     await expect(
-      launchSquadMission(
-        ctx as Parameters<typeof launchSquadMission>[0],
-        {
-          squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
-          workflowSpecId:
-            "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
-          boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
-          title: "Mission",
-        },
-      ),
+      launchSquadMission(ctx as unknown as Parameters<typeof launchSquadMission>[0], {
+        squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
+        workflowSpecId: "workflow-id-1" as Parameters<
+          typeof launchSquadMission
+        >[1]["workflowSpecId"],
+        boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
+        title: "Mission",
+      }),
     ).rejects.toThrow("Squad must be published");
   });
 
@@ -225,41 +213,57 @@ describe("launchSquadMission", () => {
     });
 
     await expect(
-      launchSquadMission(
-        ctx as Parameters<typeof launchSquadMission>[0],
-        {
-          squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
-          workflowSpecId:
-            "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
-          boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
-          title: "Mission",
-        },
-      ),
+      launchSquadMission(ctx as unknown as Parameters<typeof launchSquadMission>[0], {
+        squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
+        workflowSpecId: "workflow-id-1" as Parameters<
+          typeof launchSquadMission
+        >[1]["workflowSpecId"],
+        boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
+        title: "Mission",
+      }),
     ).rejects.toThrow("Workflow must be published");
   });
 
-  it("creates task in inbox status with autonomous trust level", async () => {
+  it("creates task in review status with awaitingKickoff=true (Layer 1 defense)", async () => {
     const { ctx, inserts } = makeLaunchCtx({
       squadSpec: mockSquadSpec,
       workflowSpec: mockWorkflowSpec,
       agentSpecs: [mockAgentSpec1, mockAgentSpec2],
     });
 
-    await launchSquadMission(
-      ctx as Parameters<typeof launchSquadMission>[0],
-      {
-        squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
-        workflowSpecId: "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
-        boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
-        title: "Mission",
-        description: "A test mission",
-      },
-    );
+    await launchSquadMission(ctx as unknown as Parameters<typeof launchSquadMission>[0], {
+      squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
+      workflowSpecId: "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
+      boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
+      title: "Mission",
+      description: "A test mission",
+    });
 
     const taskInsert = inserts.find((i) => i.table === "tasks");
-    expect(taskInsert!.value.status).toBe("inbox");
+    // Layer 1: task must start in "review" to skip the inbox→planning pipeline
+    expect(taskInsert!.value.status).toBe("review");
+    // Layer 1: awaitingKickoff=true so dashboard shows kick-off UI
+    expect(taskInsert!.value.awaitingKickoff).toBe(true);
     expect(taskInsert!.value.trustLevel).toBe("autonomous");
     expect(taskInsert!.value.description).toBe("A test mission");
+  });
+
+  it("does NOT create the task with inbox status", async () => {
+    const { ctx, inserts } = makeLaunchCtx({
+      squadSpec: mockSquadSpec,
+      workflowSpec: mockWorkflowSpec,
+      agentSpecs: [mockAgentSpec1, mockAgentSpec2],
+    });
+
+    await launchSquadMission(ctx as unknown as Parameters<typeof launchSquadMission>[0], {
+      squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
+      workflowSpecId: "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
+      boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
+      title: "Mission",
+    });
+
+    const taskInsert = inserts.find((i) => i.table === "tasks");
+    expect(taskInsert!.value.status).not.toBe("inbox");
   });
 });
 
@@ -290,7 +294,7 @@ describe("attachWorkflowExecutionPlan", () => {
     const { ctx, patches } = makeCtx();
 
     await attachWorkflowExecutionPlan(
-      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      ctx as unknown as Parameters<typeof attachWorkflowExecutionPlan>[0],
       "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
       WORKFLOW,
       AGENT_REFS,
@@ -304,7 +308,7 @@ describe("attachWorkflowExecutionPlan", () => {
     const { ctx, patches } = makeCtx();
 
     await attachWorkflowExecutionPlan(
-      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      ctx as unknown as Parameters<typeof attachWorkflowExecutionPlan>[0],
       "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
       WORKFLOW,
       AGENT_REFS,
@@ -318,7 +322,7 @@ describe("attachWorkflowExecutionPlan", () => {
     const { ctx, patches } = makeCtx();
 
     await attachWorkflowExecutionPlan(
-      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      ctx as unknown as Parameters<typeof attachWorkflowExecutionPlan>[0],
       "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
       WORKFLOW,
       AGENT_REFS,
@@ -335,7 +339,7 @@ describe("attachWorkflowExecutionPlan", () => {
     const { ctx, patches } = makeCtx();
 
     await attachWorkflowExecutionPlan(
-      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      ctx as unknown as Parameters<typeof attachWorkflowExecutionPlan>[0],
       "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
       WORKFLOW,
       AGENT_REFS,
@@ -352,7 +356,7 @@ describe("attachWorkflowExecutionPlan", () => {
     const { ctx } = makeCtx();
 
     const result = await attachWorkflowExecutionPlan(
-      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      ctx as unknown as Parameters<typeof attachWorkflowExecutionPlan>[0],
       "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
       WORKFLOW,
       AGENT_REFS,
@@ -367,7 +371,7 @@ describe("attachWorkflowExecutionPlan", () => {
 
     await expect(
       attachWorkflowExecutionPlan(
-        ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+        ctx as unknown as Parameters<typeof attachWorkflowExecutionPlan>[0],
         "nonexistent-task-id" as Parameters<typeof attachWorkflowExecutionPlan>[1],
         WORKFLOW,
         AGENT_REFS,
@@ -379,7 +383,7 @@ describe("attachWorkflowExecutionPlan", () => {
     const { ctx, patches } = makeCtx();
 
     await attachWorkflowExecutionPlan(
-      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      ctx as unknown as Parameters<typeof attachWorkflowExecutionPlan>[0],
       "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
       WORKFLOW,
       AGENT_REFS,
