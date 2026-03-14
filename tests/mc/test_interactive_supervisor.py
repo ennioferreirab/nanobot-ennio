@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, call
 
+import pytest
+
 from mc.contexts.interactive.supervision_types import InteractiveSupervisionEvent
 from mc.contexts.interactive.supervisor import (
     InteractiveExecutionSupervisor,
@@ -262,9 +264,6 @@ def test_activity_log_payload_for_turn_completed_with_summary() -> None:
     _, payload = bridge.mutation.call_args[0]
     assert payload["kind"] == "turn_completed"
     assert payload["summary"] == "Turn finished successfully."
-    assert payload["tool_name"] is None
-    assert payload["tool_input"] is None
-    assert payload["file_path"] is None
     assert payload["turn_id"] == "turn-2"
     assert payload["requires_action"] is False
 
@@ -283,11 +282,10 @@ def test_activity_log_missing_metadata_fields_result_in_none() -> None:
 
     bridge.mutation.assert_called_once()
     _, payload = bridge.mutation.call_args[0]
-    assert payload["tool_name"] is None
-    assert payload["tool_input"] is None
-    assert payload["file_path"] is None
-    assert payload["summary"] is None
-    assert payload["error"] is None
+    # With _set_if, absent optional fields are omitted (not sent as None)
+    assert "tool_name" not in payload
+    assert "tool_input" not in payload
+    assert "file_path" not in payload
 
 
 def test_activity_log_requires_action_true_for_approval_requested() -> None:
@@ -381,3 +379,172 @@ def test_extract_file_path_from_path_key() -> None:
 def test_extract_file_path_returns_none_when_absent() -> None:
     assert _extract_file_path({"input": {}}) is None
     assert _extract_file_path({}) is None
+
+
+# ── Story 28-0b: session activity payload serialization ───────────────
+
+
+def test_supervisor_record_supervision_omits_none_optional_fields() -> None:
+    """Optional string fields must not be sent as None to record_supervision."""
+    bridge = MagicMock()
+    registry = MagicMock()
+    registry.get.return_value = {
+        "session_id": "interactive_session:claude",
+        "agent_name": "claude-pair",
+        "task_id": "task-1",
+        "step_id": "step-1",
+    }
+    registry.record_supervision.return_value = {}
+    supervisor = InteractiveExecutionSupervisor(bridge=bridge, registry=registry)
+
+    supervisor.handle_event(
+        InteractiveSupervisionEvent(
+            kind="turn_started",
+            session_id="interactive_session:claude",
+            provider="claude-code",
+        )
+    )
+
+    call_kwargs = registry.record_supervision.call_args
+    event_payload = call_kwargs[1]["event"]
+
+    assert "kind" in event_payload
+    assert event_payload["kind"] == "turn_started"
+
+    for optional_field in ("turn_id", "item_id", "summary", "final_output", "error", "status"):
+        assert (
+            event_payload.get(optional_field) is not None or optional_field not in event_payload
+        ), f"Optional field '{optional_field}' must be omitted when None, not sent as None"
+
+
+def test_supervisor_record_supervision_includes_present_optional_fields() -> None:
+    """Optional fields with values must still be included in the payload."""
+    bridge = MagicMock()
+    registry = MagicMock()
+    registry.get.return_value = {
+        "session_id": "interactive_session:claude",
+        "agent_name": "claude-pair",
+        "task_id": "task-1",
+        "step_id": "step-1",
+    }
+    registry.record_supervision.return_value = {}
+    supervisor = InteractiveExecutionSupervisor(bridge=bridge, registry=registry)
+
+    supervisor.handle_event(
+        InteractiveSupervisionEvent(
+            kind="turn_started",
+            session_id="interactive_session:claude",
+            provider="claude-code",
+            turn_id="turn-99",
+            summary="Working on it",
+        )
+    )
+
+    call_kwargs = registry.record_supervision.call_args
+    event_payload = call_kwargs[1]["event"]
+
+    assert event_payload["turn_id"] == "turn-99"
+    assert event_payload["summary"] == "Working on it"
+
+
+def test_supervisor_record_supervision_no_null_values_in_payload() -> None:
+    """The event payload passed to record_supervision must not contain any None values."""
+    bridge = MagicMock()
+    registry = MagicMock()
+    registry.get.return_value = {
+        "session_id": "interactive_session:claude",
+        "agent_name": "claude-pair",
+        "task_id": "task-1",
+        "step_id": "step-1",
+    }
+    registry.record_supervision.return_value = {}
+    supervisor = InteractiveExecutionSupervisor(bridge=bridge, registry=registry)
+
+    supervisor.handle_event(
+        InteractiveSupervisionEvent(
+            kind="session_ready",
+            session_id="interactive_session:claude",
+            provider="claude-code",
+        )
+    )
+
+    call_kwargs = registry.record_supervision.call_args
+    event_payload = call_kwargs[1]["event"]
+
+    null_fields = [k for k, v in event_payload.items() if v is None]
+    assert null_fields == [], f"Payload must not contain null values, found: {null_fields}"
+
+
+# ── Story 28-0b: idempotent supervision status projection ────────────
+
+
+def test_supervisor_turn_started_is_idempotent_when_task_already_in_progress() -> None:
+    """Repeated turn_started must not fail when task is already in_progress."""
+    bridge = MagicMock()
+    bridge.update_task_status.side_effect = Exception(
+        "Cannot transition in_progress -> in_progress"
+    )
+    registry = MagicMock()
+    registry.get.return_value = {
+        "session_id": "interactive_session:claude",
+        "agent_name": "claude-pair",
+        "task_id": "task-1",
+        "step_id": "step-1",
+    }
+    registry.record_supervision.return_value = {}
+    supervisor = InteractiveExecutionSupervisor(bridge=bridge, registry=registry)
+
+    supervisor.handle_event(
+        InteractiveSupervisionEvent(
+            kind="turn_started",
+            session_id="interactive_session:claude",
+            provider="claude-code",
+        )
+    )
+
+
+def test_supervisor_item_started_is_idempotent_when_step_already_running() -> None:
+    """Repeated item_started must not fail when step is already running."""
+    bridge = MagicMock()
+    bridge.update_step_status.side_effect = Exception("Cannot transition running -> running")
+    registry = MagicMock()
+    registry.get.return_value = {
+        "session_id": "interactive_session:claude",
+        "agent_name": "claude-pair",
+        "task_id": "task-1",
+        "step_id": "step-1",
+    }
+    registry.record_supervision.return_value = {}
+    supervisor = InteractiveExecutionSupervisor(bridge=bridge, registry=registry)
+
+    supervisor.handle_event(
+        InteractiveSupervisionEvent(
+            kind="item_started",
+            session_id="interactive_session:claude",
+            provider="claude-code",
+        )
+    )
+
+
+def test_supervisor_genuine_transition_failure_still_surfaces() -> None:
+    """Unexpected transition failures must not be silently swallowed."""
+    bridge = MagicMock()
+    bridge.update_task_status.side_effect = Exception("Network timeout connecting to Convex")
+    registry = MagicMock()
+    registry.get.return_value = {
+        "session_id": "interactive_session:claude",
+        "agent_name": "claude-pair",
+        "task_id": "task-1",
+        "step_id": "step-1",
+    }
+    registry.record_supervision.return_value = {}
+    supervisor = InteractiveExecutionSupervisor(bridge=bridge, registry=registry)
+
+    with pytest.raises(Exception, match="Network timeout"):
+        supervisor.handle_event(
+            InteractiveSupervisionEvent(
+                kind="turn_started",
+                session_id="interactive_session:claude",
+                provider="claude-code",
+            )
+        )
