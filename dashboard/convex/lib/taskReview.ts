@@ -13,10 +13,7 @@ import { logActivity } from "./workflowHelpers";
 
 type ReviewMutationCtx = Pick<MutationCtx, "db">;
 
-export async function retryTask(
-  ctx: ReviewMutationCtx,
-  taskId: Id<"tasks">,
-): Promise<void> {
+export async function retryTask(ctx: ReviewMutationCtx, taskId: Id<"tasks">): Promise<void> {
   const task = await ctx.db.get(taskId);
   if (!task) throw new ConvexError("Task not found");
 
@@ -114,6 +111,11 @@ export async function approveTask(
   }
   if (task.isManual === true) {
     throw new ConvexError("Cannot approve a manual task. Use Start to begin execution.");
+  }
+  if (task.awaitingKickoff === true) {
+    throw new ConvexError(
+      "Cannot approve a pre-kickoff task directly. Use Approve & Kick Off instead.",
+    );
   }
 
   const now = new Date().toISOString();
