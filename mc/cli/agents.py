@@ -23,6 +23,7 @@ agents_app = typer.Typer(
 
 def register_sessions_command(mc_app: typer.Typer) -> None:
     """Register the sessions command on the main mc_app."""
+
     @mc_app.command()
     def sessions():
         """List active Claude Code agent sessions."""
@@ -32,7 +33,8 @@ def register_sessions_command(mc_app: typer.Typer) -> None:
         try:
             all_settings = bridge.query("settings:list") or []
             cc_sessions = [
-                s for s in all_settings
+                s
+                for s in all_settings
                 if isinstance(s.get("key"), str)
                 and s["key"].startswith("cc_session:")
                 and s.get("value")
@@ -76,7 +78,9 @@ def register_sessions_command(mc_app: typer.Typer) -> None:
                 table.add_row(agent_col, "[dim]:latest[/dim]", session_col)
 
             console.print(table)
-            console.print(f"\n  Total: {len(regular_sessions)} task session(s), {len(latest_sessions)} latest pointer(s)")
+            console.print(
+                f"\n  Total: {len(regular_sessions)} task session(s), {len(latest_sessions)} latest pointer(s)"
+            )
         finally:
             bridge.close()
 
@@ -142,9 +146,7 @@ def list_agents():
                     valid_agents.append(result)
 
     if not valid_agents:
-        console.print(
-            "No agents found. Create one with `nanobot mc agents create`"
-        )
+        console.print("No agents found. Create one with `nanobot mc agents create`")
         return
 
     table = Table(title="Registered Agents")
@@ -218,6 +220,7 @@ def create_agent():
     if not memory_file.exists():
         memory_file.write_text("")
     from mc.cli.agent_assist import ensure_soul_md
+
     ensure_soul_md(agent_dir, name, role)
     config_path = agent_dir / "config.yaml"
     config_path.write_text(
@@ -226,10 +229,11 @@ def create_agent():
     )
     result = validate_agent_file(config_path)
     if isinstance(result, list):
-        console.print(f"[red]Validation failed:[/red]")
+        console.print("[red]Validation failed:[/red]")
         for err in result:
             console.print(f"  - {err}")
         import shutil
+
         shutil.rmtree(agent_dir)
         raise typer.Exit(1)
 
@@ -241,9 +245,13 @@ def create_agent():
 def assist_agent():
     """Create an agent from a natural language description (LLM-assisted)."""
     from rich.syntax import Syntax
+
     from mc.cli.agent_assist import (
-        build_llm_provider, create_agent_workspace,
-        extract_yaml_from_response, generate_agent_yaml, validate_yaml_content,
+        build_llm_provider,
+        create_agent_workspace,
+        extract_yaml_from_response,
+        generate_agent_yaml,
+        validate_yaml_content,
     )
 
     console.print("[bold]Agent-Assisted Creation[/bold]\n")
@@ -281,9 +289,11 @@ def assist_agent():
         console.print(Syntax(yaml_text, "yaml", theme="monokai", line_numbers=False))
         console.print()
 
-        choice = typer.prompt(
-            "Save this configuration? [Y/n/edit]", default="Y", show_default=False
-        ).strip().lower()
+        choice = (
+            typer.prompt("Save this configuration? [Y/n/edit]", default="Y", show_default=False)
+            .strip()
+            .lower()
+        )
 
         if choice in ("y", ""):
             _save_assisted_agent(parsed["name"], yaml_text, create_agent_workspace)
@@ -294,7 +304,10 @@ def assist_agent():
         elif choice == "edit":
             if iteration >= max_iterations - 1:
                 console.print("[yellow]Maximum feedback iterations reached.[/yellow]")
-                if typer.prompt("Save current config? [Y/n]", default="Y").strip().lower() in ("y", ""):
+                if typer.prompt("Save current config? [Y/n]", default="Y").strip().lower() in (
+                    "y",
+                    "",
+                ):
                     _save_assisted_agent(parsed["name"], yaml_text, create_agent_workspace)
                 else:
                     console.print("Cancelled.")
@@ -332,22 +345,19 @@ def _save_assisted_agent(agent_name, yaml_text, create_fn):
 
 def register_init_command(mc_app: typer.Typer) -> None:
     """Register the init wizard command on the main mc_app."""
+
     @mc_app.command()
     def init(
         skip_presets: bool = typer.Option(
             False, "--skip-presets", help="Skip preset agent selection"
         ),
-        skip_custom: bool = typer.Option(
-            False, "--skip-custom", help="Skip custom agent creation"
-        ),
-        yes: bool = typer.Option(
-            False, "--yes", "-y", help="Auto-confirm (non-interactive)"
-        ),
+        skip_custom: bool = typer.Option(False, "--skip-custom", help="Skip custom agent creation"),
+        yes: bool = typer.Option(False, "--yes", "-y", help="Auto-confirm (non-interactive)"),
     ):
         """Guided setup wizard -- create a full agent team in one go."""
-        import mc.cli as _cli
         from rich.rule import Rule
 
+        import mc.cli as _cli
         from mc.cli.init_wizard import (
             PRESETS,
             AgentPlan,
@@ -366,22 +376,26 @@ def register_init_command(mc_app: typer.Typer) -> None:
 
         if lead_agent_exists():
             console.print("  lead-agent already exists -- [dim]skipping[/dim]")
-            plans.append(AgentPlan(
-                name="lead-agent",
-                role="Lead Agent -- Orchestrator",
-                yaml_text="",
-                source="lead",
-                skip=True,
-                skip_reason="already exists",
-            ))
+            plans.append(
+                AgentPlan(
+                    name="lead-agent",
+                    role="Lead Agent -- Orchestrator",
+                    yaml_text="",
+                    source="lead",
+                    skip=True,
+                    skip_reason="already exists",
+                )
+            )
         else:
             console.print("  Will create [bold]lead-agent[/bold] (orchestrator)")
-            plans.append(AgentPlan(
-                name="lead-agent",
-                role="Lead Agent -- Orchestrator",
-                yaml_text=build_lead_agent_yaml(),
-                source="lead",
-            ))
+            plans.append(
+                AgentPlan(
+                    name="lead-agent",
+                    role="Lead Agent -- Orchestrator",
+                    yaml_text=build_lead_agent_yaml(),
+                    source="lead",
+                )
+            )
         console.print()
         if not skip_presets:
             console.print("[bold]Step 2:[/bold] Preset Agents\n")
@@ -394,16 +408,25 @@ def register_init_command(mc_app: typer.Typer) -> None:
             if yes:
                 for p in PRESETS:
                     if agent_exists(p.name):
-                        plans.append(AgentPlan(
-                            name=p.name, role=p.role, yaml_text="",
-                            source="preset", skip=True,
-                            skip_reason="already exists",
-                        ))
+                        plans.append(
+                            AgentPlan(
+                                name=p.name,
+                                role=p.role,
+                                yaml_text="",
+                                source="preset",
+                                skip=True,
+                                skip_reason="already exists",
+                            )
+                        )
                     else:
-                        plans.append(AgentPlan(
-                            name=p.name, role=p.role,
-                            yaml_text=build_preset_yaml(p), source="preset",
-                        ))
+                        plans.append(
+                            AgentPlan(
+                                name=p.name,
+                                role=p.role,
+                                yaml_text=build_preset_yaml(p),
+                                source="preset",
+                            )
+                        )
             else:
                 raw = typer.prompt(
                     "  Select presets (comma-separated numbers, 'all', or 'none')",
@@ -431,21 +454,34 @@ def register_init_command(mc_app: typer.Typer) -> None:
                             f"  Agent '{p.name}' already exists. Overwrite?",
                             default=False,
                         ):
-                            plans.append(AgentPlan(
-                                name=p.name, role=p.role,
-                                yaml_text=build_preset_yaml(p), source="preset",
-                            ))
+                            plans.append(
+                                AgentPlan(
+                                    name=p.name,
+                                    role=p.role,
+                                    yaml_text=build_preset_yaml(p),
+                                    source="preset",
+                                )
+                            )
                         else:
-                            plans.append(AgentPlan(
-                                name=p.name, role=p.role, yaml_text="",
-                                source="preset", skip=True,
-                                skip_reason="user declined overwrite",
-                            ))
+                            plans.append(
+                                AgentPlan(
+                                    name=p.name,
+                                    role=p.role,
+                                    yaml_text="",
+                                    source="preset",
+                                    skip=True,
+                                    skip_reason="user declined overwrite",
+                                )
+                            )
                     else:
-                        plans.append(AgentPlan(
-                            name=p.name, role=p.role,
-                            yaml_text=build_preset_yaml(p), source="preset",
-                        ))
+                        plans.append(
+                            AgentPlan(
+                                name=p.name,
+                                role=p.role,
+                                yaml_text=build_preset_yaml(p),
+                                source="preset",
+                            )
+                        )
             console.print()
         else:
             console.print("[bold]Step 2:[/bold] Preset Agents -- [dim]skipped[/dim]\n")
@@ -455,10 +491,7 @@ def register_init_command(mc_app: typer.Typer) -> None:
             if yes:
                 console.print("  --yes flag set -- [dim]skipping custom agents[/dim]")
             else:
-                console.print(
-                    "  Describe agents in plain English. "
-                    "Leave blank when done."
-                )
+                console.print("  Describe agents in plain English. Leave blank when done.")
                 while True:
                     description = typer.prompt(
                         "\n  Agent description (blank to finish)",
@@ -469,9 +502,7 @@ def register_init_command(mc_app: typer.Typer) -> None:
                         break
 
                     console.print("  Generating agent configuration...")
-                    yaml_text, errors = asyncio.run(
-                        _generate_custom_agent_safe(description)
-                    )
+                    yaml_text, errors = asyncio.run(_generate_custom_agent_safe(description))
                     if errors:
                         console.print(f"  [red]Error:[/red] {'; '.join(errors)}")
                         continue
@@ -490,12 +521,14 @@ def register_init_command(mc_app: typer.Typer) -> None:
                             console.print("  Skipped.")
                             continue
 
-                    plans.append(AgentPlan(
-                        name=agent_name,
-                        role=agent_role,
-                        yaml_text=yaml_text,
-                        source="custom",
-                    ))
+                    plans.append(
+                        AgentPlan(
+                            name=agent_name,
+                            role=agent_role,
+                            yaml_text=yaml_text,
+                            source="custom",
+                        )
+                    )
             console.print()
         else:
             console.print("[bold]Step 3:[/bold] Custom Agents -- [dim]skipped[/dim]\n")
@@ -517,8 +550,10 @@ def register_init_command(mc_app: typer.Typer) -> None:
         console.print(table)
 
         if to_skip:
-            console.print(f"\n  [dim]Skipping {len(to_skip)} agent(s): "
-                           f"{', '.join(p.name for p in to_skip)}[/dim]")
+            console.print(
+                f"\n  [dim]Skipping {len(to_skip)} agent(s): "
+                f"{', '.join(p.name for p in to_skip)}[/dim]"
+            )
 
         console.print()
 
@@ -552,8 +587,75 @@ async def _generate_custom_agent_safe(description: str) -> tuple[str | None, lis
     """Wrapper around generate_custom_agent that catches provider errors."""
     try:
         from mc.cli.init_wizard import generate_custom_agent
+
         return await generate_custom_agent(description)
     except SystemExit as exc:
         return None, [str(exc)]
     except Exception as exc:
         return None, [f"Generation failed: {exc}"]
+
+
+@agents_app.command("migrate")
+def migrate_agents(
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Report planned changes without writing to Convex.",
+    ),
+    agents_dir_path: str = typer.Option(
+        "",
+        "--agents-dir",
+        help="Path to agents directory (default: ~/.nanobot/agents).",
+    ),
+) -> None:
+    """Migrate existing agents to Agent Spec V2 in Convex.
+
+    Reads local config.yaml + SOUL.md files and creates Agent Spec V2 records,
+    then publishes runtime projections.  Safe to rerun (idempotent).
+    """
+    import mc.cli as _cli
+    from mc.contexts.agents.spec_migration import migrate_all
+
+    resolved_dir = Path(agents_dir_path).expanduser() if agents_dir_path else _cli.AGENTS_DIR
+
+    if not resolved_dir.is_dir():
+        console.print(f"[red]Agents directory not found: {resolved_dir}[/red]")
+        raise typer.Exit(1)
+
+    if dry_run:
+        console.print("[yellow]DRY RUN — no changes will be written to Convex[/yellow]")
+
+    bridge = _cli._get_bridge()
+    try:
+        results = migrate_all(agents_dir=resolved_dir, bridge=bridge, dry_run=dry_run)
+    finally:
+        bridge.close()
+
+    migrated = results["migrated"]
+    skipped = results["skipped"]
+    errors = results["errors"]
+
+    if migrated:
+        console.print(f"\n[green]Migrated ({len(migrated)}):[/green]")
+        for name in migrated:
+            console.print(f"  [green]✓[/green] {name}")
+
+    if skipped:
+        console.print(f"\n[dim]Skipped — already migrated ({len(skipped)}):[/dim]")
+        for name in skipped:
+            console.print(f"  [dim]–[/dim] {name}")
+
+    if errors:
+        console.print(f"\n[red]Errors ({len(errors)}):[/red]")
+        for name, err in errors.items():
+            console.print(f"  [red]✗[/red] {name}: {err}")
+
+    summary = (
+        f"\n[green]{len(migrated)} migrated[/green]"
+        + (f", [dim]{len(skipped)} skipped[/dim]" if skipped else "")
+        + (f", [red]{len(errors)} errors[/red]" if errors else "")
+    )
+    console.print(summary)
+
+    if errors:
+        raise typer.Exit(1)

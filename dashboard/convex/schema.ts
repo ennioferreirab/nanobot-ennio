@@ -1,6 +1,36 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+// ---------------------------------------------------------------------------
+// Agent Spec V2 validators
+// ---------------------------------------------------------------------------
+
+export const specStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("published"),
+  v.literal("archived"),
+);
+
+export const reviewScopeValidator = v.union(
+  v.literal("agent"),
+  v.literal("workflow"),
+  v.literal("execution"),
+);
+
+export const workflowStepTypeValidator = v.union(
+  v.literal("agent"),
+  v.literal("human"),
+  v.literal("checkpoint"),
+  v.literal("review"),
+  v.literal("system"),
+);
+
+export const workModeValidator = v.union(
+  v.literal("manual"),
+  v.literal("ai_single"),
+  v.literal("ai_workflow"),
+);
+
 export const taskFileMetadataValidator = v.object({
   name: v.string(),
   type: v.string(),
@@ -104,6 +134,10 @@ export default defineSchema({
     mergePreviousStatus: v.optional(v.string()),
     mergeLockedAt: v.optional(v.string()),
     files: taskFilesValidator,
+    // Execution scaffolding fields (optional, no behavior change yet)
+    workMode: v.optional(workModeValidator),
+    squadSpecId: v.optional(v.id("squadSpecs")),
+    workflowSpecId: v.optional(v.id("workflowSpecs")),
     createdAt: v.string(),
     updatedAt: v.string(),
   })
@@ -230,6 +264,10 @@ export default defineSchema({
     memoryContent: v.optional(v.string()),
     historyContent: v.optional(v.string()),
     sessionData: v.optional(v.string()),
+    // Runtime projection metadata — set only when this record was compiled from an agentSpec.
+    compiledFromSpecId: v.optional(v.string()),
+    compiledFromVersion: v.optional(v.number()),
+    compiledAt: v.optional(v.string()),
   })
     .index("by_name", ["name"])
     .index("by_status", ["status"]),
@@ -354,6 +392,121 @@ export default defineSchema({
     .index("by_sessionId", ["sessionId"])
     .index("by_agentName", ["agentName"]),
 
+  agentSpecs: defineTable({
+    name: v.string(),
+    displayName: v.string(),
+    role: v.string(),
+    purpose: v.optional(v.string()),
+    nonGoals: v.optional(v.array(v.string())),
+    responsibilities: v.optional(v.array(v.string())),
+    principles: v.optional(v.array(v.string())),
+    workingStyle: v.optional(v.string()),
+    qualityRules: v.optional(v.array(v.string())),
+    antiPatterns: v.optional(v.array(v.string())),
+    outputContract: v.optional(v.string()),
+    toolPolicy: v.optional(v.string()),
+    memoryPolicy: v.optional(v.string()),
+    executionPolicy: v.optional(v.string()),
+    reviewPolicyRef: v.optional(v.string()),
+    skills: v.optional(v.array(v.string())),
+    model: v.optional(v.string()),
+    status: v.union(v.literal("draft"), v.literal("published"), v.literal("archived")),
+    version: v.number(),
+    compiledAgentId: v.optional(v.id("agents")),
+    compiledAt: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_name", ["name"])
+    .index("by_status", ["status"]),
+
+  squadSpecs: defineTable({
+    name: v.string(),
+    displayName: v.string(),
+    description: v.optional(v.string()),
+    outcome: v.optional(v.string()),
+    agentSpecIds: v.array(v.id("agentSpecs")),
+    defaultWorkflowSpecId: v.optional(v.id("workflowSpecs")),
+    status: v.union(v.literal("draft"), v.literal("published"), v.literal("archived")),
+    version: v.number(),
+    tags: v.optional(v.array(v.string())),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_name", ["name"])
+    .index("by_status", ["status"]),
+
+  workflowSpecs: defineTable({
+    squadSpecId: v.id("squadSpecs"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    steps: v.array(
+      v.object({
+        id: v.string(),
+        title: v.string(),
+        type: v.union(
+          v.literal("agent"),
+          v.literal("human"),
+          v.literal("checkpoint"),
+          v.literal("review"),
+          v.literal("system"),
+        ),
+        agentSpecId: v.optional(v.id("agentSpecs")),
+        description: v.optional(v.string()),
+        inputs: v.optional(v.array(v.string())),
+        outputs: v.optional(v.array(v.string())),
+        dependsOn: v.optional(v.array(v.string())),
+        onReject: v.optional(v.string()),
+      }),
+    ),
+    exitCriteria: v.optional(v.string()),
+    executionPolicy: v.optional(v.string()),
+    reviewSpecId: v.optional(v.id("reviewSpecs")),
+    onRejectDefault: v.optional(v.string()),
+    status: v.union(v.literal("draft"), v.literal("published"), v.literal("archived")),
+    version: v.number(),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_squadSpecId", ["squadSpecId"])
+    .index("by_status", ["status"]),
+
+  reviewSpecs: defineTable({
+    name: v.string(),
+    scope: v.union(v.literal("agent"), v.literal("workflow"), v.literal("execution")),
+    criteria: v.array(
+      v.object({
+        id: v.string(),
+        label: v.string(),
+        weight: v.number(),
+        description: v.optional(v.string()),
+      }),
+    ),
+    vetoConditions: v.optional(v.array(v.string())),
+    approvalThreshold: v.number(),
+    feedbackContract: v.optional(v.string()),
+    reviewerPolicy: v.optional(v.string()),
+    rejectionRoutingPolicy: v.optional(v.string()),
+    status: v.union(v.literal("draft"), v.literal("published"), v.literal("archived")),
+    version: v.number(),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_name", ["name"])
+    .index("by_status", ["status"]),
+
+  boardSquadBindings: defineTable({
+    boardId: v.id("boards"),
+    squadSpecId: v.id("squadSpecs"),
+    enabled: v.boolean(),
+    defaultWorkflowSpecIdOverride: v.optional(v.id("workflowSpecs")),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_boardId", ["boardId"])
+    .index("by_squadSpecId", ["squadSpecId"])
+    .index("by_boardId_squadSpecId", ["boardId", "squadSpecId"]),
+
   interactiveSessions: defineTable({
     sessionId: v.string(),
     agentName: v.string(),
@@ -389,4 +542,5 @@ export default defineSchema({
     .index("by_agentName", ["agentName"])
     .index("by_provider", ["provider"])
     .index("by_status", ["status"]),
+
 });
