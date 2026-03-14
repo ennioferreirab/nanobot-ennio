@@ -144,19 +144,19 @@ async def test_interrupt_falls_back_to_pid_when_pgid_is_zero() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_stop_sends_sigterm_to_process_group() -> None:
+async def test_stop_sends_sigterm_to_process_group() -> None:
     parser = NanobotCLIParser()
     handle = _make_handle(pid=33333, pgid=33332)
     with patch("os.killpg") as mock_killpg:
-        parser.stop(handle)
+        await parser.stop(handle)
         mock_killpg.assert_called_once_with(33332, signal.SIGTERM)
 
 
-def test_stop_falls_back_to_pid_when_pgid_is_zero() -> None:
+async def test_stop_falls_back_to_pid_when_pgid_is_zero() -> None:
     parser = NanobotCLIParser()
     handle = _make_handle(pid=44444, pgid=0)
     with patch("os.kill") as mock_kill:
-        parser.stop(handle)
+        await parser.stop(handle)
         mock_kill.assert_called_once_with(44444, signal.SIGTERM)
 
 
@@ -165,8 +165,8 @@ def test_stop_falls_back_to_pid_when_pgid_is_zero() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_resume_raises_not_supported_error() -> None:
+async def test_resume_raises_not_supported_error() -> None:
     parser = NanobotCLIParser()
     handle = _make_handle()
     with pytest.raises(NotImplementedError, match="runtime-owned"):
-        parser.resume(handle, "some message")
+        await parser.resume(handle, "some message")
