@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mc.infrastructure.runtime_context import RuntimeContext
+from mc.runtime.workers.planning import PlanningWorker
 from mc.types import (
     ActivityEventType,
     ExecutionPlan,
     ExecutionPlanStep,
     TaskStatus,
 )
-from mc.runtime.workers.planning import PlanningWorker
 
 
 async def _sync_to_thread(func, *args, **kwargs):
@@ -117,9 +117,7 @@ class TestPlanningWorkerProcessTask:
             return MagicMock()
 
         with (
-            patch(
-                "mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread
-            ),
+            patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread),
             patch(
                 "mc.runtime.workers.planning.asyncio.create_task",
                 side_effect=_capture_create_task,
@@ -131,9 +129,7 @@ class TestPlanningWorkerProcessTask:
             await worker.process_task(task)
 
         bridge.create_task_directory.assert_called_once_with("task-1")
-        bridge.update_execution_plan.assert_called_once_with(
-            "task-1", plan.to_dict()
-        )
+        bridge.update_execution_plan.assert_called_once_with("task-1", plan.to_dict())
         materializer.materialize.assert_called_once()
         assert len(scheduled_coroutines) == 1
 
@@ -158,9 +154,7 @@ class TestPlanningWorkerProcessTask:
         plan = _make_plan()
 
         with (
-            patch(
-                "mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread
-            ),
+            patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread),
             patch("mc.runtime.workers.planning.asyncio.create_task") as create_mock,
             patch("mc.runtime.workers.planning.TaskPlanner") as planner_cls,
         ):
@@ -184,9 +178,7 @@ class TestPlanningWorkerProcessTask:
         plan = _make_plan()
 
         with (
-            patch(
-                "mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread
-            ),
+            patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread),
             patch("mc.runtime.workers.planning.asyncio.create_task") as create_mock,
             patch("mc.runtime.workers.planning.TaskPlanner") as planner_cls,
         ):
@@ -215,15 +207,11 @@ class TestPlanningWorkerProcessTask:
         task = _make_task(task_id="task-fail", title="Failing plan")
 
         with (
-            patch(
-                "mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread
-            ),
+            patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread),
             patch("mc.runtime.workers.planning.TaskPlanner") as planner_cls,
         ):
             planner = planner_cls.return_value
-            planner.plan_task = AsyncMock(
-                side_effect=RuntimeError("planner exploded")
-            )
+            planner.plan_task = AsyncMock(side_effect=RuntimeError("planner exploded"))
             await worker.process_task(task)
 
         bridge.update_execution_plan.assert_not_called()
@@ -248,9 +236,7 @@ class TestPlanningWorkerProcessTask:
         task = _make_task()
         task["is_manual"] = True
 
-        with patch(
-            "mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread
-        ):
+        with patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread):
             await worker.process_task(task)
 
         bridge.create_task_directory.assert_called_once()
@@ -273,9 +259,7 @@ class TestPlanningWorkerProcessTask:
         dispatcher = _make_dispatcher()
         worker = PlanningWorker(_make_ctx(bridge), materializer, dispatcher)
 
-        files = [
-            {"name": "invoice.pdf", "type": "application/pdf", "size": 867328}
-        ]
+        files = [{"name": "invoice.pdf", "type": "application/pdf", "size": 867328}]
         task = _make_task()
         task["files"] = files
         plan = _make_plan()
@@ -285,9 +269,7 @@ class TestPlanningWorkerProcessTask:
             return MagicMock()
 
         with (
-            patch(
-                "mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread
-            ),
+            patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread),
             patch(
                 "mc.runtime.workers.planning.asyncio.create_task",
                 side_effect=_capture_create_task,
@@ -321,9 +303,7 @@ class TestPlanningWorkerProcessBatch:
             return MagicMock()
 
         with (
-            patch(
-                "mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread
-            ),
+            patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread),
             patch(
                 "mc.runtime.workers.planning.asyncio.create_task",
                 side_effect=_capture_create_task,
@@ -351,9 +331,7 @@ class TestPlanningWorkerProcessBatch:
             return MagicMock()
 
         with (
-            patch(
-                "mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread
-            ),
+            patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread),
             patch(
                 "mc.runtime.workers.planning.asyncio.create_task",
                 side_effect=_capture_create_task,
@@ -370,3 +348,217 @@ class TestPlanningWorkerProcessBatch:
 
             await worker.process_batch([_make_task()])  # re-enters
             assert bridge.create_task_directory.call_count == 2
+
+
+class TestPlanningWorkerLeadAgentModel:
+    """Lock planning-model sourcing to the Lead Agent's configured model (AC #3-6)."""
+
+    def _make_agents_with_lead(self, lead_model: str | None) -> list[dict]:
+        agents = []
+        if lead_model is not None:
+            agents.append(
+                {
+                    "name": "lead-agent",
+                    "display_name": "Lead Agent",
+                    "role": "orchestrator",
+                    "model": lead_model,
+                    "enabled": True,
+                    "is_system": True,
+                }
+            )
+        agents.append(
+            {
+                "name": "nanobot",
+                "display_name": "Nanobot",
+                "role": "Generalist",
+                "skills": ["general"],
+                "enabled": True,
+            }
+        )
+        return agents
+
+    @pytest.mark.asyncio
+    async def test_cc_model_passes_cc_model_to_planner(self) -> None:
+        """Lead Agent with cc/... model passes that model to plan_task."""
+        bridge = _make_bridge()
+        bridge.list_agents.return_value = self._make_agents_with_lead("cc/claude-sonnet-4-6")
+
+        materializer = _make_materializer()
+        dispatcher = _make_dispatcher()
+        worker = PlanningWorker(_make_ctx(bridge), materializer, dispatcher)
+        task = _make_task()
+        plan = _make_plan()
+
+        def _capture_create_task(coro):
+            coro.close()
+            return MagicMock()
+
+        captured_plan_task_calls: list = []
+
+        with (
+            patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread),
+            patch(
+                "mc.runtime.workers.planning.asyncio.create_task",
+                side_effect=_capture_create_task,
+            ),
+            patch("mc.runtime.workers.planning.TaskPlanner") as planner_cls,
+            patch("mc.infrastructure.providers.tier_resolver.TierResolver") as tier_resolver_cls,
+        ):
+            # For non-tier models, resolve_model returns the model as-is (pass-through)
+            mock_resolver = tier_resolver_cls.return_value
+            mock_resolver.resolve_model.side_effect = lambda m: m
+            mock_resolver.resolve_reasoning_level.return_value = None
+
+            async def _plan_task_capture(*args, **kwargs):
+                captured_plan_task_calls.append(kwargs)
+                return plan
+
+            planner = planner_cls.return_value
+            planner.plan_task = AsyncMock(side_effect=_plan_task_capture)
+            await worker.process_task(task)
+
+        assert len(captured_plan_task_calls) == 1
+        called_model = captured_plan_task_calls[0].get("model")
+        assert called_model == "cc/claude-sonnet-4-6", (
+            f"Expected cc/claude-sonnet-4-6 passed to planner, got {called_model!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_tier_model_resolves_from_lead_agent_not_hardcoded(self) -> None:
+        """Lead Agent with tier reference resolves that tier, not tier:standard-medium."""
+        bridge = _make_bridge()
+        bridge.list_agents.return_value = self._make_agents_with_lead("tier:standard-high")
+
+        materializer = _make_materializer()
+        dispatcher = _make_dispatcher()
+        worker = PlanningWorker(_make_ctx(bridge), materializer, dispatcher)
+        task = _make_task()
+        plan = _make_plan()
+
+        captured_plan_task_calls: list = []
+
+        def _capture_create_task(coro):
+            coro.close()
+            return MagicMock()
+
+        with (
+            patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread),
+            patch(
+                "mc.runtime.workers.planning.asyncio.create_task",
+                side_effect=_capture_create_task,
+            ),
+            patch("mc.runtime.workers.planning.TaskPlanner") as planner_cls,
+            patch("mc.infrastructure.providers.tier_resolver.TierResolver") as tier_resolver_cls,
+        ):
+            mock_resolver = tier_resolver_cls.return_value
+            mock_resolver.resolve_model.side_effect = lambda m: (
+                "anthropic-oauth/claude-opus-4-6" if m == "tier:standard-high" else m
+            )
+            mock_resolver.resolve_reasoning_level.return_value = None
+
+            async def _plan_task_capture(*args, **kwargs):
+                captured_plan_task_calls.append(kwargs)
+                return plan
+
+            planner = planner_cls.return_value
+            planner.plan_task = AsyncMock(side_effect=_plan_task_capture)
+            await worker.process_task(task)
+
+        # Must have resolved using the Lead Agent tier, not a hardcoded planning tier
+        resolved_models_calls = [call[0][0] for call in mock_resolver.resolve_model.call_args_list]
+        assert "tier:standard-high" in resolved_models_calls, (
+            f"Expected tier:standard-high to be resolved; resolve_model called with: {resolved_models_calls}"
+        )
+        assert "tier:standard-medium" not in resolved_models_calls, (
+            "Hardcoded tier:standard-medium must not be used when Lead Agent has a model"
+        )
+
+        assert len(captured_plan_task_calls) == 1
+        called_model = captured_plan_task_calls[0].get("model")
+        assert called_model == "anthropic-oauth/claude-opus-4-6", (
+            f"Expected resolved model from Lead Agent tier, got {called_model!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_lead_agent_not_in_delegatable_still_provides_model(self) -> None:
+        """Lead Agent filtered from delegatable list still provides its model for planning."""
+        bridge = _make_bridge()
+        # Lead agent present in raw list — it will be filtered from delegatable agents
+        # because lead-agent is never delegatable (it's the orchestrator).
+        bridge.list_agents.return_value = self._make_agents_with_lead("cc/claude-sonnet-4-6")
+
+        materializer = _make_materializer()
+        dispatcher = _make_dispatcher()
+        worker = PlanningWorker(_make_ctx(bridge), materializer, dispatcher)
+        task = _make_task()
+        plan = _make_plan()
+
+        captured_plan_task_calls: list = []
+
+        def _capture_create_task(coro):
+            coro.close()
+            return MagicMock()
+
+        with (
+            patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread),
+            patch(
+                "mc.runtime.workers.planning.asyncio.create_task",
+                side_effect=_capture_create_task,
+            ),
+            patch("mc.runtime.workers.planning.TaskPlanner") as planner_cls,
+            patch("mc.infrastructure.providers.tier_resolver.TierResolver") as tier_resolver_cls,
+        ):
+            # For non-tier models, resolve_model returns the model as-is (pass-through)
+            mock_resolver = tier_resolver_cls.return_value
+            mock_resolver.resolve_model.side_effect = lambda m: m
+            mock_resolver.resolve_reasoning_level.return_value = None
+
+            async def _plan_task_capture(*args, **kwargs):
+                captured_plan_task_calls.append(kwargs)
+                return plan
+
+            planner = planner_cls.return_value
+            planner.plan_task = AsyncMock(side_effect=_plan_task_capture)
+            await worker.process_task(task)
+
+        assert len(captured_plan_task_calls) == 1
+        called_model = captured_plan_task_calls[0].get("model")
+        # Lead agent's model must be used even though lead-agent is filtered from delegatable list
+        assert called_model == "cc/claude-sonnet-4-6", (
+            f"Expected Lead Agent model even when not in delegatable list, got {called_model!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_planner_failure_marks_task_failed_not_silently_swallowed(self) -> None:
+        """Planner failure must surface as task failure; no silent fallback."""
+        bridge = _make_bridge()
+        bridge.list_agents.return_value = self._make_agents_with_lead("cc/claude-sonnet-4-6")
+
+        materializer = _make_materializer()
+        dispatcher = _make_dispatcher()
+        worker = PlanningWorker(_make_ctx(bridge), materializer, dispatcher)
+        task = _make_task(task_id="task-fail-visible", title="Visible failure")
+
+        with (
+            patch("mc.runtime.workers.planning.asyncio.to_thread", new=_sync_to_thread),
+            patch("mc.runtime.workers.planning.TaskPlanner") as planner_cls,
+            patch("mc.infrastructure.providers.tier_resolver.TierResolver") as tier_resolver_cls,
+        ):
+            mock_resolver = tier_resolver_cls.return_value
+            mock_resolver.resolve_model.side_effect = lambda m: m
+            mock_resolver.resolve_reasoning_level.return_value = None
+            planner = planner_cls.return_value
+            planner.plan_task = AsyncMock(side_effect=RuntimeError("model not found: cc/bad-model"))
+            await worker.process_task(task)
+
+        # Task must be marked FAILED — failure must not be silently swallowed
+        bridge.update_task_status.assert_called_once()
+        status_args = bridge.update_task_status.call_args[0]
+        assert status_args[0] == "task-fail-visible"
+        assert status_args[1] == TaskStatus.FAILED
+
+        # Error message must be surfaced
+        bridge.send_message.assert_called_once()
+        send_args = bridge.send_message.call_args[0]
+        assert "Plan generation failed" in send_args[3]
+        assert "model not found" in send_args[3]
