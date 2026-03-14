@@ -3,7 +3,17 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SquadAuthoringWizard } from "./SquadAuthoringWizard";
 
-// Mock the useCreateSquadDraft hook using importOriginal to preserve named exports
+// ── Mock the shared authoring session ──────────────────────────────────────
+vi.mock("@/features/agents/hooks/useAuthoringSession", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/features/agents/hooks/useAuthoringSession")>();
+  return {
+    ...actual,
+    useAuthoringSession: vi.fn(),
+  };
+});
+
+// ── Mock the squad publish hook ─────────────────────────────────────────────
 vi.mock("@/features/agents/hooks/useCreateSquadDraft", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/features/agents/hooks/useCreateSquadDraft")>();
@@ -13,51 +23,99 @@ vi.mock("@/features/agents/hooks/useCreateSquadDraft", async (importOriginal) =>
   };
 });
 
-import {
-  useCreateSquadDraft,
-  EMPTY_SQUAD_DRAFT,
-} from "@/features/agents/hooks/useCreateSquadDraft";
+import { useAuthoringSession } from "@/features/agents/hooks/useAuthoringSession";
+import { useCreateSquadDraft } from "@/features/agents/hooks/useCreateSquadDraft";
 
+const mockUseAuthoringSession = vi.mocked(useAuthoringSession);
 const mockUseCreateSquadDraft = vi.mocked(useCreateSquadDraft);
 
-describe("SquadAuthoringWizard", () => {
+describe("SquadAuthoringWizard — chat-first", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+
+    mockUseAuthoringSession.mockReturnValue({
+      phase: "discovery",
+      transcript: [
+        {
+          role: "assistant",
+          content: "Hi! Tell me about the squad you want to build.",
+        },
+      ],
+      draftGraph: {},
+      isLoading: false,
+      error: null,
+      sendMessage: vi.fn(),
+      reset: vi.fn(),
+    });
+
     mockUseCreateSquadDraft.mockReturnValue({
-      draft: { ...EMPTY_SQUAD_DRAFT },
+      draft: {
+        name: "",
+        displayName: "",
+        description: "",
+        outcome: "",
+        agentRoles: [],
+        workflowSteps: [],
+        exitCriteria: "",
+        reviewPolicy: "",
+      },
       isSaving: false,
       updateDraft: vi.fn(),
       publishDraft: vi.fn().mockResolvedValue(null),
     });
   });
 
-  it("renders squad authoring wizard when open", () => {
+  it("renders the conversation transcript panel (chat-first)", () => {
     render(<SquadAuthoringWizard open={true} onClose={vi.fn()} onPublished={vi.fn()} />);
-    // "Create Squad" title should be visible
-    const squadTexts = screen.getAllByText(/squad/i);
-    expect(squadTexts.length).toBeGreaterThan(0);
+    expect(screen.getByText("Hi! Tell me about the squad you want to build.")).toBeInTheDocument();
   });
 
-  it("shows Outcome phase as the first step", () => {
+  it("renders a message composer input (not a form-first UI)", () => {
     render(<SquadAuthoringWizard open={true} onClose={vi.fn()} onPublished={vi.fn()} />);
-    const outcomeElements = screen.getAllByText(/outcome/i);
-    expect(outcomeElements.length).toBeGreaterThan(0);
+    // There must be a textbox for the user to type in
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
-  it("renders a live summary panel", () => {
+  it("renders the live preview panel", () => {
     render(<SquadAuthoringWizard open={true} onClose={vi.fn()} onPublished={vi.fn()} />);
-    expect(screen.getByTestId("squad-spec-summary")).toBeInTheDocument();
+    expect(screen.getByTestId("authoring-preview-panel")).toBeInTheDocument();
   });
 
-  it("shows team design phase indicator", () => {
+  it("uses useAuthoringSession with squad mode", () => {
     render(<SquadAuthoringWizard open={true} onClose={vi.fn()} onPublished={vi.fn()} />);
-    // Phase labels are rendered in the phase navigation bar
-    expect(screen.getByText("Team Design")).toBeInTheDocument();
+    expect(mockUseAuthoringSession).toHaveBeenCalledWith("squad");
   });
 
-  it("shows workflow design phase indicator", () => {
+  it("does NOT render a multi-step form as the primary surface (not form-first)", () => {
     render(<SquadAuthoringWizard open={true} onClose={vi.fn()} onPublished={vi.fn()} />);
-    expect(screen.getByText("Workflow Design")).toBeInTheDocument();
+    // Old form-first phase labels should NOT be the primary interaction
+    expect(screen.queryByText("Team Design")).not.toBeInTheDocument();
+    expect(screen.queryByText("Workflow Design")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/review squad/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the approve/publish button when phase is approval", () => {
+    mockUseAuthoringSession.mockReturnValue({
+      phase: "approval",
+      transcript: [
+        {
+          role: "assistant",
+          content: "The squad looks great! Ready to publish?",
+        },
+      ],
+      draftGraph: {
+        squad: { outcome: "Build great software" },
+        agents: [{ key: "developer", role: "Developer" }],
+        workflows: [{ key: "default", steps: [] }],
+      },
+      isLoading: false,
+      error: null,
+      sendMessage: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    render(<SquadAuthoringWizard open={true} onClose={vi.fn()} onPublished={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /publish/i })).toBeInTheDocument();
   });
 
   it("calls onClose when Cancel is clicked", async () => {
@@ -67,48 +125,72 @@ describe("SquadAuthoringWizard", () => {
     expect(handleClose).toHaveBeenCalled();
   });
 
-  it("allows entering squad display name", async () => {
-    const updateDraft = vi.fn();
-    mockUseCreateSquadDraft.mockReturnValue({
-      draft: { ...EMPTY_SQUAD_DRAFT },
-      isSaving: false,
-      updateDraft,
-      publishDraft: vi.fn().mockResolvedValue(null),
-    });
-    render(<SquadAuthoringWizard open={true} onClose={vi.fn()} onPublished={vi.fn()} />);
-    // The display name input uses placeholder "squad name (e.g. Review Squad)"
-    const displayNameInput = screen.getByPlaceholderText(/review squad/i);
-    await userEvent.type(displayNameInput, "Alpha Team");
-    // updateDraft should have been called for each typed character
-    expect(updateDraft).toHaveBeenCalled();
-  });
-
   it("does not render when open=false", () => {
     render(<SquadAuthoringWizard open={false} onClose={vi.fn()} onPublished={vi.fn()} />);
-    expect(screen.queryByTestId("squad-spec-summary")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("authoring-preview-panel")).not.toBeInTheDocument();
+  });
+
+  it("shows preview panel with agents from draftGraph", () => {
+    mockUseAuthoringSession.mockReturnValue({
+      phase: "proposal",
+      transcript: [
+        {
+          role: "assistant",
+          content: "I propose a developer and a reviewer.",
+        },
+      ],
+      draftGraph: {
+        agents: [
+          { key: "developer", role: "Developer" },
+          { key: "reviewer", role: "Reviewer" },
+        ],
+        workflows: [{ key: "default", steps: [] }],
+      },
+      isLoading: false,
+      error: null,
+      sendMessage: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    render(<SquadAuthoringWizard open={true} onClose={vi.fn()} onPublished={vi.fn()} />);
+    expect(screen.getByTestId("authoring-preview-panel")).toBeInTheDocument();
   });
 
   it("calls publishDraft and onPublished when publish succeeds", async () => {
     const publishDraft = vi.fn().mockResolvedValue("my-squad");
     const onPublished = vi.fn();
     const onClose = vi.fn();
+    mockUseAuthoringSession.mockReturnValue({
+      phase: "approval",
+      transcript: [{ role: "assistant", content: "Ready to publish?" }],
+      draftGraph: {
+        squad: { name: "my-squad", displayName: "My Squad", outcome: "Build great software" },
+        agents: [{ key: "dev", name: "dev", role: "Developer" }],
+        workflows: [],
+      },
+      isLoading: false,
+      error: null,
+      sendMessage: vi.fn(),
+      reset: vi.fn(),
+    });
     mockUseCreateSquadDraft.mockReturnValue({
-      draft: { ...EMPTY_SQUAD_DRAFT, name: "my-squad" },
+      draft: {
+        name: "my-squad",
+        displayName: "My Squad",
+        description: "",
+        outcome: "",
+        agentRoles: [],
+        workflowSteps: [],
+        exitCriteria: "",
+        reviewPolicy: "",
+      },
       isSaving: false,
       updateDraft: vi.fn(),
       publishDraft,
     });
+
     render(<SquadAuthoringWizard open={true} onClose={onClose} onPublished={onPublished} />);
-
-    // Navigate to the last phase
-    const nextButton = screen.getByRole("button", { name: /next/i });
-    await userEvent.click(nextButton);
-    await userEvent.click(nextButton);
-    await userEvent.click(nextButton);
-    await userEvent.click(nextButton);
-
-    // Now on review-approval phase — click Publish Squad
-    const publishButton = screen.getByRole("button", { name: /publish squad/i });
+    const publishButton = screen.getByRole("button", { name: /publish/i });
     await userEvent.click(publishButton);
 
     expect(publishDraft).toHaveBeenCalled();
@@ -120,22 +202,33 @@ describe("SquadAuthoringWizard", () => {
     const publishDraft = vi.fn().mockResolvedValue(null);
     const onPublished = vi.fn();
     const onClose = vi.fn();
+    mockUseAuthoringSession.mockReturnValue({
+      phase: "approval",
+      transcript: [{ role: "assistant", content: "Ready to publish?" }],
+      draftGraph: {},
+      isLoading: false,
+      error: null,
+      sendMessage: vi.fn(),
+      reset: vi.fn(),
+    });
     mockUseCreateSquadDraft.mockReturnValue({
-      draft: { ...EMPTY_SQUAD_DRAFT, name: "my-squad" },
+      draft: {
+        name: "",
+        displayName: "",
+        description: "",
+        outcome: "",
+        agentRoles: [],
+        workflowSteps: [],
+        exitCriteria: "",
+        reviewPolicy: "",
+      },
       isSaving: false,
       updateDraft: vi.fn(),
       publishDraft,
     });
+
     render(<SquadAuthoringWizard open={true} onClose={onClose} onPublished={onPublished} />);
-
-    // Navigate to the last phase
-    const nextButton = screen.getByRole("button", { name: /next/i });
-    await userEvent.click(nextButton);
-    await userEvent.click(nextButton);
-    await userEvent.click(nextButton);
-    await userEvent.click(nextButton);
-
-    const publishButton = screen.getByRole("button", { name: /publish squad/i });
+    const publishButton = screen.getByRole("button", { name: /publish/i });
     await userEvent.click(publishButton);
 
     expect(publishDraft).toHaveBeenCalled();

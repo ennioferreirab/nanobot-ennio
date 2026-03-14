@@ -1,4 +1,4 @@
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
@@ -68,9 +68,21 @@ export const publish = internalMutation({
   },
 });
 
-export const listBySquad = internalQuery({
+export const listBySquadInternal = internalQuery({
   args: {
     squadSpecId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("workflowSpecs")
+      .withIndex("by_squadSpecId", (q) => q.eq("squadSpecId", args.squadSpecId))
+      .collect();
+  },
+});
+
+export const listBySquad = query({
+  args: {
+    squadSpecId: v.id("squadSpecs"),
   },
   handler: async (ctx, args) => {
     return await ctx.db
