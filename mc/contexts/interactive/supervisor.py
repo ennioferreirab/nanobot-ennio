@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json as _json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -10,6 +11,8 @@ from mc.contexts.interactive.metrics import increment_interactive_metric
 from mc.contexts.interactive.registry import InteractiveSessionRegistry
 from mc.contexts.interactive.supervision_types import InteractiveSupervisionEvent
 from mc.types import ActivityEventType
+
+logger = logging.getLogger(__name__)
 
 _ACTION_KINDS = frozenset(
     {
@@ -56,21 +59,30 @@ class InteractiveExecutionSupervisor:
         timestamp = event.occurred_at or datetime.now(timezone.utc).isoformat()
         metadata = self._registry.get(event.session_id) or {}
         merged_event = self._merge_event_context(event, metadata)
+        event_payload: dict[str, Any] = {"kind": merged_event.kind}
+        if merged_event.task_id is not None:
+            event_payload["task_id"] = merged_event.task_id
+        if merged_event.step_id is not None:
+            event_payload["step_id"] = merged_event.step_id
+        if merged_event.turn_id is not None:
+            event_payload["turn_id"] = merged_event.turn_id
+        if merged_event.item_id is not None:
+            event_payload["item_id"] = merged_event.item_id
+        if merged_event.summary is not None:
+            event_payload["summary"] = merged_event.summary
+        if merged_event.final_output is not None:
+            event_payload["final_output"] = merged_event.final_output
+        if merged_event.provider is not None:
+            event_payload["final_result_source"] = merged_event.provider
+        if merged_event.error is not None:
+            event_payload["error"] = merged_event.error
+        if merged_event.status is not None:
+            event_payload["status"] = merged_event.status
+        if merged_event.agent_name is not None:
+            event_payload["agent_name"] = merged_event.agent_name
         updated_metadata = self._registry.record_supervision(
             merged_event.session_id,
-            event={
-                "kind": merged_event.kind,
-                "task_id": merged_event.task_id,
-                "step_id": merged_event.step_id,
-                "turn_id": merged_event.turn_id,
-                "item_id": merged_event.item_id,
-                "summary": merged_event.summary,
-                "final_output": merged_event.final_output,
-                "final_result_source": merged_event.provider,
-                "error": merged_event.error,
-                "status": merged_event.status,
-                "agent_name": merged_event.agent_name,
-            },
+            event=event_payload,
             timestamp=timestamp,
         )
         try:
@@ -182,13 +194,21 @@ class InteractiveExecutionSupervisor:
                     agent_name=event.agent_name,
                     description=description,
                 )
-            except Exception:
-                pass  # Task may already be in_progress
+            except Exception as exc:
+                if _is_same_status_error(exc, "in_progress"):
+                    logger.debug(
+                        "Task %s already in_progress — idempotent, skipping", event.task_id
+                    )
+                else:
+                    raise
         if event.step_id:
             try:
                 self._bridge.update_step_status(event.step_id, "running")
-            except Exception:
-                pass  # Step may already be running
+            except Exception as exc:
+                if _is_same_status_error(exc, "running"):
+                    logger.debug("Step %s already running — idempotent, skipping", event.step_id)
+                else:
+                    raise
         if event.task_id and event.agent_name:
             self._bridge.create_activity(
                 ActivityEventType.STEP_STARTED,
@@ -261,3 +281,13 @@ def _string_or_none(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _is_same_status_error(exc: Exception, status: str) -> bool:
+    """Return True if *exc* represents a no-op same-status transition for *status*.
+
+    Convex validators raise when the current status equals the requested status.
+    The message contains a pattern like "<status> -> <status>".
+    """
+    msg = str(exc)
+    return f"{status} -> {status}" in msg
