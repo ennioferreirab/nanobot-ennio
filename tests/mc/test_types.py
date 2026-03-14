@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import pytest
+from nanobot.config.schema import ClaudeCodeConfig
 from pydantic import ValidationError
 
-from mc.types import AgentData, ClaudeCodeOpts, is_cc_model, extract_cc_model_name, CC_AVAILABLE_MODELS
-from nanobot.config.schema import ClaudeCodeConfig
+from mc.types import (
+    CC_AVAILABLE_MODELS,
+    AgentData,
+    ClaudeCodeOpts,
+    ExecutionPlan,
+    extract_cc_model_name,
+    is_cc_model,
+)
 
 
 class TestClaudeCodeOpts:
@@ -145,6 +152,113 @@ class TestClaudeCodeConfig:
         for mode in ("default", "acceptEdits", "bypassPermissions"):
             cfg = ClaudeCodeConfig(default_permission_mode=mode)
             assert cfg.default_permission_mode == mode
+
+
+class TestExecutionPlanFromDict:
+    """Tests for ExecutionPlan.from_dict — workflow metadata deserialization."""
+
+    def test_from_dict_preserves_workflow_step_id(self) -> None:
+        data = {
+            "steps": [
+                {
+                    "tempId": "step_1",
+                    "title": "Analyze",
+                    "description": "Analyze requirements",
+                    "assignedAgent": "nanobot",
+                    "blockedBy": [],
+                    "parallelGroup": 1,
+                    "order": 1,
+                    "workflowStepId": "analyze-step",
+                    "workflowStepType": "agent",
+                    "agentSpecId": "agent-spec-123",
+                }
+            ],
+            "generatedAt": "2026-03-14T10:00:00Z",
+            "generatedBy": "workflow",
+        }
+        plan = ExecutionPlan.from_dict(data)
+        assert len(plan.steps) == 1
+        step = plan.steps[0]
+        assert step.workflow_step_id == "analyze-step"
+        assert step.workflow_step_type == "agent"
+        assert step.agent_spec_id == "agent-spec-123"
+
+    def test_from_dict_preserves_review_spec_id_and_on_reject(self) -> None:
+        data = {
+            "steps": [
+                {
+                    "tempId": "step_2",
+                    "title": "Review",
+                    "description": "Review output",
+                    "assignedAgent": "nanobot",
+                    "blockedBy": [],
+                    "parallelGroup": 1,
+                    "order": 2,
+                    "workflowStepId": "review-step",
+                    "workflowStepType": "review",
+                    "reviewSpecId": "review-spec-456",
+                    "onRejectStepId": "step_1",
+                }
+            ],
+            "generatedAt": "2026-03-14T10:00:00Z",
+            "generatedBy": "workflow",
+        }
+        plan = ExecutionPlan.from_dict(data)
+        step = plan.steps[0]
+        assert step.workflow_step_type == "review"
+        assert step.review_spec_id == "review-spec-456"
+        assert step.on_reject_step_id == "step_1"
+
+    def test_from_dict_workflow_metadata_none_when_absent(self) -> None:
+        data = {
+            "steps": [
+                {
+                    "tempId": "step_1",
+                    "title": "Plain step",
+                    "description": "No workflow metadata",
+                    "assignedAgent": "nanobot",
+                    "blockedBy": [],
+                    "parallelGroup": 1,
+                    "order": 1,
+                }
+            ],
+            "generatedAt": "2026-03-14T10:00:00Z",
+            "generatedBy": "lead-agent",
+        }
+        plan = ExecutionPlan.from_dict(data)
+        step = plan.steps[0]
+        assert step.workflow_step_id is None
+        assert step.workflow_step_type is None
+        assert step.agent_spec_id is None
+        assert step.review_spec_id is None
+        assert step.on_reject_step_id is None
+
+    def test_from_dict_accepts_snake_case_workflow_keys(self) -> None:
+        data = {
+            "steps": [
+                {
+                    "temp_id": "step_1",
+                    "title": "Analyze",
+                    "description": "Analyze",
+                    "assigned_agent": "nanobot",
+                    "blocked_by": [],
+                    "parallel_group": 1,
+                    "order": 1,
+                    "workflow_step_id": "analyze",
+                    "workflow_step_type": "agent",
+                    "agent_spec_id": "spec-1",
+                    "on_reject_step_id": "step_0",
+                }
+            ],
+            "generatedAt": "2026-03-14T10:00:00Z",
+            "generatedBy": "workflow",
+        }
+        plan = ExecutionPlan.from_dict(data)
+        step = plan.steps[0]
+        assert step.workflow_step_id == "analyze"
+        assert step.workflow_step_type == "agent"
+        assert step.agent_spec_id == "spec-1"
+        assert step.on_reject_step_id == "step_0"
 
 
 class TestCCModelHelpers:

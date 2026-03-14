@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   attachWorkflowExecutionPlan,
   buildWorkflowExecutionPlan,
+  launchSquadMission,
   type WorkflowSpecInput,
   type AgentSpecRef,
 } from "./squadMissionLaunch";
@@ -55,6 +56,212 @@ function makeCtx(taskExists = true) {
     patches,
   };
 }
+
+// ---------------------------------------------------------------------------
+// launchSquadMission
+// ---------------------------------------------------------------------------
+
+describe("launchSquadMission", () => {
+  const mockSquadSpec = {
+    _id: "squad-id-1",
+    name: "review-squad",
+    displayName: "Review Squad",
+    status: "published",
+    version: 1,
+    agentSpecIds: ["agent-spec-1", "agent-spec-2"],
+    createdAt: "2024-01-01",
+    updatedAt: "2024-01-01",
+  };
+
+  const mockWorkflowSpec = {
+    _id: "workflow-id-1",
+    squadSpecId: "squad-id-1",
+    name: "Default Workflow",
+    steps: [
+      {
+        id: "step-research",
+        title: "Research audience",
+        type: "agent",
+        agentSpecId: "agent-spec-1",
+      },
+    ],
+    status: "published",
+    version: 1,
+    createdAt: "2024-01-01",
+    updatedAt: "2024-01-01",
+  };
+
+  const mockAgentSpec1 = {
+    _id: "agent-spec-1",
+    name: "audience-researcher",
+    displayName: "Audience Researcher",
+    status: "published",
+    version: 1,
+    role: "researcher",
+  };
+
+  const mockAgentSpec2 = {
+    _id: "agent-spec-2",
+    name: "post-writer",
+    displayName: "Post Writer",
+    status: "published",
+    version: 1,
+    role: "writer",
+  };
+
+  function makeLaunchCtx(opts: {
+    squadSpec?: Record<string, unknown> | null;
+    workflowSpec?: Record<string, unknown> | null;
+    agentSpecs?: Record<string, unknown>[];
+  }) {
+    const inserts: { table: string; value: Record<string, unknown> }[] = [];
+    const patches: { id: string; patch: Record<string, unknown> }[] = [];
+
+    const agentsBySpecId = new Map(
+      (opts.agentSpecs ?? []).map((a) => [String(a._id), a]),
+    );
+
+    const get = vi.fn(async (id: string) => {
+      if (opts.squadSpec && id === opts.squadSpec._id) return opts.squadSpec;
+      if (opts.workflowSpec && id === opts.workflowSpec._id) return opts.workflowSpec;
+      if (agentsBySpecId.has(id)) return agentsBySpecId.get(id);
+      return null;
+    });
+
+    const insert = vi.fn(
+      async (table: string, value: Record<string, unknown>) => {
+        inserts.push({ table, value });
+        return table === "tasks" ? "task-mission-id-1" : "activity-id-1";
+      },
+    );
+
+    const patch = vi.fn(async (id: string, p: Record<string, unknown>) => {
+      patches.push({ id, patch: p });
+    });
+
+    const first = vi.fn(async () => null);
+    const withIndex = vi.fn(() => ({ first }));
+    const query = vi.fn(() => ({ withIndex }));
+
+    return {
+      ctx: { db: { query, get, insert, patch } },
+      inserts,
+      patches,
+    };
+  }
+
+  it("creates a task with workMode=ai_workflow and returns task id", async () => {
+    const { ctx, inserts } = makeLaunchCtx({
+      squadSpec: mockSquadSpec,
+      workflowSpec: mockWorkflowSpec,
+      agentSpecs: [mockAgentSpec1, mockAgentSpec2],
+    });
+
+    const taskId = await launchSquadMission(
+      ctx as Parameters<typeof launchSquadMission>[0],
+      {
+        squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
+        workflowSpecId: "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
+        boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
+        title: "Mission: review release",
+      },
+    );
+
+    expect(taskId).toBe("task-mission-id-1");
+    const taskInsert = inserts.find((i) => i.table === "tasks");
+    expect(taskInsert).toBeDefined();
+    expect(taskInsert!.value.workMode).toBe("ai_workflow");
+    expect(taskInsert!.value.squadSpecId).toBe("squad-id-1");
+    expect(taskInsert!.value.workflowSpecId).toBe("workflow-id-1");
+  });
+
+  it("attaches a compiled execution plan to the task", async () => {
+    const { ctx, patches } = makeLaunchCtx({
+      squadSpec: mockSquadSpec,
+      workflowSpec: mockWorkflowSpec,
+      agentSpecs: [mockAgentSpec1, mockAgentSpec2],
+    });
+
+    await launchSquadMission(
+      ctx as Parameters<typeof launchSquadMission>[0],
+      {
+        squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
+        workflowSpecId: "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
+        boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
+        title: "Mission",
+      },
+    );
+
+    const planPatch = patches.find((p) => "executionPlan" in p.patch);
+    expect(planPatch).toBeDefined();
+    const plan = planPatch!.patch.executionPlan as Record<string, unknown>;
+    expect(plan.generatedBy).toBe("workflow");
+  });
+
+  it("throws if squad spec is not published", async () => {
+    const { ctx } = makeLaunchCtx({
+      squadSpec: { ...mockSquadSpec, status: "draft" },
+      workflowSpec: mockWorkflowSpec,
+    });
+
+    await expect(
+      launchSquadMission(
+        ctx as Parameters<typeof launchSquadMission>[0],
+        {
+          squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
+          workflowSpecId:
+            "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
+          boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
+          title: "Mission",
+        },
+      ),
+    ).rejects.toThrow("Squad must be published");
+  });
+
+  it("throws if workflow spec is not published", async () => {
+    const { ctx } = makeLaunchCtx({
+      squadSpec: mockSquadSpec,
+      workflowSpec: { ...mockWorkflowSpec, status: "draft" },
+    });
+
+    await expect(
+      launchSquadMission(
+        ctx as Parameters<typeof launchSquadMission>[0],
+        {
+          squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
+          workflowSpecId:
+            "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
+          boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
+          title: "Mission",
+        },
+      ),
+    ).rejects.toThrow("Workflow must be published");
+  });
+
+  it("creates task in inbox status with autonomous trust level", async () => {
+    const { ctx, inserts } = makeLaunchCtx({
+      squadSpec: mockSquadSpec,
+      workflowSpec: mockWorkflowSpec,
+      agentSpecs: [mockAgentSpec1, mockAgentSpec2],
+    });
+
+    await launchSquadMission(
+      ctx as Parameters<typeof launchSquadMission>[0],
+      {
+        squadSpecId: "squad-id-1" as Parameters<typeof launchSquadMission>[1]["squadSpecId"],
+        workflowSpecId: "workflow-id-1" as Parameters<typeof launchSquadMission>[1]["workflowSpecId"],
+        boardId: "board-id-1" as Parameters<typeof launchSquadMission>[1]["boardId"],
+        title: "Mission",
+        description: "A test mission",
+      },
+    );
+
+    const taskInsert = inserts.find((i) => i.table === "tasks");
+    expect(taskInsert!.value.status).toBe("inbox");
+    expect(taskInsert!.value.trustLevel).toBe("autonomous");
+    expect(taskInsert!.value.description).toBe("A test mission");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // buildWorkflowExecutionPlan (pure helper)

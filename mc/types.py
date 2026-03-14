@@ -312,6 +312,17 @@ class ExecutionPlan:
                         1,
                     ),
                     order=_as_int(raw_step.get("order"), index),
+                    workflow_step_id=(
+                        raw_step.get("workflow_step_id") or raw_step.get("workflowStepId")
+                    ),
+                    workflow_step_type=(
+                        raw_step.get("workflow_step_type") or raw_step.get("workflowStepType")
+                    ),
+                    agent_spec_id=(raw_step.get("agent_spec_id") or raw_step.get("agentSpecId")),
+                    review_spec_id=(raw_step.get("review_spec_id") or raw_step.get("reviewSpecId")),
+                    on_reject_step_id=(
+                        raw_step.get("on_reject_step_id") or raw_step.get("onRejectStepId")
+                    ),
                 )
             )
 

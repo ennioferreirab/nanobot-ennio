@@ -15,6 +15,7 @@ export interface RunSquadMissionArgs {
 
 export interface UseRunSquadMissionResult {
   isLaunching: boolean;
+  error: Error | null;
   effectiveWorkflowId: Id<"workflowSpecs"> | null | undefined;
   launch: (args: RunSquadMissionArgs) => Promise<Id<"tasks"> | null>;
 }
@@ -24,6 +25,7 @@ export function useRunSquadMission(
   squadSpecId: Id<"squadSpecs"> | null,
 ): UseRunSquadMissionResult {
   const [isLaunching, setIsLaunching] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
   const launchMutation = useMutation(api.tasks.launchMission);
 
@@ -34,10 +36,14 @@ export function useRunSquadMission(
 
   const launch = async (args: RunSquadMissionArgs): Promise<Id<"tasks"> | null> => {
     setIsLaunching(true);
+    setError(null);
     try {
       const taskId = await launchMutation(args);
       return taskId;
-    } catch {
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      console.error("[useRunSquadMission] launch failed:", e);
+      setError(e);
       return null;
     } finally {
       setIsLaunching(false);
@@ -46,6 +52,7 @@ export function useRunSquadMission(
 
   return {
     isLaunching,
+    error,
     effectiveWorkflowId: boardId && squadSpecId ? effectiveWorkflowId : null,
     launch,
   };
