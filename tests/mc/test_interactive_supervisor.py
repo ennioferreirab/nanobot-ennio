@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+import json
+from unittest.mock import MagicMock, call
 
 from mc.contexts.interactive.supervision_types import InteractiveSupervisionEvent
-from mc.contexts.interactive.supervisor import InteractiveExecutionSupervisor
+from mc.contexts.interactive.supervisor import (
+    InteractiveExecutionSupervisor,
+    _extract_file_path,
+    _stringify_input,
+)
 from mc.types import ActivityEventType
 
 
@@ -190,3 +195,189 @@ def test_supervisor_suppresses_lifecycle_side_effects_during_human_takeover() ->
     bridge.update_task_status.assert_not_called()
     bridge.update_step_status.assert_not_called()
     bridge.create_activity.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Activity log write tests
+# ---------------------------------------------------------------------------
+
+
+def _make_supervisor() -> tuple[MagicMock, MagicMock, InteractiveExecutionSupervisor]:
+    bridge = MagicMock()
+    registry = MagicMock()
+    registry.get.return_value = {
+        "session_id": "interactive_session:claude",
+        "agent_name": "claude-pair",
+        "task_id": "task-1",
+        "step_id": "step-1",
+    }
+    registry.record_supervision.return_value = {}
+    supervisor = InteractiveExecutionSupervisor(bridge=bridge, registry=registry)
+    return bridge, registry, supervisor
+
+
+def test_activity_log_append_called_after_record_supervision_on_item_started() -> None:
+    bridge, registry, supervisor = _make_supervisor()
+
+    supervisor.handle_event(
+        InteractiveSupervisionEvent(
+            kind="item_started",
+            session_id="interactive_session:claude",
+            provider="claude-code",
+            agent_name="claude-pair",
+            turn_id="turn-1",
+            item_id="item-1",
+            step_id="step-1",
+            metadata={"tool_name": "str_replace_editor", "input": {"file_path": "/tmp/foo.py"}},
+        )
+    )
+
+    registry.record_supervision.assert_called_once()
+    bridge.mutation.assert_called_once()
+    name, payload = bridge.mutation.call_args[0]
+    assert name == "sessionActivityLog:append"
+    assert payload["session_id"] == "interactive_session:claude"
+    assert payload["kind"] == "item_started"
+    assert payload["tool_name"] == "str_replace_editor"
+    assert payload["tool_input"] == json.dumps({"file_path": "/tmp/foo.py"})
+    assert payload["file_path"] == "/tmp/foo.py"
+    assert payload["requires_action"] is False
+
+
+def test_activity_log_payload_for_turn_completed_with_summary() -> None:
+    bridge, registry, supervisor = _make_supervisor()
+
+    supervisor.handle_event(
+        InteractiveSupervisionEvent(
+            kind="turn_completed",
+            session_id="interactive_session:claude",
+            provider="claude-code",
+            agent_name="claude-pair",
+            turn_id="turn-2",
+            summary="Turn finished successfully.",
+        )
+    )
+
+    bridge.mutation.assert_called_once()
+    _, payload = bridge.mutation.call_args[0]
+    assert payload["kind"] == "turn_completed"
+    assert payload["summary"] == "Turn finished successfully."
+    assert payload["tool_name"] is None
+    assert payload["tool_input"] is None
+    assert payload["file_path"] is None
+    assert payload["turn_id"] == "turn-2"
+    assert payload["requires_action"] is False
+
+
+def test_activity_log_missing_metadata_fields_result_in_none() -> None:
+    bridge, registry, supervisor = _make_supervisor()
+
+    supervisor.handle_event(
+        InteractiveSupervisionEvent(
+            kind="session_ready",
+            session_id="interactive_session:claude",
+            provider="claude-code",
+            agent_name="claude-pair",
+        )
+    )
+
+    bridge.mutation.assert_called_once()
+    _, payload = bridge.mutation.call_args[0]
+    assert payload["tool_name"] is None
+    assert payload["tool_input"] is None
+    assert payload["file_path"] is None
+    assert payload["summary"] is None
+    assert payload["error"] is None
+
+
+def test_activity_log_requires_action_true_for_approval_requested() -> None:
+    bridge, registry, supervisor = _make_supervisor()
+
+    supervisor.handle_event(
+        InteractiveSupervisionEvent(
+            kind="approval_requested",
+            session_id="interactive_session:claude",
+            provider="claude-code",
+            agent_name="claude-pair",
+            summary="Approve the shell command?",
+        )
+    )
+
+    bridge.mutation.assert_called_once()
+    _, payload = bridge.mutation.call_args[0]
+    assert payload["requires_action"] is True
+    assert payload["summary"] == "Approve the shell command?"
+
+
+def test_activity_log_requires_action_true_for_user_input_requested() -> None:
+    bridge, registry, supervisor = _make_supervisor()
+
+    supervisor.handle_event(
+        InteractiveSupervisionEvent(
+            kind="user_input_requested",
+            session_id="interactive_session:claude",
+            provider="claude-code",
+            agent_name="claude-pair",
+        )
+    )
+
+    _, payload = bridge.mutation.call_args[0]
+    assert payload["requires_action"] is True
+
+
+def test_activity_log_write_failure_does_not_break_supervision_flow() -> None:
+    bridge, registry, supervisor = _make_supervisor()
+    bridge.mutation.side_effect = RuntimeError("Convex is down")
+
+    # Should not raise; supervision continues normally
+    result = supervisor.handle_event(
+        InteractiveSupervisionEvent(
+            kind="turn_started",
+            session_id="interactive_session:claude",
+            provider="claude-code",
+            agent_name="claude-pair",
+            task_id="task-1",
+            step_id="step-1",
+        )
+    )
+
+    # record_supervision still called
+    registry.record_supervision.assert_called_once()
+    # lifecycle side-effects still applied
+    bridge.update_task_status.assert_called_once()
+    bridge.update_step_status.assert_called_once()
+    assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for helper functions
+# ---------------------------------------------------------------------------
+
+
+def test_stringify_input_none_returns_none() -> None:
+    assert _stringify_input(None) is None
+
+
+def test_stringify_input_dict_serialises_to_json() -> None:
+    result = _stringify_input({"key": "value"})
+    assert result == '{"key": "value"}'
+
+
+def test_stringify_input_truncates_long_strings() -> None:
+    long_str = "x" * 3000
+    result = _stringify_input(long_str, max_len=2000)
+    assert result is not None
+    assert len(result) == 2000
+
+
+def test_extract_file_path_from_file_path_key() -> None:
+    assert _extract_file_path({"input": {"file_path": "/src/foo.py"}}) == "/src/foo.py"
+
+
+def test_extract_file_path_from_path_key() -> None:
+    assert _extract_file_path({"input": {"path": "/src/bar.py"}}) == "/src/bar.py"
+
+
+def test_extract_file_path_returns_none_when_absent() -> None:
+    assert _extract_file_path({"input": {}}) is None
+    assert _extract_file_path({}) is None
