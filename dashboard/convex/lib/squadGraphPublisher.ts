@@ -76,12 +76,8 @@ export interface SquadGraphInput {
 // Minimal db context type for testability
 // ---------------------------------------------------------------------------
 
-interface DbContext {
-  db: {
-    insert: (table: string, value: Record<string, unknown>) => Promise<string>;
-    patch: (id: string, patch: Record<string, unknown>) => Promise<void>;
-  };
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DbContext = { db: any };
 
 // ---------------------------------------------------------------------------
 // publishSquadGraph

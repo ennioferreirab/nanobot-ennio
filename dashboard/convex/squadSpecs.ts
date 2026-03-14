@@ -10,8 +10,8 @@ export const createDraft = internalMutation({
     name: v.string(),
     displayName: v.string(),
     description: v.optional(v.string()),
-    agentSpecIds: v.optional(v.array(v.string())),
-    defaultWorkflowSpecId: v.optional(v.string()),
+    agentSpecIds: v.optional(v.array(v.id("agentSpecs"))),
+    defaultWorkflowSpecId: v.optional(v.id("workflowSpecs")),
     tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
@@ -20,7 +20,7 @@ export const createDraft = internalMutation({
       name: args.name,
       displayName: args.displayName,
       description: args.description,
-      agentSpecIds: args.agentSpecIds,
+      agentSpecIds: args.agentSpecIds ?? [],
       defaultWorkflowSpecId: args.defaultWorkflowSpecId,
       tags: args.tags,
       status: "draft",
@@ -47,7 +47,6 @@ export const publish = internalMutation({
     await ctx.db.patch(args.specId as Id<"squadSpecs">, {
       status: "published",
       version: spec.version + 1,
-      publishedAt: now,
       updatedAt: now,
     });
   },
@@ -55,16 +54,16 @@ export const publish = internalMutation({
 
 export const setDefaultWorkflow = internalMutation({
   args: {
-    squadSpecId: v.string(),
-    workflowSpecId: v.string(),
+    squadSpecId: v.id("squadSpecs"),
+    workflowSpecId: v.id("workflowSpecs"),
   },
   handler: async (ctx, args) => {
-    const spec = await ctx.db.get(args.squadSpecId as Id<"squadSpecs">);
+    const spec = await ctx.db.get(args.squadSpecId);
     if (!spec) {
       throw new Error(`Squad spec not found: ${args.squadSpecId}`);
     }
     const now = new Date().toISOString();
-    await ctx.db.patch(args.squadSpecId as Id<"squadSpecs">, {
+    await ctx.db.patch(args.squadSpecId, {
       defaultWorkflowSpecId: args.workflowSpecId,
       updatedAt: now,
     });

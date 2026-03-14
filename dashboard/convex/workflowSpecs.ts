@@ -6,27 +6,27 @@ import { specStatusValidator, workflowStepTypeValidator } from "./schema";
 
 export const createDraft = internalMutation({
   args: {
-    squadSpecId: v.string(),
+    squadSpecId: v.id("squadSpecs"),
     name: v.string(),
     description: v.optional(v.string()),
     steps: v.optional(
       v.array(
         v.object({
-          stepId: v.string(),
-          name: v.string(),
+          id: v.string(),
+          title: v.string(),
           type: workflowStepTypeValidator,
-          owner: v.optional(v.string()),
+          agentSpecId: v.optional(v.id("agentSpecs")),
           inputs: v.optional(v.array(v.string())),
           outputs: v.optional(v.array(v.string())),
-          reviewGate: v.optional(v.boolean()),
-          humanCheckpoint: v.optional(v.boolean()),
+          dependsOn: v.optional(v.array(v.string())),
+          onReject: v.optional(v.string()),
           description: v.optional(v.string()),
         }),
       ),
     ),
     exitCriteria: v.optional(v.string()),
-    executionPolicy: v.optional(v.any()),
-    onReject: v.optional(v.any()),
+    executionPolicy: v.optional(v.string()),
+    onRejectDefault: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
@@ -34,10 +34,10 @@ export const createDraft = internalMutation({
       squadSpecId: args.squadSpecId,
       name: args.name,
       description: args.description,
-      steps: args.steps,
+      steps: args.steps ?? [],
       exitCriteria: args.exitCriteria,
       executionPolicy: args.executionPolicy,
-      onReject: args.onReject,
+      onRejectDefault: args.onRejectDefault,
       status: "draft",
       version: 1,
       createdAt: now,
@@ -62,7 +62,6 @@ export const publish = internalMutation({
     await ctx.db.patch(args.specId as Id<"workflowSpecs">, {
       status: "published",
       version: spec.version + 1,
-      publishedAt: now,
       updatedAt: now,
     });
   },
@@ -70,7 +69,7 @@ export const publish = internalMutation({
 
 export const listBySquadInternal = internalQuery({
   args: {
-    squadSpecId: v.string(),
+    squadSpecId: v.id("squadSpecs"),
   },
   handler: async (ctx, args) => {
     return await ctx.db
