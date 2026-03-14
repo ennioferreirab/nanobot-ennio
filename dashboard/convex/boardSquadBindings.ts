@@ -4,9 +4,9 @@ import { v } from "convex/values";
 
 export const create = internalMutation({
   args: {
-    boardId: v.string(),
-    squadSpecId: v.string(),
-    defaultWorkflowSpecId: v.optional(v.string()),
+    boardId: v.id("boards"),
+    squadSpecId: v.id("squadSpecs"),
+    defaultWorkflowSpecIdOverride: v.optional(v.id("workflowSpecs")),
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
@@ -14,7 +14,7 @@ export const create = internalMutation({
       boardId: args.boardId,
       squadSpecId: args.squadSpecId,
       enabled: true,
-      defaultWorkflowSpecId: args.defaultWorkflowSpecId,
+      defaultWorkflowSpecIdOverride: args.defaultWorkflowSpecIdOverride,
       createdAt: now,
       updatedAt: now,
     });
@@ -41,7 +41,7 @@ export const setEnabled = internalMutation({
 
 export const listByBoard = internalQuery({
   args: {
-    boardId: v.string(),
+    boardId: v.id("boards"),
   },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -53,7 +53,7 @@ export const listByBoard = internalQuery({
 
 export const listBySquad = internalQuery({
   args: {
-    squadSpecId: v.string(),
+    squadSpecId: v.id("squadSpecs"),
   },
   handler: async (ctx, args) => {
     return await ctx.db

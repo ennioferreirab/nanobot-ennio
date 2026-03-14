@@ -8,20 +8,19 @@ export const createDraft = internalMutation({
   args: {
     name: v.string(),
     scope: reviewScopeValidator,
-    criteria: v.optional(
-      v.array(
-        v.object({
-          name: v.string(),
-          weight: v.number(),
-          description: v.optional(v.string()),
-        }),
-      ),
+    criteria: v.array(
+      v.object({
+        id: v.string(),
+        label: v.string(),
+        weight: v.number(),
+        description: v.optional(v.string()),
+      }),
     ),
+    approvalThreshold: v.number(),
     vetoConditions: v.optional(v.array(v.string())),
-    approvalPolicy: v.optional(v.any()),
-    feedbackContract: v.optional(v.any()),
-    reviewerPolicy: v.optional(v.any()),
-    rejectionRoutingPolicy: v.optional(v.any()),
+    feedbackContract: v.optional(v.string()),
+    reviewerPolicy: v.optional(v.string()),
+    rejectionRoutingPolicy: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
@@ -29,8 +28,8 @@ export const createDraft = internalMutation({
       name: args.name,
       scope: args.scope,
       criteria: args.criteria,
+      approvalThreshold: args.approvalThreshold,
       vetoConditions: args.vetoConditions,
-      approvalPolicy: args.approvalPolicy,
       feedbackContract: args.feedbackContract,
       reviewerPolicy: args.reviewerPolicy,
       rejectionRoutingPolicy: args.rejectionRoutingPolicy,
@@ -58,7 +57,6 @@ export const publish = internalMutation({
     await ctx.db.patch(args.specId as Id<"reviewSpecs">, {
       status: "published",
       version: spec.version + 1,
-      publishedAt: now,
       updatedAt: now,
     });
   },

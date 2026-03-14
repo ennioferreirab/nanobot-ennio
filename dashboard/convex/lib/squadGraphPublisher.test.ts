@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { publishSquadGraph } from "./squadGraphPublisher";
+import { publishSquadGraph, type SquadGraphInput } from "./squadGraphPublisher";
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const GRAPH_FIXTURE = {
+const GRAPH_FIXTURE: SquadGraphInput = {
   squad: { name: "personal-brand-squad", displayName: "Personal Brand Squad" },
   agents: [
     { key: "researcher", name: "audience-researcher", role: "Researcher" },

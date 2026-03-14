@@ -181,7 +181,7 @@ describe("compileAgentSpec", () => {
   });
 
   it("does not include authoring-only fields like responsibilities in the result", () => {
-    const result = compileAgentSpec(fullSpec, "spec-id", 1) as Record<string, unknown>;
+    const result = compileAgentSpec(fullSpec, "spec-id", 1) as unknown as Record<string, unknown>;
     // responsibilities, nonGoals, principles, etc. should not be in the projection
     expect(result.responsibilities).toBeUndefined();
     expect(result.nonGoals).toBeUndefined();
