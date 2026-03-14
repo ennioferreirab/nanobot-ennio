@@ -299,7 +299,7 @@ class BridgeRepositoryFacadeMixin:
             "description": description,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        if task_id:
+        if task_id and not task_id.startswith("chat-"):
             args["task_id"] = task_id
         if agent_name:
             args["agent_name"] = agent_name
