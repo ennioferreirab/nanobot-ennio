@@ -1,4 +1,4 @@
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
@@ -81,6 +81,16 @@ export const list = internalQuery({
   args: {},
   handler: async (ctx) => {
     return await ctx.db.query("agentSpecs").collect();
+  },
+});
+
+export const listByIds = query({
+  args: {
+    ids: v.array(v.id("agentSpecs")),
+  },
+  handler: async (ctx, args) => {
+    const results = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
+    return results.filter((doc) => doc !== null);
   },
 });
 

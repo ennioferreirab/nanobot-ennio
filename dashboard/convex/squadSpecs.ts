@@ -1,4 +1,4 @@
-import { internalMutation, internalQuery, mutation } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
@@ -87,6 +87,15 @@ export const listByStatus = internalQuery({
       .query("squadSpecs")
       .withIndex("by_status", (q) => q.eq("status", args.status))
       .collect();
+  },
+});
+
+export const getById = query({
+  args: {
+    id: v.id("squadSpecs"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
   },
 });
 

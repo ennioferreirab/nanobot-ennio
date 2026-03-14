@@ -19,7 +19,7 @@ interface SquadDetailSheetProps {
 }
 
 export function SquadDetailSheet({ squadId, onClose }: SquadDetailSheetProps) {
-  const { squad, workflows } = useSquadDetailData(squadId);
+  const { squad, workflows, agents } = useSquadDetailData(squadId);
 
   return (
     <Sheet open={!!squadId} onOpenChange={(open) => !open && onClose()}>
@@ -50,13 +50,21 @@ export function SquadDetailSheet({ squadId, onClose }: SquadDetailSheetProps) {
 
                 <div>
                   <h4 className="text-sm font-semibold mb-2">Agents</h4>
-                  {squad.agentSpecIds.length === 0 ? (
+                  {!agents || agents.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No agents defined yet.</p>
                   ) : (
-                    <p className="text-sm text-muted-foreground">
-                      {squad.agentSpecIds.length} agent
-                      {squad.agentSpecIds.length !== 1 ? "s" : ""}
-                    </p>
+                    <div className="space-y-2">
+                      {agents.map((agent) => (
+                        <div key={agent._id} className="rounded-lg border p-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{agent.displayName}</span>
+                            <Badge variant="outline" className="text-xs">
+                              {agent.role}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
 
