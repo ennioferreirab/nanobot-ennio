@@ -1539,9 +1539,10 @@ describe("tasks.launchMission", () => {
     const first = vi.fn(async () => null);
     const withIndex = vi.fn(() => ({ first }));
     const query = vi.fn(() => ({ withIndex }));
+    const patch = vi.fn(async () => undefined);
 
     return {
-      ctx: { db: { query, get, insert } },
+      ctx: { db: { query, get, insert, patch } },
       inserts,
     };
   }

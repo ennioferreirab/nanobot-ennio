@@ -269,9 +269,9 @@ describe("order and parallelGroup", () => {
     }
   });
 
-  it("assigns parallelGroup=0 to all steps in a serial chain", () => {
+  it("assigns parallelGroup=1 to all steps (default)", () => {
     const plan = compileWorkflowExecutionPlan(MINIMAL_WORKFLOW, AGENT_REFS);
-    expect(plan.steps[0].parallelGroup).toBe(0);
+    expect(plan.steps[0].parallelGroup).toBe(1);
   });
 });
 
@@ -307,6 +307,36 @@ describe("workflow metadata on steps", () => {
     };
     const plan = compileWorkflowExecutionPlan(humanWorkflow, AGENT_REFS);
     expect(plan.steps[0].agentSpecId).toBeUndefined();
+  });
+
+  it("maps onReject to onRejectStepId on the compiled step", () => {
+    const workflowWithReject: WorkflowSpecInput = {
+      specId: "wf-reject",
+      name: "Reject Workflow",
+      steps: [
+        {
+          id: "step-agent",
+          title: "Agent step",
+          type: "agent",
+          agentSpecId: "agentSpec-id-1",
+        },
+        {
+          id: "step-review",
+          title: "Review step",
+          type: "review",
+          dependsOn: ["step-agent"],
+          onReject: "step-agent",
+        },
+      ],
+    };
+    const plan = compileWorkflowExecutionPlan(workflowWithReject, AGENT_REFS);
+    const reviewStep = plan.steps.find((s) => s.tempId === "step-review");
+    expect(reviewStep!.onRejectStepId).toBe("step-agent");
+  });
+
+  it("does not set onRejectStepId when onReject is absent", () => {
+    const plan = compileWorkflowExecutionPlan(MINIMAL_WORKFLOW, AGENT_REFS);
+    expect(plan.steps[0].onRejectStepId).toBeUndefined();
   });
 });
 

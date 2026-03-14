@@ -75,6 +75,8 @@ export interface WorkflowExecutionPlanStep {
   workflowStepType: WorkflowStepType;
   /** The agentSpec id this step was compiled from (agent steps only). */
   agentSpecId?: string;
+  /** The step id to route to on rejection (review steps only). */
+  onRejectStepId?: string;
 }
 
 /**
@@ -140,7 +142,7 @@ export function compileWorkflowExecutionPlan(
       description: step.description ?? step.title,
       assignedAgent,
       blockedBy,
-      parallelGroup: 0,
+      parallelGroup: 1,
       order: index,
       workflowStepId: step.id,
       workflowStepType: step.type,
@@ -148,6 +150,10 @@ export function compileWorkflowExecutionPlan(
 
     if (step.agentSpecId !== undefined) {
       compiledStep.agentSpecId = step.agentSpecId;
+    }
+
+    if (step.onReject !== undefined) {
+      compiledStep.onRejectStepId = step.onReject;
     }
 
     return compiledStep;
