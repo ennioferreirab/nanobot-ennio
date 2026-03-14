@@ -1,50 +1,49 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { launchSquadMission } from "./squadMissionLaunch";
+import {
+  attachWorkflowExecutionPlan,
+  buildWorkflowExecutionPlan,
+  type WorkflowSpecInput,
+  type AgentSpecRef,
+} from "./squadMissionLaunch";
 
-type InsertCall = {
-  table: string;
-  value: Record<string, unknown>;
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+const AGENT_REFS: AgentSpecRef[] = [
+  { specId: "agent-spec-1", agentName: "audience-researcher" },
+  { specId: "agent-spec-2", agentName: "post-writer" },
+];
+
+const WORKFLOW: WorkflowSpecInput = {
+  specId: "workflow-spec-1",
+  name: "Default Workflow",
+  steps: [
+    {
+      id: "step-research",
+      title: "Research audience",
+      type: "agent",
+      agentSpecId: "agent-spec-1",
+    },
+    {
+      id: "step-write",
+      title: "Write post",
+      type: "agent",
+      agentSpecId: "agent-spec-2",
+      dependsOn: ["step-research"],
+    },
+  ],
 };
 
-type PatchCall = {
-  id: string;
-  patch: Record<string, unknown>;
-};
+type PatchCall = { id: string; patch: Record<string, unknown> };
 
-function makeCtx(opts: {
-  squadSpec?: Record<string, unknown> | null;
-  workflowSpec?: Record<string, unknown> | null;
-  binding?: Record<string, unknown> | null;
-  defaultBoard?: { _id: string; deletedAt?: string } | null;
-}) {
-  const inserts: InsertCall[] = [];
+function makeCtx(taskExists = true) {
   const patches: PatchCall[] = [];
 
   const get = vi.fn(async (id: string) => {
-    if (opts.squadSpec && id === opts.squadSpec._id) return opts.squadSpec;
-    if (opts.workflowSpec && id === opts.workflowSpec._id) return opts.workflowSpec;
-    if (opts.binding && id === opts.binding._id) return opts.binding;
-    return null;
-  });
-
-  const firstMock = vi.fn();
-  if (opts.binding) {
-    firstMock.mockResolvedValue(opts.binding);
-  } else {
-    // First call: no binding; second call: default board
-    firstMock
-      .mockResolvedValueOnce(null) // binding lookup (by_boardId_squadSpecId)
-      .mockResolvedValueOnce(opts.defaultBoard ?? null); // default board (by_isDefault)
-  }
-
-  const collect = vi.fn(async () => []);
-  const withIndex = vi.fn(() => ({ first: firstMock, collect }));
-  const query = vi.fn(() => ({ withIndex }));
-
-  const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
-    inserts.push({ table, value });
-    return table === "tasks" ? "task-id-mission-1" : "activity-id-1";
+    if (!taskExists) return null;
+    return { _id: id, title: "Test task", status: "inbox", updatedAt: "2026-01-01T00:00:00.000Z" };
   });
 
   const patch = vi.fn(async (id: string, p: Record<string, unknown>) => {
@@ -52,229 +51,134 @@ function makeCtx(opts: {
   });
 
   return {
-    ctx: { db: { query, get, insert, patch } },
-    inserts,
+    ctx: { db: { get, patch } },
     patches,
-    firstMock,
   };
 }
 
-const MOCK_SQUAD_ID = "squad-spec-id-1";
-const MOCK_WORKFLOW_ID = "workflow-spec-id-1";
-const MOCK_BOARD_ID = "board-id-1";
+// ---------------------------------------------------------------------------
+// buildWorkflowExecutionPlan (pure helper)
+// ---------------------------------------------------------------------------
 
-const mockSquad = {
-  _id: MOCK_SQUAD_ID,
-  name: "review-squad",
-  displayName: "Review Squad",
-  status: "published",
-  version: 1,
-  agentSpecIds: [],
-  createdAt: "2024-01-01",
-  updatedAt: "2024-01-01",
-};
-
-const mockWorkflow = {
-  _id: MOCK_WORKFLOW_ID,
-  squadSpecId: MOCK_SQUAD_ID,
-  name: "Default Workflow",
-  steps: [
-    { id: "step-1", title: "Research", type: "agent" },
-    { id: "step-2", title: "Review", type: "review" },
-  ],
-  status: "published",
-  version: 1,
-  createdAt: "2024-01-01",
-  updatedAt: "2024-01-01",
-};
-
-describe("launchSquadMission", () => {
-  it("creates a task with workMode=ai_workflow when a published squad and workflow are provided", async () => {
-    const { ctx, inserts } = makeCtx({
-      squadSpec: mockSquad,
-      workflowSpec: mockWorkflow,
-    });
-
-    const taskId = await launchSquadMission(ctx as never, {
-      squadSpecId: MOCK_SQUAD_ID as never,
-      workflowSpecId: MOCK_WORKFLOW_ID as never,
-      boardId: MOCK_BOARD_ID as never,
-      title: "Launch review mission",
-    });
-
-    expect(taskId).toBe("task-id-mission-1");
-
-    const taskInsert = inserts.find((e) => e.table === "tasks");
-    expect(taskInsert).toBeDefined();
-    expect(taskInsert!.value.workMode).toBe("ai_workflow");
+describe("buildWorkflowExecutionPlan", () => {
+  it("returns a plan without touching the db", () => {
+    const plan = buildWorkflowExecutionPlan(WORKFLOW, AGENT_REFS);
+    expect(plan.steps).toHaveLength(2);
+    expect(plan.generatedBy).toBe("workflow");
   });
 
-  it("stores squadSpecId on the created task", async () => {
-    const { ctx, inserts } = makeCtx({
-      squadSpec: mockSquad,
-      workflowSpec: mockWorkflow,
-    });
+  it("uses the optional generatedAt timestamp", () => {
+    const fixedAt = "2026-03-14T10:00:00.000Z";
+    const plan = buildWorkflowExecutionPlan(WORKFLOW, AGENT_REFS, fixedAt);
+    expect(plan.generatedAt).toBe(fixedAt);
+  });
+});
 
-    await launchSquadMission(ctx as never, {
-      squadSpecId: MOCK_SQUAD_ID as never,
-      workflowSpecId: MOCK_WORKFLOW_ID as never,
-      boardId: MOCK_BOARD_ID as never,
-      title: "Mission: review release",
-    });
+// ---------------------------------------------------------------------------
+// attachWorkflowExecutionPlan
+// ---------------------------------------------------------------------------
 
-    const taskInsert = inserts.find((e) => e.table === "tasks");
-    expect(taskInsert!.value.squadSpecId).toBe(MOCK_SQUAD_ID);
+describe("attachWorkflowExecutionPlan", () => {
+  it("patches the task with the compiled execution plan", async () => {
+    const { ctx, patches } = makeCtx();
+
+    await attachWorkflowExecutionPlan(
+      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
+      WORKFLOW,
+      AGENT_REFS,
+    );
+
+    expect(patches).toHaveLength(1);
+    expect(patches[0].patch.executionPlan).toBeDefined();
   });
 
-  it("stores workflowSpecId on the created task", async () => {
-    const { ctx, inserts } = makeCtx({
-      squadSpec: mockSquad,
-      workflowSpec: mockWorkflow,
-    });
+  it("saves the plan with generatedBy='workflow'", async () => {
+    const { ctx, patches } = makeCtx();
 
-    await launchSquadMission(ctx as never, {
-      squadSpecId: MOCK_SQUAD_ID as never,
-      workflowSpecId: MOCK_WORKFLOW_ID as never,
-      boardId: MOCK_BOARD_ID as never,
-      title: "Mission: review release",
-    });
+    await attachWorkflowExecutionPlan(
+      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
+      WORKFLOW,
+      AGENT_REFS,
+    );
 
-    const taskInsert = inserts.find((e) => e.table === "tasks");
-    expect(taskInsert!.value.workflowSpecId).toBe(MOCK_WORKFLOW_ID);
+    const savedPlan = patches[0].patch.executionPlan as Record<string, unknown>;
+    expect(savedPlan.generatedBy).toBe("workflow");
   });
 
-  it("returns the created task id", async () => {
-    const { ctx } = makeCtx({
-      squadSpec: mockSquad,
-      workflowSpec: mockWorkflow,
-    });
+  it("saves the compiled steps with resolved agent names", async () => {
+    const { ctx, patches } = makeCtx();
 
-    const result = await launchSquadMission(ctx as never, {
-      squadSpecId: MOCK_SQUAD_ID as never,
-      workflowSpecId: MOCK_WORKFLOW_ID as never,
-      boardId: MOCK_BOARD_ID as never,
-      title: "Mission: review release",
-    });
+    await attachWorkflowExecutionPlan(
+      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
+      WORKFLOW,
+      AGENT_REFS,
+    );
 
-    expect(result).toBe("task-id-mission-1");
+    const savedPlan = patches[0].patch.executionPlan as {
+      steps: Array<{ assignedAgent: string; tempId: string }>;
+    };
+    expect(savedPlan.steps[0].assignedAgent).toBe("audience-researcher");
+    expect(savedPlan.steps[1].assignedAgent).toBe("post-writer");
   });
 
-  it("seeds the task with a workflow-based execution plan placeholder", async () => {
-    const { ctx, inserts } = makeCtx({
-      squadSpec: mockSquad,
-      workflowSpec: mockWorkflow,
-    });
+  it("saves blockedBy dependencies in the plan steps", async () => {
+    const { ctx, patches } = makeCtx();
 
-    await launchSquadMission(ctx as never, {
-      squadSpecId: MOCK_SQUAD_ID as never,
-      workflowSpecId: MOCK_WORKFLOW_ID as never,
-      boardId: MOCK_BOARD_ID as never,
-      title: "Mission: review release",
-    });
+    await attachWorkflowExecutionPlan(
+      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
+      WORKFLOW,
+      AGENT_REFS,
+    );
 
-    const taskInsert = inserts.find((e) => e.table === "tasks");
-    expect(taskInsert!.value.executionPlan).toBeDefined();
-    const plan = taskInsert!.value.executionPlan as Record<string, unknown>;
-    expect(plan.workflowSpecId).toBe(MOCK_WORKFLOW_ID);
-    expect(plan.source).toBe("workflow_spec");
+    const savedPlan = patches[0].patch.executionPlan as {
+      steps: Array<{ blockedBy: string[]; tempId: string }>;
+    };
+    const writeStep = savedPlan.steps.find((s) => s.tempId === "step-write");
+    expect(writeStep!.blockedBy).toEqual(["step-research"]);
   });
 
-  it("throws if the squad spec is not found", async () => {
-    const { ctx } = makeCtx({
-      squadSpec: null,
-      workflowSpec: mockWorkflow,
-    });
+  it("returns the compiled plan", async () => {
+    const { ctx } = makeCtx();
+
+    const result = await attachWorkflowExecutionPlan(
+      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
+      WORKFLOW,
+      AGENT_REFS,
+    );
+
+    expect(result).toBeDefined();
+    expect(result.workflowSpecId).toBe("workflow-spec-1");
+  });
+
+  it("throws when the task is not found", async () => {
+    const { ctx } = makeCtx(false);
 
     await expect(
-      launchSquadMission(ctx as never, {
-        squadSpecId: "nonexistent-squad" as never,
-        workflowSpecId: MOCK_WORKFLOW_ID as never,
-        boardId: MOCK_BOARD_ID as never,
-        title: "Mission",
-      }),
-    ).rejects.toThrow("Squad spec not found");
+      attachWorkflowExecutionPlan(
+        ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+        "nonexistent-task-id" as Parameters<typeof attachWorkflowExecutionPlan>[1],
+        WORKFLOW,
+        AGENT_REFS,
+      ),
+    ).rejects.toThrow("Task not found");
   });
 
-  it("throws if the squad spec is not published", async () => {
-    const { ctx } = makeCtx({
-      squadSpec: { ...mockSquad, status: "draft" },
-      workflowSpec: mockWorkflow,
-    });
+  it("also patches updatedAt alongside the executionPlan", async () => {
+    const { ctx, patches } = makeCtx();
 
-    await expect(
-      launchSquadMission(ctx as never, {
-        squadSpecId: MOCK_SQUAD_ID as never,
-        workflowSpecId: MOCK_WORKFLOW_ID as never,
-        boardId: MOCK_BOARD_ID as never,
-        title: "Mission",
-      }),
-    ).rejects.toThrow("Squad must be published");
-  });
+    await attachWorkflowExecutionPlan(
+      ctx as Parameters<typeof attachWorkflowExecutionPlan>[0],
+      "task-id-1" as Parameters<typeof attachWorkflowExecutionPlan>[1],
+      WORKFLOW,
+      AGENT_REFS,
+    );
 
-  it("throws if the workflow spec is not found", async () => {
-    const { ctx } = makeCtx({
-      squadSpec: mockSquad,
-      workflowSpec: null,
-    });
-
-    await expect(
-      launchSquadMission(ctx as never, {
-        squadSpecId: MOCK_SQUAD_ID as never,
-        workflowSpecId: "nonexistent-workflow" as never,
-        boardId: MOCK_BOARD_ID as never,
-        title: "Mission",
-      }),
-    ).rejects.toThrow("Workflow spec not found");
-  });
-
-  it("throws if the workflow spec is not published", async () => {
-    const { ctx } = makeCtx({
-      squadSpec: mockSquad,
-      workflowSpec: { ...mockWorkflow, status: "draft" },
-    });
-
-    await expect(
-      launchSquadMission(ctx as never, {
-        squadSpecId: MOCK_SQUAD_ID as never,
-        workflowSpecId: MOCK_WORKFLOW_ID as never,
-        boardId: MOCK_BOARD_ID as never,
-        title: "Mission",
-      }),
-    ).rejects.toThrow("Workflow must be published");
-  });
-
-  it("sets the task boardId to the provided boardId", async () => {
-    const { ctx, inserts } = makeCtx({
-      squadSpec: mockSquad,
-      workflowSpec: mockWorkflow,
-    });
-
-    await launchSquadMission(ctx as never, {
-      squadSpecId: MOCK_SQUAD_ID as never,
-      workflowSpecId: MOCK_WORKFLOW_ID as never,
-      boardId: MOCK_BOARD_ID as never,
-      title: "Mission",
-    });
-
-    const taskInsert = inserts.find((e) => e.table === "tasks");
-    expect(taskInsert!.value.boardId).toBe(MOCK_BOARD_ID);
-  });
-
-  it("creates an activity event for the mission launch", async () => {
-    const { ctx, inserts } = makeCtx({
-      squadSpec: mockSquad,
-      workflowSpec: mockWorkflow,
-    });
-
-    await launchSquadMission(ctx as never, {
-      squadSpecId: MOCK_SQUAD_ID as never,
-      workflowSpecId: MOCK_WORKFLOW_ID as never,
-      boardId: MOCK_BOARD_ID as never,
-      title: "Mission",
-    });
-
-    const activityInsert = inserts.find((e) => e.table === "activities");
-    expect(activityInsert).toBeDefined();
-    expect(activityInsert!.value.eventType).toBe("task_created");
+    expect(patches[0].patch.updatedAt).toBeDefined();
+    expect(typeof patches[0].patch.updatedAt).toBe("string");
   });
 });

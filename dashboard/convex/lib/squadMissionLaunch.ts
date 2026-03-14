@@ -1,78 +1,87 @@
-import { ConvexError } from "convex/values";
+/**
+ * Squad Mission Launch
+ *
+ * Orchestrates the binding of a compiled workflow execution plan to a task
+ * when a squad mission is launched. This module bridges the workflow spec
+ * layer (authoring-time) with the task execution layer (runtime).
+ *
+ * Wave 1: mission launch and task binding (task created, squad/workflow refs set).
+ * Wave 2: workflow specs compile into real execution plans via this module.
+ *
+ * This module does NOT create tasks — that is handled by the task creation
+ * pipeline. It only compiles the workflow spec and attaches the plan.
+ */
 
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
+import {
+  compileWorkflowExecutionPlan,
+  type AgentSpecRef,
+  type WorkflowSpecInput,
+  type WorkflowExecutionPlan,
+} from "./workflowExecutionCompiler";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type { AgentSpecRef, WorkflowSpecInput, WorkflowExecutionPlan };
+
 type LaunchMutationCtx = Pick<MutationCtx, "db">;
 
-export interface LaunchSquadMissionArgs {
-  squadSpecId: Id<"squadSpecs">;
-  workflowSpecId: Id<"workflowSpecs">;
-  boardId: Id<"boards">;
-  title: string;
-  description?: string;
-}
+// ---------------------------------------------------------------------------
+// attachWorkflowExecutionPlan
+// ---------------------------------------------------------------------------
 
 /**
- * Launch a squad mission by creating a task instance bound to a published
- * squadSpec and workflowSpec.
+ * Compile a workflow spec into an execution plan and attach it to a task.
  *
- * Validates that both specs are published, then creates a task with:
- * - workMode = "ai_workflow"
- * - squadSpecId and workflowSpecId stored for runtime binding
- * - an executionPlan placeholder referencing the workflowSpec
+ * @param ctx         - Convex mutation context (only `db` is required).
+ * @param taskId      - The task to attach the plan to.
+ * @param workflow    - The workflow spec to compile.
+ * @param agentRefs   - Resolved agent spec → runtime name mappings.
+ * @param generatedAt - Optional ISO timestamp for deterministic tests.
+ * @returns The compiled plan that was saved.
  *
- * Returns the created task id for navigation.
+ * @throws If the task is not found.
+ * @throws If an agent-type step references an unknown agentSpecId.
  */
-export async function launchSquadMission(
+export async function attachWorkflowExecutionPlan(
   ctx: LaunchMutationCtx,
-  args: LaunchSquadMissionArgs,
-): Promise<Id<"tasks">> {
-  const squadSpec = await ctx.db.get(args.squadSpecId);
-  if (!squadSpec) {
-    throw new ConvexError("Squad spec not found");
-  }
-  if (squadSpec.status !== "published") {
-    throw new ConvexError("Squad must be published before launching a mission");
-  }
-
-  const workflowSpec = await ctx.db.get(args.workflowSpecId);
-  if (!workflowSpec) {
-    throw new ConvexError("Workflow spec not found");
-  }
-  if (workflowSpec.status !== "published") {
-    throw new ConvexError("Workflow must be published before launching a mission");
+  taskId: Id<"tasks">,
+  workflow: WorkflowSpecInput,
+  agentRefs: AgentSpecRef[],
+  generatedAt?: string,
+): Promise<WorkflowExecutionPlan> {
+  const task = await ctx.db.get(taskId);
+  if (!task) {
+    throw new Error(`Task not found: ${taskId}`);
   }
 
-  const now = new Date().toISOString();
+  const plan = compileWorkflowExecutionPlan(workflow, agentRefs, generatedAt);
 
-  const executionPlan = {
-    source: "workflow_spec" as const,
-    workflowSpecId: args.workflowSpecId,
-    generatedAt: now,
-  };
-
-  const taskId = await ctx.db.insert("tasks", {
-    title: args.title,
-    description: args.description,
-    status: "inbox",
-    trustLevel: "autonomous",
-    supervisionMode: "autonomous",
-    workMode: "ai_workflow",
-    squadSpecId: args.squadSpecId,
-    workflowSpecId: args.workflowSpecId,
-    boardId: args.boardId,
-    executionPlan,
-    createdAt: now,
-    updatedAt: now,
+  await ctx.db.patch(taskId, {
+    executionPlan: plan,
+    updatedAt: new Date().toISOString(),
   });
 
-  await ctx.db.insert("activities", {
-    taskId,
-    eventType: "task_created",
-    description: `Squad mission launched: ${args.title}`,
-    timestamp: now,
-  });
+  return plan;
+}
 
-  return taskId;
+// ---------------------------------------------------------------------------
+// buildWorkflowExecutionPlan (pure helper — no db required)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compile a workflow spec into an execution plan without persisting it.
+ *
+ * Useful when the caller wants to inspect or validate the plan before saving.
+ */
+export function buildWorkflowExecutionPlan(
+  workflow: WorkflowSpecInput,
+  agentRefs: AgentSpecRef[],
+  generatedAt?: string,
+): WorkflowExecutionPlan {
+  return compileWorkflowExecutionPlan(workflow, agentRefs, generatedAt);
 }
