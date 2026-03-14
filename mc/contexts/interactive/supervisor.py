@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as _json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +10,30 @@ from mc.contexts.interactive.metrics import increment_interactive_metric
 from mc.contexts.interactive.registry import InteractiveSessionRegistry
 from mc.contexts.interactive.supervision_types import InteractiveSupervisionEvent
 from mc.types import ActivityEventType
+
+_ACTION_KINDS = frozenset(
+    {
+        "approval_requested",
+        "user_input_requested",
+        "ask_user_requested",
+    }
+)
+
+
+def _stringify_input(raw: object, max_len: int = 2000) -> str | None:
+    """Stringify and truncate tool input for display."""
+    if raw is None:
+        return None
+    text = _json.dumps(raw) if isinstance(raw, dict) else str(raw)
+    return text[:max_len] if len(text) > max_len else text
+
+
+def _extract_file_path(metadata: dict) -> str | None:
+    """Extract file path from tool input when available."""
+    inp = metadata.get("input", {})
+    if isinstance(inp, dict):
+        return inp.get("file_path") or inp.get("path")
+    return None
 
 
 class InteractiveExecutionSupervisor:
@@ -42,6 +67,30 @@ class InteractiveExecutionSupervisor:
             },
             timestamp=timestamp,
         )
+        try:
+            self._bridge.mutation(
+                "sessionActivityLog:append",
+                {
+                    "session_id": event.session_id,
+                    "kind": event.kind,
+                    "ts": timestamp,
+                    "tool_name": event.metadata.get("tool_name") if event.metadata else None,
+                    "tool_input": _stringify_input(
+                        event.metadata.get("input") if event.metadata else None
+                    ),
+                    "file_path": _extract_file_path(event.metadata) if event.metadata else None,
+                    "summary": (event.summary or "")[:1000] or None,
+                    "error": (event.error or "")[:2000] or None,
+                    "turn_id": event.turn_id,
+                    "item_id": event.item_id,
+                    "step_id": event.step_id,
+                    "agent_name": event.agent_name,
+                    "provider": event.provider,
+                    "requires_action": event.kind in _ACTION_KINDS,
+                },
+            )
+        except Exception:
+            pass  # Activity log write failure must not break supervision
         if _string_or_none(metadata.get("control_mode")) == "human":
             return updated_metadata
         current_control_mode = _string_or_none(updated_metadata.get("control_mode"))
