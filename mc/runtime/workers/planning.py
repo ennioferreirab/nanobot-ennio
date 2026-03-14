@@ -11,6 +11,7 @@ from mc.contexts.planning.review_messages import (
     build_plan_review_message,
     build_plan_review_metadata,
 )
+from mc.infrastructure.providers.tier_resolver import TierResolver
 from mc.types import (
     LEAD_AGENT_NAME,
     NANOBOT_AGENT_NAME,
@@ -90,7 +91,9 @@ class PlanningWorker:
 
         agents_data = await asyncio.to_thread(self._bridge.list_agents)
         agents = [AgentData(**filter_agent_fields(agent)) for agent in agents_data]
-        agents = [agent for agent in agents if agent.enabled is not False and _is_delegatable(agent)]
+        agents = [
+            agent for agent in agents if agent.enabled is not False and _is_delegatable(agent)
+        ]
 
         board_id = task_data.get("board_id")
         if board_id:
@@ -137,15 +140,17 @@ class PlanningWorker:
             planning_model = None
             planning_reasoning_level = None
             try:
-                from mc.infrastructure.providers.tier_resolver import TierResolver
-
-                tier_resolver = TierResolver(self._bridge)
-                planning_model = tier_resolver.resolve_model("tier:standard-medium")
-                planning_reasoning_level = tier_resolver.resolve_reasoning_level(
-                    "tier:standard-medium"
+                lead_agent_raw = next(
+                    (a for a in agents_data if a.get("name") == LEAD_AGENT_NAME),
+                    None,
                 )
+                lead_model = lead_agent_raw.get("model") if lead_agent_raw else None
+                if lead_model:
+                    tier_resolver = TierResolver(self._bridge)
+                    planning_model = tier_resolver.resolve_model(lead_model)
+                    planning_reasoning_level = tier_resolver.resolve_reasoning_level(lead_model)
             except (ValueError, Exception) as exc:
-                logger.debug("[planning] Could not resolve planning tier: %s", exc)
+                logger.debug("[planning] Could not resolve Lead Agent planning model: %s", exc)
 
             planner = TaskPlanner(self._bridge)
             plan = await planner.plan_task(
@@ -266,9 +271,7 @@ class PlanningWorker:
                 title,
                 len(created_step_ids),
             )
-            asyncio.create_task(
-                self._step_dispatcher.dispatch_steps(task_id, created_step_ids)
-            )
+            asyncio.create_task(self._step_dispatcher.dispatch_steps(task_id, created_step_ids))
             logger.info(
                 "[planning] Task '%s': step dispatch started (autonomous mode)",
                 title,
