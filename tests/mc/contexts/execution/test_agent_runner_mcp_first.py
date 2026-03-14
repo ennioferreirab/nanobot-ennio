@@ -192,7 +192,7 @@ class TestOverlappingToolsHidden:
             )
 
         # These native tools overlap with the MCP surface and must be hidden
-        must_unregister = {"ask_user", "ask_agent", "message", "cron"}
+        must_unregister = {"ask_user", "ask_agent", "delegate_task", "message", "cron"}
         missing = must_unregister - set(unregistered)
         assert not missing, (
             f"These tools must be unregistered in MC runtime but were not: {missing}; "

@@ -73,8 +73,8 @@ class CodexToolAdapter:
             # Nothing to strip — return a deep copy to avoid mutating the original.
             return copy.deepcopy(tool)
 
-        # Strip the combinators from a copy of the parameters dict.
-        adapted_params = {k: v for k, v in params.items() if k not in _COMBINATORS}
+        # Strip the combinators from a deep copy of the parameters dict.
+        adapted_params = {k: copy.deepcopy(v) for k, v in params.items() if k not in _COMBINATORS}
         adapted_fn = {**fn, "parameters": adapted_params}
         return {"type": "function", "function": adapted_fn}
 
