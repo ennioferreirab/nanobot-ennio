@@ -48,6 +48,11 @@ export interface LaunchSquadMissionArgs {
  * Create a task bound to a published squadSpec and workflowSpec,
  * compile the workflow into an execution plan, and attach it to the task.
  *
+ * Layer 1 defense: the task is created with status "review" and
+ * awaitingKickoff=true so the inbox/planning pipeline is bypassed entirely.
+ * The compiled workflow execution plan is preserved and the dashboard shows
+ * the kick-off UI.
+ *
  * @param ctx  - Convex mutation context.
  * @param args - Launch args (squadSpecId, workflowSpecId, boardId, title, description).
  * @returns The created task ID.
@@ -71,10 +76,14 @@ export async function launchSquadMission(
 
   const now = new Date().toISOString();
 
+  // Layer 1 defense: launch directly in "review" with awaitingKickoff=true.
+  // This bypasses the inbox→planning pipeline that would overwrite the compiled
+  // workflow execution plan with a lead-agent plan.
   const taskId = await ctx.db.insert("tasks", {
     title: args.title,
     description: args.description,
-    status: "inbox",
+    status: "review",
+    awaitingKickoff: true,
     trustLevel: "autonomous",
     supervisionMode: "autonomous",
     workMode: "ai_workflow",
