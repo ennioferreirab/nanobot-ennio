@@ -9,11 +9,15 @@
  */
 
 import type * as activities from "../activities.js";
+import type * as agentSpecs from "../agentSpecs.js";
 import type * as agents from "../agents.js";
+import type * as boardSquadBindings from "../boardSquadBindings.js";
 import type * as boards from "../boards.js";
 import type * as chats from "../chats.js";
 import type * as interactiveSessions from "../interactiveSessions.js";
 import type * as lib_readModels from "../lib/readModels.js";
+import type * as lib_specCompiler from "../lib/specCompiler.js";
+import type * as lib_squadGraphPublisher from "../lib/squadGraphPublisher.js";
 import type * as lib_stepLifecycle from "../lib/stepLifecycle.js";
 import type * as lib_taskArchive from "../lib/taskArchive.js";
 import type * as lib_taskDetailView from "../lib/taskDetailView.js";
@@ -28,14 +32,17 @@ import type * as lib_threadRules from "../lib/threadRules.js";
 import type * as lib_workflowContract from "../lib/workflowContract.js";
 import type * as lib_workflowHelpers from "../lib/workflowHelpers.js";
 import type * as messages from "../messages.js";
+import type * as reviewSpecs from "../reviewSpecs.js";
 import type * as settings from "../settings.js";
 import type * as skills from "../skills.js";
+import type * as squadSpecs from "../squadSpecs.js";
 import type * as steps from "../steps.js";
 import type * as tagAttributeValues from "../tagAttributeValues.js";
 import type * as tagAttributes from "../tagAttributes.js";
 import type * as taskTags from "../taskTags.js";
 import type * as tasks from "../tasks.js";
 import type * as terminalSessions from "../terminalSessions.js";
+import type * as workflowSpecs from "../workflowSpecs.js";
 
 import type {
   ApiFromModules,
@@ -45,11 +52,15 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   activities: typeof activities;
+  agentSpecs: typeof agentSpecs;
   agents: typeof agents;
+  boardSquadBindings: typeof boardSquadBindings;
   boards: typeof boards;
   chats: typeof chats;
   interactiveSessions: typeof interactiveSessions;
   "lib/readModels": typeof lib_readModels;
+  "lib/specCompiler": typeof lib_specCompiler;
+  "lib/squadGraphPublisher": typeof lib_squadGraphPublisher;
   "lib/stepLifecycle": typeof lib_stepLifecycle;
   "lib/taskArchive": typeof lib_taskArchive;
   "lib/taskDetailView": typeof lib_taskDetailView;
@@ -64,14 +75,17 @@ declare const fullApi: ApiFromModules<{
   "lib/workflowContract": typeof lib_workflowContract;
   "lib/workflowHelpers": typeof lib_workflowHelpers;
   messages: typeof messages;
+  reviewSpecs: typeof reviewSpecs;
   settings: typeof settings;
   skills: typeof skills;
+  squadSpecs: typeof squadSpecs;
   steps: typeof steps;
   tagAttributeValues: typeof tagAttributeValues;
   tagAttributes: typeof tagAttributes;
   taskTags: typeof taskTags;
   tasks: typeof tasks;
   terminalSessions: typeof terminalSessions;
+  workflowSpecs: typeof workflowSpecs;
 }>;
 
 /**

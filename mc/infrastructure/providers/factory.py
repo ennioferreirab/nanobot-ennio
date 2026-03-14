@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 def _get_codex_token():
     """Try to get the Codex OAuth token. Raises if not authenticated."""
     from oauth_cli_kit import get_token
+
     return get_token()
 
 
@@ -26,6 +27,7 @@ def _merge_codex_models(models: list[str]) -> list[str]:
     except Exception:
         return models
     from nanobot.providers.openai_codex_provider import CODEX_MODELS
+
     existing = set(models)
     return models + [m for m in CODEX_MODELS if m not in existing]
 
@@ -57,7 +59,7 @@ def list_available_models() -> list[str]:
         if models_from_api:
             return _merge_codex_models(models_from_api)
     except Exception as e:
-        logger.warning('list_available_models: provider query failed: %s', e)
+        logger.warning("list_available_models: provider query failed: %s", e)
 
     # 4. Fallback
     base = [default_model] if default_model else []
@@ -99,7 +101,7 @@ def create_provider(model: str | None = None) -> tuple[Any, str]:
     # The cc/ prefix is only valid for the Claude Code executor; for regular LLM
     # calls strip the prefix so the bare model name can be resolved normally.
     if resolved_model.startswith("cc/"):
-        resolved_model = resolved_model[len("cc/"):]
+        resolved_model = resolved_model[len("cc/") :]
 
     # If the caller supplied a bare model name (e.g. "claude-sonnet-4-6")
     # that doesn't resolve to a provider, check if the config default model
@@ -128,7 +130,8 @@ def create_provider(model: str | None = None) -> tuple[Any, str]:
                 if _candidate_pn is not None:
                     logger.debug(
                         "create_provider: remapped %s → %s (inherit default provider prefix)",
-                        resolved_model, _candidate,
+                        resolved_model,
+                        _candidate,
                     )
                     resolved_model = _candidate
                     provider_name = _candidate_pn
@@ -136,9 +139,7 @@ def create_provider(model: str | None = None) -> tuple[Any, str]:
     p = config.get_provider(resolved_model)
 
     # Anthropic OAuth
-    if provider_name == "anthropic_oauth" or resolved_model.startswith(
-        "anthropic-oauth/"
-    ):
+    if provider_name == "anthropic_oauth" or resolved_model.startswith("anthropic-oauth/"):
         try:
             from nanobot.providers.anthropic_oauth_provider import (
                 AnthropicOAuthProvider,
@@ -156,7 +157,15 @@ def create_provider(model: str | None = None) -> tuple[Any, str]:
         try:
             from nanobot.providers.openai_codex_provider import OpenAICodexProvider
 
-            return OpenAICodexProvider(default_model=resolved_model), resolved_model
+            from mc.infrastructure.providers.tool_adapters import (
+                AdaptedProvider,
+                CodexToolAdapter,
+            )
+
+            raw_provider = OpenAICodexProvider(default_model=resolved_model)
+            return AdaptedProvider(
+                inner=raw_provider, tool_adapter=CodexToolAdapter()
+            ), resolved_model
         except ImportError as exc:
             raise ProviderError(
                 f"OpenAI Codex provider not available: {exc}",
@@ -170,8 +179,7 @@ def create_provider(model: str | None = None) -> tuple[Any, str]:
         return (
             CustomProvider(
                 api_key=p.api_key if p else "no-key",
-                api_base=config.get_api_base(resolved_model)
-                or "http://localhost:8000/v1",
+                api_base=config.get_api_base(resolved_model) or "http://localhost:8000/v1",
                 default_model=resolved_model,
             ),
             resolved_model,

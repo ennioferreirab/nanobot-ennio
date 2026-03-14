@@ -1,3 +1,15 @@
+/**
+ * DEPRECATED: /api/agents/assist
+ *
+ * This route previously generated raw YAML from a natural language description.
+ * It is still functional to avoid breaking CreateAgentSheet.tsx (Chat tab).
+ * New code should target /api/authoring/agent-wizard instead, which returns a
+ * structured JSON response suitable for the deep Create Agent wizard.
+ *
+ * A Deprecation header is sent on every response so callers can detect the
+ * transition.  The route will be removed once CreateAgentSheet is retired.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -21,20 +33,19 @@ export async function POST(request: NextRequest) {
     const messages: ChatMessage[] = body.messages || [];
 
     // Extract the last user message as the description
-    const lastUserMessage = [...messages]
-      .reverse()
-      .find((m) => m.role === "user");
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
 
     if (!lastUserMessage) {
-      return NextResponse.json(
-        { error: "No user message found" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No user message found" }, { status: 400 });
     }
 
     // Build the input payload as a JSON file to avoid shell escaping issues
     const tmpInput = join(tmpdir(), `nanobot-assist-input-${randomUUID()}.json`);
-    await writeFile(tmpInput, JSON.stringify({ messages, description: lastUserMessage.content }), "utf-8");
+    await writeFile(
+      tmpInput,
+      JSON.stringify({ messages, description: lastUserMessage.content }),
+      "utf-8",
+    );
 
     // Write a Python script to a temp file to avoid shell escaping issues
     const projectRoot = join(process.cwd(), "..");
@@ -120,14 +131,11 @@ asyncio.run(main())
     await writeFile(tmpScript, pythonScript, "utf-8");
 
     try {
-      const { stdout, stderr } = await execPromise(
-        `uv run python ${JSON.stringify(tmpScript)}`,
-        {
-          cwd: projectRoot,
-          timeout: 60000,
-          env: { ...process.env, PYTHONPATH: projectRoot },
-        }
-      );
+      const { stdout, stderr } = await execPromise(`uv run python ${JSON.stringify(tmpScript)}`, {
+        cwd: projectRoot,
+        timeout: 60000,
+        env: { ...process.env, PYTHONPATH: projectRoot },
+      });
 
       if (stderr) {
         console.error("Python stderr:", stderr);
@@ -138,7 +146,12 @@ asyncio.run(main())
       await unlink(tmpInput).catch(() => {});
 
       const result = JSON.parse(stdout.trim());
-      return NextResponse.json(result);
+      return NextResponse.json(result, {
+        headers: {
+          Deprecation: "true",
+          Link: '</api/authoring/agent-wizard>; rel="successor-version"',
+        },
+      });
     } catch (error: unknown) {
       console.error("Python execution failed:", error);
 
@@ -147,18 +160,23 @@ asyncio.run(main())
       await unlink(tmpInput).catch(() => {});
 
       // Fallback: provide guidance without LLM
-      return NextResponse.json({
-        message:
-          "I'm unable to connect to the LLM right now. You can use the Form tab to create an agent manually, or try again later.",
-        yaml: null,
-      });
+      return NextResponse.json(
+        {
+          message:
+            "I'm unable to connect to the LLM right now. You can use the Form tab to create an agent manually, or try again later.",
+          yaml: null,
+        },
+        {
+          headers: {
+            Deprecation: "true",
+            Link: '</api/authoring/agent-wizard>; rel="successor-version"',
+          },
+        },
+      );
     }
   } catch (error) {
     console.error("Agent assist failed:", error);
     await unlink(tmpScript).catch(() => {});
-    return NextResponse.json(
-      { error: "Failed to process request" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to process request" }, { status: 500 });
   }
 }
