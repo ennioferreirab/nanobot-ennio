@@ -48,7 +48,8 @@ export function TaskCard({ task, onClick, tagColorMap, layoutIdPrefix, progress 
   const [isDragging, setIsDragging] = useState(false);
   const [titleExpanded, setTitleExpanded] = useState(false);
   const colors = STATUS_COLORS[task.status as TaskStatus] ?? STATUS_COLORS.inbox;
-  const showApproveButton = task.status === "review" && !task.isManual;
+  const awaitingKickoff = task.awaitingKickoff === true;
+  const showApproveButton = task.status === "review" && !task.isManual && !awaitingKickoff;
   const showDenyButton =
     task.status === "review" && task.trustLevel === "human_approved" && !task.isManual;
   const isManual = task.isManual === true;
@@ -60,7 +61,6 @@ export function TaskCard({ task, onClick, tagColorMap, layoutIdPrefix, progress 
   const progressPercent = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0;
   const showProgress =
     totalSteps > 1 && (task.status === "in_progress" || task.status === "retrying");
-  const awaitingKickoff = task.awaitingKickoff === true;
 
   return (
     <div
