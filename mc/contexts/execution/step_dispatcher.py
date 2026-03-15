@@ -86,6 +86,8 @@ async def _run_step_agent(
     request: Any | None = None,
     runner_type: Any | None = None,
     engine_builder: Any | None = None,
+    provider_cli_registry: Any | None = None,
+    provider_cli_supervisor: Any | None = None,
 ) -> Any:
     """Execute a step through the shared execution engine."""
     from mc.application.execution.post_processing import build_execution_engine
@@ -120,6 +122,8 @@ async def _run_step_agent(
             bridge=bridge,
             cron_service=cron_service,
             ask_user_registry=ask_user_registry,
+            provider_cli_registry=provider_cli_registry,
+            provider_cli_supervisor=provider_cli_supervisor,
         )
     else:
         engine = engine_builder()
@@ -135,12 +139,16 @@ class StepDispatcher:
         cron_service: Any | None = None,
         ask_user_registry: Any | None = None,
         interactive_session_coordinator: Any | None = None,
+        provider_cli_registry: Any | None = None,
+        provider_cli_supervisor: Any | None = None,
     ) -> None:
         self._bridge = bridge
         self._cron_service = cron_service
         self._tier_resolver: Any | None = None
         self._ask_user_registry = ask_user_registry
         self._interactive_session_coordinator = interactive_session_coordinator
+        self._provider_cli_registry = provider_cli_registry
+        self._provider_cli_supervisor = provider_cli_supervisor
 
     def _get_tier_resolver(self) -> Any:
         """Lazily create and return a TierResolver instance (shared across steps)."""
@@ -159,6 +167,8 @@ class StepDispatcher:
             cron_service=self._cron_service,
             ask_user_registry=self._ask_user_registry,
             interactive_session_coordinator=self._interactive_session_coordinator,
+            provider_cli_registry=self._provider_cli_registry,
+            provider_cli_supervisor=self._provider_cli_supervisor,
         )
 
     async def dispatch_steps(self, task_id: str, step_ids: list[str]) -> None:

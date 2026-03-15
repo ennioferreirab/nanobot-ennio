@@ -158,6 +158,8 @@ class TaskOrchestrator:
             interactive_session_coordinator=self._ctx.services.get(
                 "interactive_session_coordinator"
             ),
+            provider_cli_registry=self._ctx.services.get("provider_cli_registry"),
+            provider_cli_supervisor=self._ctx.services.get("provider_cli_supervisor"),
         )
 
         # Shared kickoff ID set -- prevents double-dispatch between
