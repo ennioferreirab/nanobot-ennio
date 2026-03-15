@@ -22,6 +22,7 @@ from mc.application.execution.strategies.claude_code import ClaudeCodeRunnerStra
 from mc.application.execution.strategies.human import HumanRunnerStrategy
 from mc.application.execution.strategies.interactive import InteractiveTuiRunnerStrategy
 from mc.application.execution.strategies.nanobot import NanobotRunnerStrategy
+from mc.application.execution.strategies.provider_cli import ProviderCliRunnerStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -92,18 +93,29 @@ class ExecutionEngine:
         if strategies is not None:
             self._strategies: dict[RunnerType, RunnerStrategy] = strategies
         else:
-            # PROVIDER_CLI is the production default; INTERACTIVE_TUI is the escape hatch.
-            # Both share the same strategy — the coordinator drives the session. (Story 28.7)
-            _default_interactive = InteractiveTuiRunnerStrategy(
-                bridge=None,
-                session_coordinator=None,
-            )
+            from mc.contexts.provider_cli.providers.claude_code import ClaudeCodeCLIParser
+            from mc.contexts.provider_cli.registry import ProviderSessionRegistry
+            from mc.runtime.provider_cli.process_supervisor import ProviderProcessSupervisor
+
+            _provider_registry = ProviderSessionRegistry()
+            _provider_supervisor = ProviderProcessSupervisor()
+            _provider_parser = ClaudeCodeCLIParser(supervisor=_provider_supervisor)
+
             self._strategies = {
                 RunnerType.NANOBOT: NanobotRunnerStrategy(),
                 RunnerType.CLAUDE_CODE: ClaudeCodeRunnerStrategy(),
                 RunnerType.HUMAN: HumanRunnerStrategy(),
-                RunnerType.PROVIDER_CLI: _default_interactive,
-                RunnerType.INTERACTIVE_TUI: _default_interactive,
+                RunnerType.INTERACTIVE_TUI: InteractiveTuiRunnerStrategy(
+                    bridge=None,
+                    session_coordinator=None,
+                ),
+                RunnerType.PROVIDER_CLI: ProviderCliRunnerStrategy(
+                    parser=_provider_parser,
+                    registry=_provider_registry,
+                    supervisor=_provider_supervisor,
+                    command=["claude", "--output-format", "stream-json", "--print"],
+                    cwd=".",
+                ),
             }
         self._post_execution_hooks = (
             post_execution_hooks if post_execution_hooks is not None else []
