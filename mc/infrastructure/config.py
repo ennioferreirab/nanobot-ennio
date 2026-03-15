@@ -16,6 +16,7 @@ Contains:
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import os
 from pathlib import Path
@@ -80,6 +81,7 @@ def _resolve_admin_key(dashboard_dir: Path | None = None) -> str | None:
     """Resolve the Convex admin key from dashboard/.env.local.
 
     Only used as fallback when CONVEX_ADMIN_KEY env var is not set.
+    For local Convex deployments, falls back to dashboard/.convex/local/default/config.json.
     """
     if dashboard_dir is None:
         candidates = [
@@ -97,6 +99,17 @@ def _resolve_admin_key(dashboard_dir: Path | None = None) -> str | None:
             for line in env_local.read_text().splitlines():
                 if line.startswith("CONVEX_ADMIN_KEY="):
                     return line.split("=", 1)[1].strip().strip('"')
+
+        local_config = dashboard_dir / ".convex" / "local" / "default" / "config.json"
+        if local_config.exists():
+            try:
+                payload = json.loads(local_config.read_text())
+            except (json.JSONDecodeError, OSError):
+                logger.warning("Could not parse local Convex config %s", local_config)
+            else:
+                admin_key = payload.get("adminKey")
+                if isinstance(admin_key, str) and admin_key:
+                    return admin_key
 
     return None
 

@@ -113,12 +113,27 @@ def register_lifecycle_commands(mc_app: typer.Typer) -> None:
             "-d",
             help="Path to dashboard directory (auto-detected if not specified)",
         ),
+        local: bool = typer.Option(
+            False,
+            "--local",
+            help="Use a local Convex deployment explicitly (default behavior).",
+        ),
+        cloud: bool = typer.Option(
+            False,
+            "--cloud",
+            help="Use the hosted Convex development deployment instead of local.",
+        ),
     ):
         """Start Mission Control (dashboard + agent gateway + nanobot channels)."""
         import mc.cli as _cli
         from mc.cli.process_manager import ProcessManager
 
+        if local and cloud:
+            _cli.console.print("[red]Choose only one of --local or --cloud.[/red]")
+            raise typer.Exit(1)
+
         resolved_dir = Path(dashboard_dir) if dashboard_dir else _cli._find_dashboard_dir()
+        convex_mode = "cloud" if cloud else "local"
 
         if not resolved_dir.is_dir():
             _cli.console.print(f"[red]Dashboard directory not found: {resolved_dir}[/red]")
@@ -165,21 +180,25 @@ def register_lifecycle_commands(mc_app: typer.Typer) -> None:
         except Exception:
             pass
 
-        try:
-            bridge = _cli._get_bridge()
-            from mc.infrastructure.agent_bootstrap import sync_nanobot_default_model
+        if convex_mode == "cloud":
+            try:
+                bridge = _cli._get_bridge()
+                from mc.infrastructure.agent_bootstrap import sync_nanobot_default_model
 
-            if sync_nanobot_default_model(bridge):
-                _cli.console.print("[green]✓[/green] Synced nanobot default model from dashboard")
-        except Exception:
-            pass
+                if sync_nanobot_default_model(bridge):
+                    _cli.console.print(
+                        "[green]✓[/green] Synced nanobot default model from dashboard"
+                    )
+            except Exception:
+                pass
 
         async def _run():
-            pm = ProcessManager(dashboard_dir=resolved_dir)
+            pm = ProcessManager(dashboard_dir=resolved_dir, convex_mode=convex_mode)
             try:
                 await pm.start()
                 _cli.console.print("[green]Mission Control is running[/green]")
                 _cli.console.print("  Dashboard: [cyan]http://localhost:3000[/cyan]")
+                _cli.console.print(f"  Convex:    [cyan]{convex_mode}[/cyan]")
                 _cli.console.print("  Nanobot:   [cyan]channels + agent gateway[/cyan]")
                 await pm.wait()
             finally:
@@ -210,8 +229,7 @@ def register_lifecycle_commands(mc_app: typer.Typer) -> None:
 
         if not _cli.PID_FILE.exists():
             _cli.console.print(
-                "Mission Control is not running. "
-                "Start with [bold]nanobot mc start[/bold]"
+                "Mission Control is not running. Start with [bold]nanobot mc start[/bold]"
             )
             raise typer.Exit(0)
 

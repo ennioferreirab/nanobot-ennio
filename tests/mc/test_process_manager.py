@@ -1,6 +1,7 @@
 """Unit tests for ProcessManager."""
 
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -77,7 +78,7 @@ async def test_process_configs(dashboard_dir, project_root):
 
     assert configs[0].label == "convex"
     assert configs[0].command == "npm"
-    assert configs[0].args == ["run", "dev:backend"]
+    assert configs[0].args == ["run", "dev:backend", "--", "--local"]
     assert configs[0].cwd == dashboard_dir
 
     assert configs[1].label == "dashboard"
@@ -92,6 +93,51 @@ async def test_process_configs(dashboard_dir, project_root):
     assert configs[3].label == "nanobot"
     assert configs[3].args == ["-m", "nanobot", "gateway"]
     assert configs[3].cwd == project_root
+
+
+@pytest.mark.asyncio
+async def test_process_configs_cloud_mode(dashboard_dir, project_root):
+    """Cloud mode keeps the Convex backend on the hosted dev deployment."""
+    pm = ProcessManager(dashboard_dir, project_root, convex_mode="cloud")
+    configs = pm._get_process_configs()
+
+    assert configs[0].label == "convex"
+    assert configs[0].command == "npm"
+    assert configs[0].args == ["run", "dev:backend"]
+
+
+@pytest.mark.asyncio
+async def test_local_mode_injects_local_convex_env_for_python_processes(
+    dashboard_dir, project_root
+):
+    """Gateway and nanobot inherit local Convex URL and admin key when available."""
+    dashboard_path = Path(dashboard_dir)
+    (dashboard_path / ".env.local").write_text('NEXT_PUBLIC_CONVEX_URL="http://127.0.0.1:3210"\n')
+    local_config = dashboard_path / ".convex" / "local" / "default"
+    local_config.mkdir(parents=True)
+    (local_config / "config.json").write_text('{"adminKey":"local-admin-key-123"}')
+
+    spawned: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    async def mock_create_subprocess(*args, **kwargs):
+        spawned.append((args, kwargs))
+        return _make_mock_process()
+
+    with patch(
+        "mc.cli.process_manager.asyncio.create_subprocess_exec",
+        side_effect=mock_create_subprocess,
+    ):
+        pm = ProcessManager(dashboard_dir, project_root)
+        await pm.start()
+        await pm.stop()
+
+    gateway_env = spawned[2][1]["env"]
+    nanobot_env = spawned[3][1]["env"]
+
+    assert gateway_env["CONVEX_URL"] == "http://127.0.0.1:3210"
+    assert gateway_env["CONVEX_ADMIN_KEY"] == "local-admin-key-123"
+    assert nanobot_env["CONVEX_URL"] == "http://127.0.0.1:3210"
+    assert nanobot_env["CONVEX_ADMIN_KEY"] == "local-admin-key-123"
 
 
 @pytest.mark.asyncio
