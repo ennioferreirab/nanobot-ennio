@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable
 
+from mc.infrastructure.config import _resolve_admin_key, _resolve_convex_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,6 +58,7 @@ class ProcessManager:
         self,
         dashboard_dir: str | Path,
         project_root: str | Path | None = None,
+        convex_mode: str = "local",
         on_crash: Callable[[str, int], Awaitable[None]] | None = None,
     ):
         """
@@ -72,6 +75,9 @@ class ProcessManager:
         self._project_root = (
             str(project_root) if project_root else str(Path(self._dashboard_dir).parent)
         )
+        if convex_mode not in {"local", "cloud"}:
+            raise ValueError(f"Unsupported convex_mode: {convex_mode}")
+        self._convex_mode = convex_mode
         self._on_crash = on_crash
         self._processes: list[ManagedProcess] = []
         self._running = False
@@ -217,11 +223,14 @@ class ProcessManager:
         ``predev`` hooks attached to ``npm run dev``.
         """
         venv_python = self._get_venv_python()
+        convex_args = ["run", "dev:backend"]
+        if self._convex_mode == "local":
+            convex_args.extend(["--", "--local"])
         return [
             ProcessConfig(
                 label="convex",
                 command="npm",
-                args=["run", "dev:backend"],
+                args=convex_args,
                 cwd=self._dashboard_dir,
                 env={"NODE_OPTIONS": "--max-old-space-size=1536"},
                 critical=False,
@@ -251,6 +260,19 @@ class ProcessManager:
             ),
         ]
 
+    def _build_process_env(self, config: ProcessConfig) -> dict[str, str]:
+        """Build child process environment, including local Convex overrides."""
+        env = {**os.environ, **(config.env or {})}
+        if self._convex_mode != "local":
+            return env
+
+        dashboard_dir = Path(self._dashboard_dir)
+        if convex_url := _resolve_convex_url(dashboard_dir=dashboard_dir):
+            env.setdefault("CONVEX_URL", convex_url)
+        if admin_key := _resolve_admin_key(dashboard_dir=dashboard_dir):
+            env.setdefault("CONVEX_ADMIN_KEY", admin_key)
+        return env
+
     async def _spawn_process(self, config: ProcessConfig) -> ManagedProcess:
         """
         Spawn a single child process.
@@ -263,7 +285,7 @@ class ProcessManager:
         """
         logger.info(f"[MC] Starting {config.label}...")
 
-        env = {**os.environ, **(config.env or {})}
+        env = self._build_process_env(config)
         process = await asyncio.create_subprocess_exec(
             config.command,
             *config.args,

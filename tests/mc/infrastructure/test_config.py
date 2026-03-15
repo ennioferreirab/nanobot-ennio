@@ -6,8 +6,6 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 
 class TestAgentsDir:
     """AGENTS_DIR constant."""
@@ -74,6 +72,18 @@ class TestResolveAdminKey:
         env_local.write_text('CONVEX_ADMIN_KEY="test-admin-key-123"')
         result = _resolve_admin_key(dashboard_dir=tmp_path)
         assert result == "test-admin-key-123"
+
+    def test_reads_from_local_deployment_config_when_env_missing(self, tmp_path: Path) -> None:
+        from mc.infrastructure.config import _resolve_admin_key
+
+        local_config = tmp_path / ".convex" / "local" / "default"
+        local_config.mkdir(parents=True)
+        (local_config / "config.json").write_text(
+            '{"adminKey":"local-admin-key-456","deploymentName":"anonymous-dashboard"}'
+        )
+
+        result = _resolve_admin_key(dashboard_dir=tmp_path)
+        assert result == "local-admin-key-456"
 
 
 class TestFilterAgentFields:
