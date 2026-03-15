@@ -164,6 +164,23 @@ describe("selectTaskInteractiveSession", () => {
 
     expect(session?.sessionId).toBe("detached");
   });
+
+  it("matches task-level sessions with no stepId for direct agent-assigned tasks", () => {
+    const session = selectTaskInteractiveSession(
+      [
+        { ...sessionBase, sessionId: "step-session", stepId: "step1" },
+        { ...sessionBase, sessionId: "task-session", stepId: undefined },
+      ],
+      {
+        taskId: "task1" as never,
+        stepId: null,
+        agentName: "claude-pair",
+        provider: "claude-code",
+      },
+    );
+
+    expect(session?.sessionId).toBe("task-session");
+  });
 });
 
 describe("describeTaskInteractiveSession", () => {
