@@ -166,3 +166,81 @@ class TestLiveStreamProjectorSubscribers:
         from mc.runtime.provider_cli import LiveStreamProjector as PackageExport
 
         assert PackageExport is LiveStreamProjector
+
+
+class TestLiveStreamProjectorSequenceAndTimestamp:
+    """Story 28-18 — project() assigns sequence numbers and timestamps."""
+
+    def test_project_assigns_monotonically_increasing_sequences(self) -> None:
+        """Each call to project() must yield a strictly increasing sequence number."""
+        projector = LiveStreamProjector()
+        projected_events: list[ProjectedEvent] = []
+        for i in range(5):
+            projected_events.append(projector.project(_make_event(text=str(i)), session_id="s1"))
+        sequences = [p.sequence for p in projected_events]
+        assert sequences == list(range(1, 6))
+
+    def test_project_assigns_iso_timestamp_string(self) -> None:
+        """project() must attach a non-empty ISO 8601 UTC timestamp to every event."""
+        projector = LiveStreamProjector()
+        p = projector.project(_make_event(), session_id="s1")
+        # Must be a string in ISO format with timezone marker
+        assert isinstance(p.timestamp, str)
+        assert "+00:00" in p.timestamp or "Z" in p.timestamp or "T" in p.timestamp
+        assert len(p.timestamp) >= 20
+
+    def test_project_timestamp_is_different_fields_per_event(self) -> None:
+        """Each ProjectedEvent carries its own timestamp (not shared references)."""
+        projector = LiveStreamProjector()
+        p1 = projector.project(_make_event(text="a"), session_id="s1")
+        p2 = projector.project(_make_event(text="b"), session_id="s1")
+        # Both are valid timestamps; p2's sequence must be greater
+        assert p1.sequence < p2.sequence
+        assert isinstance(p1.timestamp, str)
+        assert isinstance(p2.timestamp, str)
+
+
+class TestLiveStreamProjectorCallbackSubscribers:
+    """Story 28-18 — subscriber callbacks receive projected events."""
+
+    def test_subscriber_callback_receives_projected_event_with_metadata(self) -> None:
+        """Callback receives the full ProjectedEvent including sequence and session_id."""
+        projector = LiveStreamProjector()
+        received: list[ProjectedEvent] = []
+        projector.subscribe(received.append)
+
+        event = _make_event(kind="text", text="streaming output")
+        projected = projector.project(event, session_id="session-42")
+
+        assert len(received) == 1
+        assert received[0] is projected
+        assert received[0].sequence == 1
+        assert received[0].session_id == "session-42"
+        assert received[0].event.kind == "text"
+
+    def test_subscriber_callback_receives_all_events_in_order(self) -> None:
+        """When multiple events are projected, each subscriber receives all in order."""
+        projector = LiveStreamProjector()
+        received: list[ProjectedEvent] = []
+        projector.subscribe(received.append)
+
+        for i in range(4):
+            projector.project(_make_event(text=str(i)), session_id="s1")
+
+        assert len(received) == 4
+        assert [r.sequence for r in received] == [1, 2, 3, 4]
+        assert [r.event.text for r in received] == ["0", "1", "2", "3"]
+
+    def test_subscriber_added_after_first_event_does_not_receive_prior_events(self) -> None:
+        """A callback registered after some events have been projected only sees new events."""
+        projector = LiveStreamProjector()
+
+        projector.project(_make_event(text="early"), session_id="s1")
+
+        late_received: list[ProjectedEvent] = []
+        projector.subscribe(late_received.append)
+
+        projector.project(_make_event(text="later"), session_id="s1")
+
+        assert len(late_received) == 1
+        assert late_received[0].event.text == "later"

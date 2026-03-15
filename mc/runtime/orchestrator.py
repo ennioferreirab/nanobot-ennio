@@ -160,6 +160,7 @@ class TaskOrchestrator:
             ),
             provider_cli_registry=self._ctx.services.get("provider_cli_registry"),
             provider_cli_supervisor=self._ctx.services.get("provider_cli_supervisor"),
+            provider_cli_projector=self._ctx.services.get("provider_cli_projector"),
         )
 
         # Shared kickoff ID set -- prevents double-dispatch between

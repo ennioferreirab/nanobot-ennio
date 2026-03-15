@@ -245,6 +245,7 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
         sleep_controller=sleep_controller,
         provider_cli_registry=provider_cli_registry,
         provider_cli_supervisor=provider_cli_supervisor,
+        provider_cli_projector=provider_cli_projector,
     )
     execution_task = asyncio.create_task(executor.start_execution_loop())
 
