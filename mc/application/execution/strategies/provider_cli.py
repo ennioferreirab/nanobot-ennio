@@ -6,12 +6,14 @@ encapsulates all provider-specific logic; the strategy only orchestrates the
 execution lifecycle.
 
 Story 28.2 wires Claude Code as the first provider.
+Story 28.18 adds LiveStreamProjector and supervision_sink wiring.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from mc.application.execution.request import (
     ErrorCategory,
@@ -20,6 +22,9 @@ from mc.application.execution.request import (
 )
 from mc.contexts.provider_cli.registry import ProviderSessionRegistry
 from mc.contexts.provider_cli.types import ParsedCliEvent, SessionStatus
+
+if TYPE_CHECKING:
+    from mc.runtime.provider_cli.live_stream import LiveStreamProjector
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +41,13 @@ class ProviderCliRunnerStrategy:
 
     Provider-specific concerns (JSON format, session ID discovery, resume
     semantics) are entirely inside the parser.
+
+    Optional wiring (Story 28-18):
+      - projector: LiveStreamProjector — projects each ParsedCliEvent into an
+        ordered, timestamped stream so downstream subscribers can observe activity.
+      - supervision_sink: callable — receives a normalized dict payload for each
+        projected event, enabling the gateway to route events into the supervision
+        pipeline (e.g. InteractiveExecutionSupervisor.handle_event).
     """
 
     def __init__(
@@ -46,12 +58,16 @@ class ProviderCliRunnerStrategy:
         supervisor: Any,
         command: list[str],
         cwd: str,
+        projector: "LiveStreamProjector | None" = None,
+        supervision_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._parser = parser
         self._registry = registry
         self._supervisor = supervisor
         self._command = command
         self._cwd = cwd
+        self._projector = projector
+        self._supervision_sink = supervision_sink
 
     async def execute(self, request: ExecutionRequest) -> ExecutionResult:
         """Execute a task via the provider CLI backend.
@@ -133,6 +149,22 @@ class ProviderCliRunnerStrategy:
                             handle.mc_session_id, event.provider_session_id
                         )
                         record.provider_session_id = event.provider_session_id
+                    # Project the event through the live stream projector (Story 28-18)
+                    if self._projector is not None:
+                        projected = self._projector.project(event, session_id=mc_session_id)
+                        # Deliver normalized payload to supervision sink if wired
+                        if self._supervision_sink is not None:
+                            self._supervision_sink(
+                                {
+                                    "session_id": mc_session_id,
+                                    "kind": event.kind,
+                                    "text": event.text,
+                                    "provider_session_id": event.provider_session_id,
+                                    "metadata": event.metadata,
+                                    "sequence": projected.sequence,
+                                    "timestamp": projected.timestamp,
+                                }
+                            )
         except Exception as exc:
             logger.warning(
                 "[provider-cli-strategy] Stream error for session '%s': %s",

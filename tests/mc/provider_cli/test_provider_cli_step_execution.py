@@ -540,3 +540,274 @@ class TestCompletionAndCrashProjection:
 
         assert SessionStatus.RUNNING in statuses_seen
         assert SessionStatus.COMPLETED in statuses_seen
+
+
+# ---------------------------------------------------------------------------
+# Test 6: Strategy calls the projector for each event (Story 28-18)
+# ---------------------------------------------------------------------------
+
+
+class TestStrategyProjectorIntegration:
+    """Strategy execution calls the LiveStreamProjector for each parsed event."""
+
+    @pytest.mark.asyncio
+    async def test_strategy_calls_projector_for_each_event(self) -> None:
+        """Every ParsedCliEvent yielded during stream processing is projected."""
+        from mc.runtime.provider_cli.live_stream import LiveStreamProjector, ProjectedEvent
+
+        registry = ProviderSessionRegistry()
+        mock_supervisor = MagicMock()
+        mock_parser = MagicMock()
+        mock_parser.provider_name = "claude-code"
+
+        handle = _make_mock_handle("task-proj-001-step-001")
+        mock_parser.start_session = AsyncMock(return_value=handle)
+
+        events = [
+            ParsedCliEvent(kind="text", text="Hello"),
+            ParsedCliEvent(kind="text", text="World"),
+            ParsedCliEvent(kind="result", text="Done"),
+        ]
+        mock_parser.parse_output = MagicMock(side_effect=[[e] for e in events])
+
+        async def _stream(h: ProviderProcessHandle):  # noqa: ANN001
+            for _ in events:
+                yield b"chunk"
+
+        mock_supervisor.stream_output = _stream
+        mock_supervisor.wait_for_exit = AsyncMock(return_value=0)
+
+        projector = LiveStreamProjector()
+        projected_events: list[ProjectedEvent] = []
+        projector.subscribe(projected_events.append)
+
+        strategy = ProviderCliRunnerStrategy(
+            parser=mock_parser,
+            registry=registry,
+            supervisor=mock_supervisor,
+            command=["claude", "--output-format", "stream-json", "--print"],
+            cwd=".",
+            projector=projector,
+        )
+
+        req = _make_interactive_request()
+        result = await strategy.execute(req)
+
+        assert result.success is True
+        # Each of the 3 events must have been projected
+        assert len(projected_events) == 3
+        assert projected_events[0].event.kind == "text"
+        assert projected_events[0].event.text == "Hello"
+        assert projected_events[1].event.text == "World"
+        assert projected_events[2].event.kind == "result"
+        # Sequences must be monotonically increasing
+        sequences = [p.sequence for p in projected_events]
+        assert sequences == sorted(sequences)
+        assert sequences[0] >= 1
+
+    @pytest.mark.asyncio
+    async def test_strategy_without_projector_still_works(self) -> None:
+        """When projector is None, the strategy executes normally without projecting events."""
+        registry = ProviderSessionRegistry()
+        mock_supervisor = MagicMock()
+        mock_parser = MagicMock()
+        mock_parser.provider_name = "claude-code"
+
+        handle = _make_mock_handle("task-noproj-001-step-001")
+        mock_parser.start_session = AsyncMock(return_value=handle)
+        mock_parser.parse_output = MagicMock(
+            return_value=[ParsedCliEvent(kind="result", text="Done")]
+        )
+
+        async def _stream(h: ProviderProcessHandle):  # noqa: ANN001
+            yield b"chunk"
+
+        mock_supervisor.stream_output = _stream
+        mock_supervisor.wait_for_exit = AsyncMock(return_value=0)
+
+        # No projector passed (defaults to None)
+        strategy = ProviderCliRunnerStrategy(
+            parser=mock_parser,
+            registry=registry,
+            supervisor=mock_supervisor,
+            command=["claude", "--output-format", "stream-json", "--print"],
+            cwd=".",
+        )
+
+        req = _make_interactive_request()
+        result = await strategy.execute(req)
+        assert result.success is True
+
+
+# ---------------------------------------------------------------------------
+# Test 7: Supervision sink receives normalized payloads (Story 28-18)
+# ---------------------------------------------------------------------------
+
+
+class TestStrategySupervisionSinkIntegration:
+    """Strategy calls supervision_sink with normalized event payload for each event."""
+
+    @pytest.mark.asyncio
+    async def test_supervision_sink_receives_normalized_payload(self) -> None:
+        """Each projected event must trigger a supervision_sink call with correct fields."""
+        from mc.runtime.provider_cli.live_stream import LiveStreamProjector
+
+        registry = ProviderSessionRegistry()
+        mock_supervisor = MagicMock()
+        mock_parser = MagicMock()
+        mock_parser.provider_name = "claude-code"
+
+        handle = _make_mock_handle("task-sink-001-step-001")
+        mock_parser.start_session = AsyncMock(return_value=handle)
+
+        events = [
+            ParsedCliEvent(kind="text", text="stream text"),
+            ParsedCliEvent(kind="result", text="final result"),
+        ]
+        mock_parser.parse_output = MagicMock(side_effect=[[e] for e in events])
+
+        async def _stream(h: ProviderProcessHandle):  # noqa: ANN001
+            for _ in events:
+                yield b"chunk"
+
+        mock_supervisor.stream_output = _stream
+        mock_supervisor.wait_for_exit = AsyncMock(return_value=0)
+
+        projector = LiveStreamProjector()
+        sink_payloads: list[dict[str, Any]] = []
+
+        strategy = ProviderCliRunnerStrategy(
+            parser=mock_parser,
+            registry=registry,
+            supervisor=mock_supervisor,
+            command=["claude", "--output-format", "stream-json", "--print"],
+            cwd=".",
+            projector=projector,
+            supervision_sink=sink_payloads.append,
+        )
+
+        req = _make_interactive_request(task_id="task-sink-001", step_id="step-001")
+        result = await strategy.execute(req)
+
+        assert result.success is True
+        # Sink must have been called once per event
+        assert len(sink_payloads) == 2
+
+        # Verify first payload shape
+        first = sink_payloads[0]
+        assert "session_id" in first
+        assert "kind" in first
+        assert "sequence" in first
+        assert "timestamp" in first
+        assert first["kind"] == "text"
+        assert first["text"] == "stream text"
+        assert first["session_id"] == "task-sink-001-step-001"
+        assert isinstance(first["sequence"], int)
+        assert first["sequence"] >= 1
+
+        # Verify second payload
+        second = sink_payloads[1]
+        assert second["kind"] == "result"
+        assert second["text"] == "final result"
+        assert second["sequence"] == first["sequence"] + 1
+
+    @pytest.mark.asyncio
+    async def test_supervision_sink_payload_includes_all_required_fields(self) -> None:
+        """The normalized payload must include all fields documented in Story 28-18."""
+        from mc.runtime.provider_cli.live_stream import LiveStreamProjector
+
+        registry = ProviderSessionRegistry()
+        mock_supervisor = MagicMock()
+        mock_parser = MagicMock()
+        mock_parser.provider_name = "claude-code"
+
+        handle = _make_mock_handle("task-fields-001-step-001")
+        mock_parser.start_session = AsyncMock(return_value=handle)
+
+        event = ParsedCliEvent(
+            kind="session_id",
+            text=None,
+            provider_session_id="prov-sess-abc",
+            metadata={"extra": "data"},
+        )
+        mock_parser.parse_output = MagicMock(return_value=[event])
+
+        async def _stream(h: ProviderProcessHandle):  # noqa: ANN001
+            yield b"chunk"
+
+        mock_supervisor.stream_output = _stream
+        mock_supervisor.wait_for_exit = AsyncMock(return_value=0)
+
+        projector = LiveStreamProjector()
+        sink_payloads: list[dict[str, Any]] = []
+
+        strategy = ProviderCliRunnerStrategy(
+            parser=mock_parser,
+            registry=registry,
+            supervisor=mock_supervisor,
+            command=["claude", "--output-format", "stream-json", "--print"],
+            cwd=".",
+            projector=projector,
+            supervision_sink=sink_payloads.append,
+        )
+
+        req = _make_interactive_request(task_id="task-fields-001", step_id="step-001")
+        await strategy.execute(req)
+
+        assert len(sink_payloads) == 1
+        payload = sink_payloads[0]
+
+        # All Story 28-18 required fields must be present
+        required_fields = {
+            "session_id",
+            "kind",
+            "text",
+            "provider_session_id",
+            "metadata",
+            "sequence",
+            "timestamp",
+        }
+        assert required_fields <= payload.keys(), (
+            f"Missing required payload fields: {required_fields - payload.keys()}"
+        )
+        assert payload["session_id"] == "task-fields-001-step-001"
+        assert payload["kind"] == "session_id"
+        assert payload["provider_session_id"] == "prov-sess-abc"
+        assert payload["metadata"] == {"extra": "data"}
+
+    @pytest.mark.asyncio
+    async def test_supervision_sink_not_called_when_none(self) -> None:
+        """When supervision_sink is None, no error occurs and strategy succeeds."""
+        from mc.runtime.provider_cli.live_stream import LiveStreamProjector
+
+        registry = ProviderSessionRegistry()
+        mock_supervisor = MagicMock()
+        mock_parser = MagicMock()
+        mock_parser.provider_name = "claude-code"
+
+        handle = _make_mock_handle("task-nosink-001-step-001")
+        mock_parser.start_session = AsyncMock(return_value=handle)
+        mock_parser.parse_output = MagicMock(
+            return_value=[ParsedCliEvent(kind="result", text="Done")]
+        )
+
+        async def _stream(h: ProviderProcessHandle):  # noqa: ANN001
+            yield b"chunk"
+
+        mock_supervisor.stream_output = _stream
+        mock_supervisor.wait_for_exit = AsyncMock(return_value=0)
+
+        projector = LiveStreamProjector()
+        strategy = ProviderCliRunnerStrategy(
+            parser=mock_parser,
+            registry=registry,
+            supervisor=mock_supervisor,
+            command=["claude", "--output-format", "stream-json", "--print"],
+            cwd=".",
+            projector=projector,
+            supervision_sink=None,
+        )
+
+        req = _make_interactive_request()
+        result = await strategy.execute(req)
+        assert result.success is True

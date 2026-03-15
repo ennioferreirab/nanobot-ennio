@@ -378,6 +378,8 @@ def build_execution_engine(
     provider_cli_supervisor: Any | None = None,
     provider_cli_command: list[str] | None = None,
     provider_cli_cwd: str = ".",
+    provider_cli_projector: Any | None = None,
+    provider_cli_supervision_sink: Any | None = None,
 ) -> ExecutionEngine:
     """Create the canonical execution engine used by production runtime paths."""
     from mc.contexts.provider_cli.providers.claude_code import ClaudeCodeCLIParser
@@ -417,6 +419,8 @@ def build_execution_engine(
                 supervisor=_supervisor,
                 command=_command,
                 cwd=provider_cli_cwd,
+                projector=provider_cli_projector,
+                supervision_sink=provider_cli_supervision_sink,
             ),
         },
         post_execution_hooks=[

@@ -88,6 +88,8 @@ async def _run_step_agent(
     engine_builder: Any | None = None,
     provider_cli_registry: Any | None = None,
     provider_cli_supervisor: Any | None = None,
+    provider_cli_projector: Any | None = None,
+    provider_cli_supervision_sink: Any | None = None,
 ) -> Any:
     """Execute a step through the shared execution engine."""
     from mc.application.execution.post_processing import build_execution_engine
@@ -124,6 +126,8 @@ async def _run_step_agent(
             ask_user_registry=ask_user_registry,
             provider_cli_registry=provider_cli_registry,
             provider_cli_supervisor=provider_cli_supervisor,
+            provider_cli_projector=provider_cli_projector,
+            provider_cli_supervision_sink=provider_cli_supervision_sink,
         )
     else:
         engine = engine_builder()
@@ -141,6 +145,8 @@ class StepDispatcher:
         interactive_session_coordinator: Any | None = None,
         provider_cli_registry: Any | None = None,
         provider_cli_supervisor: Any | None = None,
+        provider_cli_projector: Any | None = None,
+        provider_cli_supervision_sink: Any | None = None,
     ) -> None:
         self._bridge = bridge
         self._cron_service = cron_service
@@ -149,6 +155,8 @@ class StepDispatcher:
         self._interactive_session_coordinator = interactive_session_coordinator
         self._provider_cli_registry = provider_cli_registry
         self._provider_cli_supervisor = provider_cli_supervisor
+        self._provider_cli_projector = provider_cli_projector
+        self._provider_cli_supervision_sink = provider_cli_supervision_sink
 
     def _get_tier_resolver(self) -> Any:
         """Lazily create and return a TierResolver instance (shared across steps)."""
@@ -169,6 +177,8 @@ class StepDispatcher:
             interactive_session_coordinator=self._interactive_session_coordinator,
             provider_cli_registry=self._provider_cli_registry,
             provider_cli_supervisor=self._provider_cli_supervisor,
+            provider_cli_projector=self._provider_cli_projector,
+            provider_cli_supervision_sink=self._provider_cli_supervision_sink,
         )
 
     async def dispatch_steps(self, task_id: str, step_ids: list[str]) -> None:
