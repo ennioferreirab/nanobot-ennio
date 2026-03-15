@@ -22,6 +22,7 @@ from mc.application.execution.strategies.claude_code import (
 from mc.application.execution.strategies.human import HumanRunnerStrategy
 from mc.application.execution.strategies.interactive import InteractiveTuiRunnerStrategy
 from mc.application.execution.strategies.nanobot import NanobotRunnerStrategy
+from mc.application.execution.strategies.provider_cli import ProviderCliRunnerStrategy
 from mc.memory.service import consolidate_task_output, resolve_consolidation_model
 
 logger = logging.getLogger(__name__)
@@ -373,15 +374,28 @@ def build_execution_engine(
     cron_service: Any | None = None,
     ask_user_registry: Any | None = None,
     interactive_session_coordinator: Any | None = None,
+    provider_cli_registry: Any | None = None,
+    provider_cli_supervisor: Any | None = None,
+    provider_cli_command: list[str] | None = None,
+    provider_cli_cwd: str = ".",
 ) -> ExecutionEngine:
     """Create the canonical execution engine used by production runtime paths."""
-    # Both PROVIDER_CLI (production default) and INTERACTIVE_TUI (escape hatch)
-    # use the same strategy implementation — the coordinator drives the session
-    # regardless of the PTY/tmux layer. (Story 28.7)
-    _interactive_strategy = InteractiveTuiRunnerStrategy(
-        bridge=bridge,
-        session_coordinator=interactive_session_coordinator,
+    from mc.contexts.provider_cli.providers.claude_code import ClaudeCodeCLIParser
+    from mc.contexts.provider_cli.registry import ProviderSessionRegistry
+    from mc.runtime.provider_cli.process_supervisor import ProviderProcessSupervisor
+
+    # Resolve provider-cli runtime services: use injected instances or create defaults.
+    _registry = (
+        provider_cli_registry if provider_cli_registry is not None else ProviderSessionRegistry()
     )
+    _supervisor = (
+        provider_cli_supervisor
+        if provider_cli_supervisor is not None
+        else ProviderProcessSupervisor()
+    )
+    _command = provider_cli_command or ["claude", "--output-format", "stream-json", "--print"]
+    _parser = ClaudeCodeCLIParser(supervisor=_supervisor)
+
     return ExecutionEngine(
         strategies={
             RunnerType.NANOBOT: NanobotRunnerStrategy(),
@@ -391,8 +405,17 @@ def build_execution_engine(
                 ask_user_registry=ask_user_registry,
             ),
             RunnerType.HUMAN: HumanRunnerStrategy(),
-            RunnerType.PROVIDER_CLI: _interactive_strategy,
-            RunnerType.INTERACTIVE_TUI: _interactive_strategy,
+            RunnerType.INTERACTIVE_TUI: InteractiveTuiRunnerStrategy(
+                bridge=bridge,
+                session_coordinator=interactive_session_coordinator,
+            ),
+            RunnerType.PROVIDER_CLI: ProviderCliRunnerStrategy(
+                parser=_parser,
+                registry=_registry,
+                supervisor=_supervisor,
+                command=_command,
+                cwd=provider_cli_cwd,
+            ),
         },
         post_execution_hooks=[
             relocate_invalid_memory_hook,

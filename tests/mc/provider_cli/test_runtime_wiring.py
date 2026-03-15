@@ -133,3 +133,38 @@ def test_non_interactive_agents_still_route_to_nanobot() -> None:
     runner = resolve_step_runner_type(_make_request(provider=None, backend="nanobot"))
 
     assert runner == RunnerType.NANOBOT
+
+
+# ---------------------------------------------------------------------------
+# Engine strategy wiring (Story 28-8)
+# ---------------------------------------------------------------------------
+
+
+def test_engine_default_strategies_include_provider_cli() -> None:
+    """ExecutionEngine creates a ProviderCliRunnerStrategy for PROVIDER_CLI by default."""
+    from mc.application.execution.engine import ExecutionEngine
+    from mc.application.execution.strategies.provider_cli import ProviderCliRunnerStrategy
+
+    engine = ExecutionEngine()
+    strategy = engine.get_strategy(RunnerType.PROVIDER_CLI)
+    assert isinstance(strategy, ProviderCliRunnerStrategy)
+
+
+def test_build_execution_engine_wires_provider_cli_strategy() -> None:
+    """build_execution_engine() wires a ProviderCliRunnerStrategy for PROVIDER_CLI."""
+    from mc.application.execution.post_processing import build_execution_engine
+    from mc.application.execution.strategies.provider_cli import ProviderCliRunnerStrategy
+
+    engine = build_execution_engine()
+    strategy = engine.get_strategy(RunnerType.PROVIDER_CLI)
+    assert isinstance(strategy, ProviderCliRunnerStrategy)
+
+
+def test_build_execution_engine_keeps_interactive_tui_separate() -> None:
+    """INTERACTIVE_TUI must NOT be ProviderCliRunnerStrategy."""
+    from mc.application.execution.post_processing import build_execution_engine
+    from mc.application.execution.strategies.interactive import InteractiveTuiRunnerStrategy
+
+    engine = build_execution_engine()
+    strategy = engine.get_strategy(RunnerType.INTERACTIVE_TUI)
+    assert isinstance(strategy, InteractiveTuiRunnerStrategy)

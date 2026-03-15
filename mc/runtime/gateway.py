@@ -202,6 +202,18 @@ async def run_gateway(bridge: "ConvexBridge") -> None:
         interactive_runtime = None
         logger.info("[gateway] Provider-CLI path active — TUI runtime not started")
 
+    # Provider CLI runtime services — composition root for all provider-native CLI sessions.
+    from mc.contexts.provider_cli.registry import ProviderSessionRegistry
+    from mc.runtime.provider_cli.live_stream import LiveStreamProjector
+    from mc.runtime.provider_cli.process_supervisor import ProviderProcessSupervisor
+
+    provider_cli_registry = ProviderSessionRegistry()
+    provider_cli_supervisor = ProviderProcessSupervisor()
+    provider_cli_projector = LiveStreamProjector()
+    runtime_ctx.services["provider_cli_registry"] = provider_cli_registry
+    runtime_ctx.services["provider_cli_supervisor"] = provider_cli_supervisor
+    runtime_ctx.services["provider_cli_projector"] = provider_cli_projector
+
     orchestrator = TaskOrchestrator(
         runtime_ctx,
         cron_service=cron,
