@@ -196,3 +196,99 @@ class TestProviderCliModulesNoPtyDependency:
             "These modules import interactive_transport outside allowed legacy wiring:\n"
             + "\n".join(f"  {v}" for v in violations)
         )
+
+
+# ---------------------------------------------------------------------------
+# Story 28-11: Backend gating tests — supported path requires no tmux
+# ---------------------------------------------------------------------------
+
+_PTY_TMUX_PATTERNS = [
+    "import pty",
+    "import websockets",
+    "import tmux",
+    "TmuxSession",
+    "TmuxSessionManager",
+    "from mc.infrastructure.interactive",
+    "interactive_transport",
+]
+
+
+class TestProviderCliRunnerStrategyNoTmux:
+    """ProviderCliRunnerStrategy must not import or use tmux/PTY/websocket modules."""
+
+    def _strategy_source(self) -> str:
+        strategy_path = MC_ROOT / "application" / "execution" / "strategies" / "provider_cli.py"
+        return _read_source(strategy_path)
+
+    def test_strategy_does_not_import_tmux_or_pty_modules(self) -> None:
+        source = self._strategy_source()
+        violations = [p for p in _PTY_TMUX_PATTERNS if p in source]
+        assert not violations, (
+            "ProviderCliRunnerStrategy imports tmux/PTY: " + ", ".join(repr(v) for v in violations)
+        )
+
+    def test_strategy_does_not_reference_interactive_session_coordinator(self) -> None:
+        source = self._strategy_source()
+        assert "InteractiveSessionCoordinator" not in source
+
+
+class TestProviderProcessSupervisorNoTmux:
+    """ProviderProcessSupervisor must not import tmux/PTY modules."""
+
+    def _supervisor_source(self) -> str:
+        return _read_source(MC_ROOT / "runtime" / "provider_cli" / "process_supervisor.py")
+
+    def test_supervisor_does_not_import_tmux_or_pty_modules(self) -> None:
+        source = self._supervisor_source()
+        violations = [p for p in _PTY_TMUX_PATTERNS if p in source]
+        assert not violations, (
+            "ProviderProcessSupervisor imports tmux/PTY: " + ", ".join(repr(v) for v in violations)
+        )
+
+
+class TestClaudeCodeCLIParserNoTmux:
+    """ClaudeCodeCLIParser must not import tmux/PTY modules."""
+
+    def _parser_source(self) -> str:
+        return _read_source(MC_ROOT / "contexts" / "provider_cli" / "providers" / "claude_code.py")
+
+    def test_parser_does_not_import_tmux_or_pty_modules(self) -> None:
+        source = self._parser_source()
+        violations = [p for p in _PTY_TMUX_PATTERNS if p in source]
+        assert not violations, (
+            "ClaudeCodeCLIParser imports tmux/PTY: " + ", ".join(repr(v) for v in violations)
+        )
+
+
+class TestDefaultProviderCliPathNoTmuxSessions:
+    """Default execution path (PROVIDER_CLI) must not create tmux sessions."""
+
+    def test_provider_cli_strategy_does_not_instantiate_tmux(self) -> None:
+        import sys
+
+        before_modules = set(sys.modules.keys())
+        from mc.application.execution.strategies.provider_cli import (
+            ProviderCliRunnerStrategy,  # noqa: F401
+        )
+
+        after_modules = set(sys.modules.keys())
+        new_modules = after_modules - before_modules
+        tmux_modules = {m for m in new_modules if "tmux" in m.lower()}
+        assert not tmux_modules, (
+            f"Importing ProviderCliRunnerStrategy pulled in tmux modules: {tmux_modules}"
+        )
+
+    def test_provider_process_supervisor_does_not_instantiate_tmux(self) -> None:
+        import sys
+
+        before_modules = set(sys.modules.keys())
+        from mc.runtime.provider_cli.process_supervisor import (
+            ProviderProcessSupervisor,  # noqa: F401
+        )
+
+        after_modules = set(sys.modules.keys())
+        new_modules = after_modules - before_modules
+        tmux_modules = {m for m in new_modules if "tmux" in m.lower()}
+        assert not tmux_modules, (
+            f"Importing ProviderProcessSupervisor pulled in tmux modules: {tmux_modules}"
+        )
