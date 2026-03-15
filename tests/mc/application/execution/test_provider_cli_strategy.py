@@ -110,6 +110,13 @@ async def test_strategy_calls_parser_start_session() -> None:
 
 @pytest.mark.asyncio
 async def test_strategy_registers_session_in_registry() -> None:
+    """Strategy must register the session in the registry during execution.
+
+    The session is cleaned up after execution (Story 28-10), so we verify
+    registration indirectly by checking that the strategy calls create() on the registry.
+    We do this by confirming execution succeeds — which requires the registry to have
+    accepted the session.
+    """
     handle = _make_handle(mc_session_id="mc-002")
     parser = _make_parser(handle)
     registry = ProviderSessionRegistry()
@@ -132,11 +139,11 @@ async def test_strategy_registers_session_in_registry() -> None:
         cwd="/tmp/workspace",
     )
     request = _make_request(task_id="task-002")
-    await strategy.execute(request)
+    result = await strategy.execute(request)
 
-    record = registry.get(handle.mc_session_id)
-    assert record is not None
-    assert record.provider == "claude-code"
+    # Execution must succeed; session is cleaned up post-execution (Story 28-10)
+    assert result.success is True
+    assert registry.get(handle.mc_session_id) is None
 
 
 @pytest.mark.asyncio
@@ -278,6 +285,11 @@ async def test_strategy_returns_error_result_on_exception() -> None:
 
 @pytest.mark.asyncio
 async def test_strategy_updates_registry_with_discovered_session_id() -> None:
+    """Session ID discovered from parser events must propagate to ExecutionResult.
+
+    After execution, the session is cleaned up from the registry (Story 28-10).
+    The important invariant is that the session_id is returned in ExecutionResult.
+    """
     handle = _make_handle(mc_session_id="mc-disco-001")
     parser = MagicMock()
     parser.provider_name = "claude-code"
@@ -316,10 +328,9 @@ async def test_strategy_updates_registry_with_discovered_session_id() -> None:
     )
     result = await strategy.execute(_make_request())
 
-    record = registry.get(handle.mc_session_id)
-    assert record is not None
-    assert record.provider_session_id == "claude-sess-xyz"
+    # Session ID must be surfaced in result; record is cleaned up post-execution
     assert result.session_id == "claude-sess-xyz"
+    assert registry.get(handle.mc_session_id) is None
 
 
 # ---------------------------------------------------------------------------
@@ -515,7 +526,311 @@ async def test_strategy_end_to_end_with_prompt_result_and_session_id() -> None:
     assert result.output == "E2E task complete"
     assert result.session_id == "provider-sess-e2e"
 
-    # Verify registry
-    record = registry.get(handle.mc_session_id)
-    assert record is not None
-    assert record.provider_session_id == "provider-sess-e2e"
+    # Verify registry is cleaned up post-execution (Story 28-10)
+    assert registry.get(handle.mc_session_id) is None
+
+
+# ---------------------------------------------------------------------------
+# Story 28-10: Final result capture from result events
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_strategy_uses_last_result_event_as_output() -> None:
+    """When multiple result events are emitted, the last one is the canonical output."""
+    handle = _make_handle()
+    parser = _make_parser(handle)
+    registry = ProviderSessionRegistry()
+
+    # Simulate two result events; the last one wins
+    parser.parse_output = MagicMock(
+        side_effect=[
+            [ParsedCliEvent(kind="result", text="intermediate result")],
+            [ParsedCliEvent(kind="result", text="FINAL RESULT")],
+        ]
+    )
+
+    async def fake_stream(h: ProviderProcessHandle):
+        yield b"chunk1"
+        yield b"chunk2"
+
+    supervisor = MagicMock()
+    supervisor.stream_output = fake_stream
+    supervisor.wait_for_exit = AsyncMock(return_value=0)
+
+    strategy = ProviderCliRunnerStrategy(
+        parser=parser,
+        registry=registry,
+        supervisor=supervisor,
+        command=["claude"],
+        cwd="/tmp/workspace",
+    )
+    result = await strategy.execute(_make_request())
+    assert result.success is True
+    assert result.output == "FINAL RESULT"
+
+
+@pytest.mark.asyncio
+async def test_strategy_fallback_to_concatenated_text_events_when_no_result() -> None:
+    """When no result event exists but exit code is 0, output = concatenated text events."""
+    handle = _make_handle()
+    parser = _make_parser(handle)
+    registry = ProviderSessionRegistry()
+
+    # Only text events, no result event
+    parser.parse_output = MagicMock(
+        side_effect=[
+            [ParsedCliEvent(kind="text", text="Hello ")],
+            [ParsedCliEvent(kind="text", text="World")],
+        ]
+    )
+
+    async def fake_stream(h: ProviderProcessHandle):
+        yield b"chunk1"
+        yield b"chunk2"
+
+    supervisor = MagicMock()
+    supervisor.stream_output = fake_stream
+    supervisor.wait_for_exit = AsyncMock(return_value=0)
+
+    strategy = ProviderCliRunnerStrategy(
+        parser=parser,
+        registry=registry,
+        supervisor=supervisor,
+        command=["claude"],
+        cwd="/tmp/workspace",
+    )
+    result = await strategy.execute(_make_request())
+    assert result.success is True
+    # Output must contain both text event texts concatenated
+    assert "Hello " in result.output
+    assert "World" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Story 28-10: Crash projection with proper error details
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_strategy_crash_projection_returns_failure_result() -> None:
+    """On crash (non-zero exit + error event), strategy returns failure and cleans up."""
+    handle = _make_handle(mc_session_id="mc-crash-001")
+    parser = _make_parser(handle)
+    registry = ProviderSessionRegistry()
+
+    error_event = ParsedCliEvent(kind="error", text="max_turns_exceeded")
+    parser.parse_output.return_value = [error_event]
+
+    async def fake_stream(h: ProviderProcessHandle):
+        yield b"output"
+
+    supervisor = MagicMock()
+    supervisor.stream_output = fake_stream
+    supervisor.wait_for_exit = AsyncMock(return_value=1)
+
+    strategy = ProviderCliRunnerStrategy(
+        parser=parser,
+        registry=registry,
+        supervisor=supervisor,
+        command=["claude"],
+        cwd="/tmp/workspace",
+    )
+    result = await strategy.execute(_make_request())
+
+    assert result.success is False
+    assert result.error_category == ErrorCategory.RUNNER
+    # Session is cleaned up after crash (Story 28-10)
+    assert registry.get(handle.mc_session_id) is None
+
+
+@pytest.mark.asyncio
+async def test_strategy_crash_error_message_comes_from_error_event() -> None:
+    """The ExecutionResult.error_message must reflect the error event text on crash."""
+    handle = _make_handle(mc_session_id="mc-crash-msg-001")
+    parser = _make_parser(handle)
+    registry = ProviderSessionRegistry()
+
+    error_event = ParsedCliEvent(kind="error", text="context_window_exceeded")
+    parser.parse_output.return_value = [error_event]
+
+    async def fake_stream(h: ProviderProcessHandle):
+        yield b"output"
+
+    supervisor = MagicMock()
+    supervisor.stream_output = fake_stream
+    supervisor.wait_for_exit = AsyncMock(return_value=1)
+
+    strategy = ProviderCliRunnerStrategy(
+        parser=parser,
+        registry=registry,
+        supervisor=supervisor,
+        command=["claude"],
+        cwd="/tmp/workspace",
+    )
+    result = await strategy.execute(_make_request())
+
+    assert result.success is False
+    assert result.error_message == "context_window_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_strategy_crash_nonzero_exit_no_error_events_uses_generic_message() -> None:
+    """When no error events but exit code != 0, error_message mentions the exit code."""
+    handle = _make_handle(mc_session_id="mc-crash-code-001")
+    parser = _make_parser(handle)
+    registry = ProviderSessionRegistry()
+
+    parser.parse_output.return_value = []
+
+    async def fake_stream(h: ProviderProcessHandle):
+        yield b""
+
+    supervisor = MagicMock()
+    supervisor.stream_output = fake_stream
+    supervisor.wait_for_exit = AsyncMock(return_value=137)
+
+    strategy = ProviderCliRunnerStrategy(
+        parser=parser,
+        registry=registry,
+        supervisor=supervisor,
+        command=["claude"],
+        cwd="/tmp/workspace",
+    )
+    result = await strategy.execute(_make_request())
+
+    assert result.success is False
+    assert result.error_message is not None
+    assert "137" in result.error_message
+
+
+# ---------------------------------------------------------------------------
+# Story 28-10: Session cleanup after execution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_strategy_cleans_up_session_after_success() -> None:
+    """After successful execution, the session record must be removed from the registry."""
+    handle = _make_handle(mc_session_id="mc-cleanup-ok-001")
+    parser = _make_parser(handle)
+    registry = ProviderSessionRegistry()
+
+    parser.parse_output.return_value = [ParsedCliEvent(kind="result", text="Done")]
+
+    async def fake_stream(h: ProviderProcessHandle):
+        yield b"output"
+
+    supervisor = MagicMock()
+    supervisor.stream_output = fake_stream
+    supervisor.wait_for_exit = AsyncMock(return_value=0)
+
+    strategy = ProviderCliRunnerStrategy(
+        parser=parser,
+        registry=registry,
+        supervisor=supervisor,
+        command=["claude"],
+        cwd="/tmp/workspace",
+    )
+    result = await strategy.execute(_make_request())
+
+    assert result.success is True
+    # Session must be cleaned up from registry after completion
+    assert registry.get(handle.mc_session_id) is None
+
+
+@pytest.mark.asyncio
+async def test_strategy_cleans_up_session_after_crash() -> None:
+    """After crash, the session record must be removed from the registry."""
+    handle = _make_handle(mc_session_id="mc-cleanup-crash-001")
+    parser = _make_parser(handle)
+    registry = ProviderSessionRegistry()
+
+    error_event = ParsedCliEvent(kind="error", text="crash")
+    parser.parse_output.return_value = [error_event]
+
+    async def fake_stream(h: ProviderProcessHandle):
+        yield b"output"
+
+    supervisor = MagicMock()
+    supervisor.stream_output = fake_stream
+    supervisor.wait_for_exit = AsyncMock(return_value=1)
+
+    strategy = ProviderCliRunnerStrategy(
+        parser=parser,
+        registry=registry,
+        supervisor=supervisor,
+        command=["claude"],
+        cwd="/tmp/workspace",
+    )
+    result = await strategy.execute(_make_request())
+
+    assert result.success is False
+    # Session must be cleaned up from registry after crash
+    assert registry.get(handle.mc_session_id) is None
+
+
+# ---------------------------------------------------------------------------
+# Story 28-10: Mid-stream crash handling
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_strategy_handles_mid_stream_crash_gracefully() -> None:
+    """When stream_output raises mid-execution, the strategy must not raise; returns failure."""
+    handle = _make_handle(mc_session_id="mc-midstream-crash-001")
+    parser = _make_parser(handle)
+    registry = ProviderSessionRegistry()
+
+    parser.parse_output.return_value = []
+
+    async def crashing_stream(h: ProviderProcessHandle):
+        yield b"partial output"
+        raise RuntimeError("Process died mid-stream")
+
+    supervisor = MagicMock()
+    supervisor.stream_output = crashing_stream
+    supervisor.wait_for_exit = AsyncMock(return_value=1)
+
+    strategy = ProviderCliRunnerStrategy(
+        parser=parser,
+        registry=registry,
+        supervisor=supervisor,
+        command=["claude"],
+        cwd="/tmp/workspace",
+    )
+    result = await strategy.execute(_make_request())
+
+    # Must not raise; must return a failure result
+    assert result.success is False
+    assert result.error_category == ErrorCategory.RUNNER
+
+
+@pytest.mark.asyncio
+async def test_strategy_handles_mid_stream_crash_then_cleans_up() -> None:
+    """Even when stream crashes, session cleanup must still happen."""
+    handle = _make_handle(mc_session_id="mc-midstream-cleanup-001")
+    parser = _make_parser(handle)
+    registry = ProviderSessionRegistry()
+
+    parser.parse_output.return_value = []
+
+    async def crashing_stream(h: ProviderProcessHandle):
+        yield b"start"
+        raise RuntimeError("Pipe closed")
+
+    supervisor = MagicMock()
+    supervisor.stream_output = crashing_stream
+    supervisor.wait_for_exit = AsyncMock(return_value=1)
+
+    strategy = ProviderCliRunnerStrategy(
+        parser=parser,
+        registry=registry,
+        supervisor=supervisor,
+        command=["claude"],
+        cwd="/tmp/workspace",
+    )
+    await strategy.execute(_make_request())
+
+    # Session must be cleaned up even after mid-stream crash
+    assert registry.get(handle.mc_session_id) is None

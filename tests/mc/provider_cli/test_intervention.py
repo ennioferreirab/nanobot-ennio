@@ -227,3 +227,68 @@ class TestGetInterventionState:
         controller = _make_controller(registry=ProviderSessionRegistry())
         with pytest.raises(ValueError, match="not found"):
             controller.get_intervention_state("nonexistent")
+
+
+class TestCrashProjectionCoverage:
+    """Exhaustive crash projection tests for all stop/interrupt/resume failure paths (Story 28-10)."""
+
+    async def test_interrupt_failure_leaves_session_as_crashed(self) -> None:
+        """Session must remain CRASHED (not partially INTERRUPTING) after interrupt failure."""
+        registry = _make_registry(initial_status=SessionStatus.RUNNING)
+        parser = _make_parser(interrupt_raises=OSError("signal delivery failed"))
+        controller = _make_controller(registry=registry)
+        with pytest.raises(OSError):
+            await controller.interrupt("s1", _make_handle(), parser)
+        assert registry.require("s1").status == SessionStatus.CRASHED
+
+    async def test_resume_failure_from_resuming_leaves_session_as_crashed(self) -> None:
+        """After resume failure, session must be CRASHED not stuck in RESUMING."""
+        registry = _make_registry(initial_status=SessionStatus.HUMAN_INTERVENING)
+        parser = _make_parser(resume_raises=ConnectionError("pipe broken"))
+        controller = _make_controller(registry=registry)
+        with pytest.raises(ConnectionError):
+            await controller.resume("s1", _make_handle(), "continue", parser)
+        # Must end up CRASHED, not RESUMING
+        assert registry.require("s1").status == SessionStatus.CRASHED
+
+    async def test_stop_failure_from_running_leaves_session_as_crashed(self) -> None:
+        """After stop failure, session must be CRASHED."""
+        registry = _make_registry(initial_status=SessionStatus.RUNNING)
+        parser = _make_parser(stop_raises=PermissionError("cannot kill"))
+        controller = _make_controller(registry=registry)
+        with pytest.raises(PermissionError):
+            await controller.stop("s1", _make_handle(), parser)
+        assert registry.require("s1").status == SessionStatus.CRASHED
+
+    async def test_stop_failure_from_human_intervening_leaves_session_as_crashed(self) -> None:
+        """Stop failure from HUMAN_INTERVENING state must also crash properly."""
+        registry = _make_registry(initial_status=SessionStatus.HUMAN_INTERVENING)
+        parser = _make_parser(stop_raises=RuntimeError("process gone"))
+        controller = _make_controller(registry=registry)
+        with pytest.raises(RuntimeError):
+            await controller.stop("s1", _make_handle(), parser)
+        assert registry.require("s1").status == SessionStatus.CRASHED
+
+    async def test_stop_success_updates_to_stopped_not_crashed(self) -> None:
+        """A successful stop must leave the session as STOPPED, not CRASHED."""
+        registry = _make_registry(initial_status=SessionStatus.RUNNING)
+        parser = _make_parser()
+        controller = _make_controller(registry=registry)
+        await controller.stop("s1", _make_handle(), parser)
+        assert registry.require("s1").status == SessionStatus.STOPPED
+
+    async def test_interrupt_success_never_crashes(self) -> None:
+        """Successful interrupt must not set CRASHED; session should be HUMAN_INTERVENING."""
+        registry = _make_registry(initial_status=SessionStatus.RUNNING)
+        parser = _make_parser()
+        controller = _make_controller(registry=registry)
+        await controller.interrupt("s1", _make_handle(), parser)
+        assert registry.require("s1").status == SessionStatus.HUMAN_INTERVENING
+
+    async def test_resume_success_never_crashes(self) -> None:
+        """Successful resume must not set CRASHED; session should be RUNNING."""
+        registry = _make_registry(initial_status=SessionStatus.HUMAN_INTERVENING)
+        parser = _make_parser()
+        controller = _make_controller(registry=registry)
+        await controller.resume("s1", _make_handle(), "continue", parser)
+        assert registry.require("s1").status == SessionStatus.RUNNING

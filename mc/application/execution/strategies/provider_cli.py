@@ -85,6 +85,10 @@ class ProviderCliRunnerStrategy:
             command.extend(["--prompt", request.prompt])
         return command
 
+    def _cleanup(self, mc_session_id: str) -> None:
+        """Remove the session record from the registry after execution completes."""
+        self._registry.remove(mc_session_id)
+
     async def _run(self, request: ExecutionRequest) -> ExecutionResult:
         """Core execution — raises on failure for the outer handler."""
         mc_session_id = f"{request.task_id}-{request.entity_id}"
@@ -99,7 +103,7 @@ class ProviderCliRunnerStrategy:
             cwd=self._cwd,
         )
 
-        # 2. Register the session
+        # 3. Register the session
         record = self._registry.create(
             mc_session_id=handle.mc_session_id,
             provider=self._parser.provider_name,
@@ -111,10 +115,10 @@ class ProviderCliRunnerStrategy:
             supports_stop=True,
         )
 
-        # 3. Transition to RUNNING
+        # 4. Transition to RUNNING
         self._registry.update_status(handle.mc_session_id, SessionStatus.RUNNING)
 
-        # 4. Stream and parse output
+        # 5. Stream and parse output
         collected_events: list[ParsedCliEvent] = []
         try:
             async for chunk in self._supervisor.stream_output(handle):
@@ -136,12 +140,13 @@ class ProviderCliRunnerStrategy:
                 exc,
             )
 
-        # 5. Wait for exit
+        # 6. Wait for exit
         exit_code = await self._supervisor.wait_for_exit(handle)
 
-        # 6. Evaluate result
+        # 7. Evaluate result
         error_events = [e for e in collected_events if e.kind == "error"]
         result_events = [e for e in collected_events if e.kind == "result"]
+        text_events = [e for e in collected_events if e.kind == "text"]
 
         # Discover session ID
         session_id = record.provider_session_id
@@ -149,10 +154,14 @@ class ProviderCliRunnerStrategy:
             sid_events = [e for e in collected_events if e.kind == "session_id"]
             session_id = sid_events[0].provider_session_id if sid_events else None
 
-        # Determine output text
+        # Determine output text:
+        #   1. canonical: last result event text
+        #   2. fallback: concatenation of all text events (when no result event)
         output_text = ""
         if result_events:
             output_text = result_events[-1].text or ""
+        elif text_events:
+            output_text = "".join(e.text or "" for e in text_events)
         elif error_events:
             output_text = error_events[0].text or ""
 
@@ -164,6 +173,7 @@ class ProviderCliRunnerStrategy:
                 error_events[0].text if error_events else f"Process exited with code {exit_code}"
             )
             self._registry.update_status(handle.mc_session_id, SessionStatus.CRASHED)
+            self._cleanup(handle.mc_session_id)
             return ExecutionResult(
                 success=False,
                 error_category=ErrorCategory.RUNNER,
@@ -172,6 +182,7 @@ class ProviderCliRunnerStrategy:
             )
 
         self._registry.update_status(handle.mc_session_id, SessionStatus.COMPLETED)
+        self._cleanup(handle.mc_session_id)
         return ExecutionResult(
             success=True,
             output=output_text,
