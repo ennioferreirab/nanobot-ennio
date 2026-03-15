@@ -329,10 +329,15 @@ class ContextBuilder:
         if req.is_cc:
             req.agent = load_agent_data(agent_name)
 
-        # Assemble the canonical prompt (user-facing instruction for the CLI).
-        # description holds the full enriched context (files, threads, tags, etc.)
-        # prompt is the concise instruction passed via --prompt to the CLI.
-        req.prompt = req.description or req.title
+        # Assemble the canonical prompt for the CLI bootstrap.
+        # agent_prompt carries the system persona/instructions; description carries the
+        # enriched operational context. prompt = both combined so the agent starts with
+        # full context and role awareness.
+        description_or_title = req.description or req.title
+        if agent_prompt:
+            req.prompt = f"{agent_prompt}\n\n---\n\n{description_or_title}"
+        else:
+            req.prompt = description_or_title
 
         return req
 
@@ -485,10 +490,15 @@ class ContextBuilder:
         if req.is_cc:
             req.agent = load_agent_data(agent_name)
 
-        # Assemble the canonical prompt (user-facing instruction for the CLI).
-        # description holds the full enriched context (file paths, thread history, etc.)
-        # prompt is the concise step instruction passed via --prompt to the CLI.
-        req.prompt = req.description or f"{req.step_title}: {req.step_description}"
+        # Assemble the canonical prompt for the CLI bootstrap.
+        # agent_prompt carries the system persona/instructions; description carries the
+        # enriched operational context (file paths, thread history, etc.).
+        # prompt = both combined so the agent starts with full context and role awareness.
+        description_or_title = req.description or f"{req.step_title}: {req.step_description}"
+        if agent_prompt:
+            req.prompt = f"{agent_prompt}\n\n---\n\n{description_or_title}"
+        else:
+            req.prompt = description_or_title
 
         return req
 
