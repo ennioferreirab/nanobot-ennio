@@ -246,3 +246,53 @@ class TestProviderProcessSupervisor:
         async for _ in supervisor.stream_output(handle):
             pass
         await supervisor.wait_for_exit(handle)
+
+    # ---------------------------------------------------------------------------
+    # is_alive() — crash detection (Story 28-10)
+    # ---------------------------------------------------------------------------
+
+    async def test_is_alive_returns_true_for_running_process(self) -> None:
+        """is_alive must return True when the process is still running."""
+        supervisor = ProviderProcessSupervisor()
+        handle = await supervisor.launch(
+            mc_session_id="s16-alive",
+            provider="test",
+            command=["bash", "-c", "sleep 60"],
+            cwd="/tmp",
+        )
+        await asyncio.sleep(0.05)
+        assert supervisor.is_alive(handle) is True
+        # Cleanup
+        await supervisor.kill(handle)
+        await supervisor.wait_for_exit(handle)
+
+    async def test_is_alive_returns_false_for_finished_process(self) -> None:
+        """is_alive must return False once the process has exited."""
+        supervisor = ProviderProcessSupervisor()
+        handle = await supervisor.launch(
+            mc_session_id="s17-dead",
+            provider="test",
+            command=["echo", "done"],
+            cwd="/tmp",
+        )
+        # Drain output and wait for exit
+        async for _ in supervisor.stream_output(handle):
+            pass
+        await supervisor.wait_for_exit(handle)
+        assert supervisor.is_alive(handle) is False
+
+    async def test_is_alive_returns_false_for_unknown_session(self) -> None:
+        """is_alive must return False for a session ID that was never launched."""
+        supervisor = ProviderProcessSupervisor()
+        from mc.contexts.provider_cli.types import ProviderProcessHandle
+
+        fake_handle = ProviderProcessHandle(
+            mc_session_id="never-launched",
+            provider="test",
+            pid=99999,
+            pgid=99999,
+            cwd="/tmp",
+            command=["echo"],
+            started_at="2026-01-01T00:00:00Z",
+        )
+        assert supervisor.is_alive(fake_handle) is False

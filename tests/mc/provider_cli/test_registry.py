@@ -207,3 +207,77 @@ class TestProviderSessionRegistryUpdates:
         from mc.contexts.provider_cli import ProviderSessionRegistry as PackageExport
 
         assert PackageExport is ProviderSessionRegistry
+
+
+class TestCrashTransitions:
+    """Exhaustive coverage of all valid crash transitions in the state machine (Story 28-10)."""
+
+    def test_starting_to_crashed(self) -> None:
+        registry = _make_registry()
+        _create_session(registry, "s1")
+        record = registry.update_status("s1", SessionStatus.CRASHED)
+        assert record.status == SessionStatus.CRASHED
+
+    def test_running_to_crashed(self) -> None:
+        registry = _make_registry()
+        _create_session(registry, "s1")
+        registry.update_status("s1", SessionStatus.RUNNING)
+        record = registry.update_status("s1", SessionStatus.CRASHED)
+        assert record.status == SessionStatus.CRASHED
+
+    def test_waiting_for_input_to_crashed(self) -> None:
+        registry = _make_registry()
+        _create_session(registry, "s1")
+        registry.update_status("s1", SessionStatus.RUNNING)
+        registry.update_status("s1", SessionStatus.WAITING_FOR_INPUT)
+        record = registry.update_status("s1", SessionStatus.CRASHED)
+        assert record.status == SessionStatus.CRASHED
+
+    def test_interrupting_to_crashed(self) -> None:
+        registry = _make_registry()
+        _create_session(registry, "s1")
+        registry.update_status("s1", SessionStatus.RUNNING)
+        registry.update_status("s1", SessionStatus.INTERRUPTING)
+        record = registry.update_status("s1", SessionStatus.CRASHED)
+        assert record.status == SessionStatus.CRASHED
+
+    def test_human_intervening_to_crashed(self) -> None:
+        registry = _make_registry()
+        _create_session(registry, "s1")
+        registry.update_status("s1", SessionStatus.RUNNING)
+        registry.update_status("s1", SessionStatus.INTERRUPTING)
+        registry.update_status("s1", SessionStatus.HUMAN_INTERVENING)
+        record = registry.update_status("s1", SessionStatus.CRASHED)
+        assert record.status == SessionStatus.CRASHED
+
+    def test_resuming_to_crashed(self) -> None:
+        registry = _make_registry()
+        _create_session(registry, "s1")
+        registry.update_status("s1", SessionStatus.RUNNING)
+        registry.update_status("s1", SessionStatus.INTERRUPTING)
+        registry.update_status("s1", SessionStatus.HUMAN_INTERVENING)
+        registry.update_status("s1", SessionStatus.RESUMING)
+        record = registry.update_status("s1", SessionStatus.CRASHED)
+        assert record.status == SessionStatus.CRASHED
+
+    def test_crashed_is_terminal_cannot_transition_to_running(self) -> None:
+        registry = _make_registry()
+        _create_session(registry, "s1")
+        registry.update_status("s1", SessionStatus.CRASHED)
+        with pytest.raises(ValueError, match="Invalid status transition"):
+            registry.update_status("s1", SessionStatus.RUNNING)
+
+    def test_crashed_is_terminal_cannot_transition_to_completed(self) -> None:
+        registry = _make_registry()
+        _create_session(registry, "s1")
+        registry.update_status("s1", SessionStatus.CRASHED)
+        with pytest.raises(ValueError, match="Invalid status transition"):
+            registry.update_status("s1", SessionStatus.COMPLETED)
+
+    def test_completed_cannot_transition_to_crashed(self) -> None:
+        registry = _make_registry()
+        _create_session(registry, "s1")
+        registry.update_status("s1", SessionStatus.RUNNING)
+        registry.update_status("s1", SessionStatus.COMPLETED)
+        with pytest.raises(ValueError, match="Invalid status transition"):
+            registry.update_status("s1", SessionStatus.CRASHED)

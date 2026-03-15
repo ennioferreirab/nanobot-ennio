@@ -99,6 +99,17 @@ class ProviderProcessSupervisor:
                 break
             yield chunk
 
+    def is_alive(self, handle: ProviderProcessHandle) -> bool:
+        """Return True if the process for *handle* is still running.
+
+        Returns False when the process has exited or the session is unknown.
+        Uses asyncio.subprocess.Process.returncode: None means still running.
+        """
+        proc = self._processes.get(handle.mc_session_id)
+        if proc is None:
+            return False
+        return proc.returncode is None
+
     async def wait_for_exit(self, handle: ProviderProcessHandle) -> int | None:
         """Wait for the process to finish and return its exit code."""
         proc = self._processes.get(handle.mc_session_id)
