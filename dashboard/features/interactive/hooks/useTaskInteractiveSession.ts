@@ -16,7 +16,7 @@ const ACTIVE_STEP_STATUSES = new Set(["running", "review", "waiting_human", "ass
 
 type TaskLiveTarget = {
   taskId: Id<"tasks">;
-  stepId: Id<"steps">;
+  stepId: Id<"steps"> | null;
   agentName: string;
   provider: string | null;
 };
@@ -61,7 +61,7 @@ export function selectTaskInteractiveSession(
   const candidates = sessions.filter(
     (session) =>
       session.taskId === target.taskId &&
-      session.stepId === target.stepId &&
+      (target.stepId == null ? session.stepId == null : session.stepId === target.stepId) &&
       session.agentName === target.agentName &&
       (ATTACHABLE_STATUSES.has(session.status) || HISTORICAL_STATUSES.has(session.status)) &&
       (target.provider == null || session.provider === target.provider),
@@ -126,7 +126,7 @@ export function useTaskInteractiveSession(
   selectedStepId: Id<"steps"> | string | null = null,
 ) {
   const detailView = useQuery(api.tasks.getDetailView, taskId ? { taskId } : "skip") as
-    | { steps?: StepDoc[] }
+    | { steps?: StepDoc[]; task?: Pick<Doc<"tasks">, "_id" | "assignedAgent"> | null }
     | null
     | undefined;
   const focusedStep = useMemo(() => {
@@ -136,9 +136,11 @@ export function useTaskInteractiveSession(
     }
     return selectActiveTaskLiveStep(steps);
   }, [detailView?.steps, selectedStepId]);
+  const fallbackAgentName = detailView?.task?.assignedAgent ?? null;
+  const targetAgentName = focusedStep?.assignedAgent ?? fallbackAgentName;
   const activeAgent = useQuery(
     api.agents.getByName,
-    focusedStep ? { name: focusedStep.assignedAgent } : "skip",
+    targetAgentName ? { name: targetAgentName } : "skip",
   ) as
     | Pick<
         Doc<"agents">,
@@ -150,16 +152,16 @@ export function useTaskInteractiveSession(
     | InteractiveSessionDoc[]
     | undefined;
   const target = useMemo<TaskLiveTarget | null>(() => {
-    if (!taskId || !focusedStep) {
+    if (!taskId || !targetAgentName) {
       return null;
     }
     return {
       taskId,
-      stepId: focusedStep._id,
-      agentName: focusedStep.assignedAgent,
+      stepId: focusedStep?._id ?? null,
+      agentName: targetAgentName,
       provider: getInteractiveAgentProvider(activeAgent),
     };
-  }, [activeAgent, focusedStep, taskId]);
+  }, [activeAgent, focusedStep, targetAgentName, taskId]);
   const session = useMemo(() => selectTaskInteractiveSession(sessions, target), [sessions, target]);
   const liveStepIds = useMemo(() => collectTaskLiveStepIds(sessions, taskId), [sessions, taskId]);
   const stateLabel = useMemo(() => describeTaskInteractiveSession(session), [session]);
