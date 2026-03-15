@@ -402,8 +402,104 @@ describe("TaskDetailSheet", () => {
     await user.click(screen.getByTestId("live-button"));
 
     expect(screen.getAllByText(/@agent-alpha/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/WebSearch: landing page copy examples/i)).toBeInTheDocument();
+    expect(screen.getAllByText("WebSearch").length).toBeGreaterThan(0);
+    expect(screen.getByText(/landing page copy examples/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Found strong examples./i).length).toBeGreaterThan(0);
+  });
+
+  it("shows the live tab for a direct task assigned to an agent even when no steps exist", async () => {
+    const user = userEvent.setup();
+    const directTask: TaskDoc = {
+      ...baseTask,
+      status: "in_progress",
+      assignedAgent: "agent-alpha",
+      executionPlan: undefined,
+    };
+
+    mockUseQuery.mockImplementation((_queryRef: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "taskId" in (args as Record<string, unknown>)
+      ) {
+        return buildDetailView(directTask, [baseMessage], []);
+      }
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "name" in (args as Record<string, unknown>)
+      ) {
+        return {
+          _id: "agent-doc",
+          _creationTime: 1,
+          name: "agent-alpha",
+          displayName: "Agent Alpha",
+          role: "Engineer",
+          prompt: "",
+          soul: "",
+          skills: [],
+          status: "active",
+          model: "cc/claude-sonnet-4-6",
+          interactiveProvider: "claude-code",
+        };
+      }
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        Object.keys(args as Record<string, unknown>).length === 0
+      ) {
+        return [
+          {
+            _id: "session-direct",
+            _creationTime: 1,
+            sessionId: "interactive_session:direct-task",
+            agentName: "agent-alpha",
+            provider: "claude-code",
+            scopeKind: "task",
+            scopeId: "task1",
+            surface: "task",
+            tmuxSession: "mc-int-direct",
+            status: "detached",
+            capabilities: ["tui"],
+            createdAt: "2026-03-13T09:00:00.000Z",
+            updatedAt: "2026-03-13T09:10:00.000Z",
+            taskId: "task1",
+            stepId: undefined,
+            supervisionState: "running",
+          },
+        ];
+      }
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "sessionId" in (args as Record<string, unknown>)
+      ) {
+        return [
+          {
+            _id: "activity-direct-1",
+            sessionId: "interactive_session:direct-task",
+            seq: 1,
+            kind: "turn_completed",
+            ts: "2026-03-13T09:04:00.000Z",
+            summary: "Direct task output",
+            agentName: "agent-alpha",
+            provider: "claude-code",
+          },
+        ];
+      }
+      return [];
+    });
+
+    render(<TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />);
+
+    expect(screen.getByRole("tab", { name: "Live" })).toBeInTheDocument();
+    expect(screen.getByTestId("live-session-badge")).toHaveTextContent("Live • Running");
+
+    await user.click(screen.getByRole("tab", { name: "Live" }));
+
+    expect(screen.getAllByText(/@agent-alpha/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Direct task output/i).length).toBeGreaterThan(0);
   });
 
   it("opens historical live output for a completed step from the execution plan", async () => {
@@ -525,7 +621,8 @@ describe("TaskDetailSheet", () => {
     expect(screen.getByRole("tab", { name: "Live" })).toBeInTheDocument();
     expect(screen.getAllByText(/@agent-alpha/i).length).toBeGreaterThan(0);
     expect(screen.getByText("Completed")).toBeInTheDocument();
-    expect(screen.getByText(/WebSearch: best landing page copy/i)).toBeInTheDocument();
+    expect(screen.getAllByText("WebSearch").length).toBeGreaterThan(0);
+    expect(screen.getByText(/best landing page copy/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Completed historical result/i).length).toBeGreaterThan(0);
     expect(screen.getByTestId("live-session-badge")).toHaveTextContent("Live • Completed");
   });
