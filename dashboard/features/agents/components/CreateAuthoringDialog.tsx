@@ -25,7 +25,7 @@ export function CreateAuthoringDialog({
 }: CreateAuthoringDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Create New</DialogTitle>
           <DialogDescription>
