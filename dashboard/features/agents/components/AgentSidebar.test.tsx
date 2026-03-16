@@ -125,6 +125,17 @@ describe("AgentSidebar", () => {
     expect(screen.getByPlaceholderText(/search agents/i)).toBeInTheDocument();
   });
 
+  it("renders the create action above the search input", () => {
+    render(<AgentSidebar />);
+
+    const createButton = screen.getByRole("button", { name: /create agent or squad/i });
+    const searchInput = screen.getByPlaceholderText(/search agents/i);
+
+    expect(
+      createButton.compareDocumentPosition(searchInput) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("filters regularAgents by displayName", async () => {
     vi.mocked(useAgentSidebarData).mockReturnValue({
       deletedAgents: [],

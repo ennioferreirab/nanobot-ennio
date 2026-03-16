@@ -169,6 +169,26 @@ export function AgentSidebar() {
           </div>
         </SidebarHeader>
         <SidebarContent>
+          <div className="px-3 pb-2 pt-3 group-data-[collapsible=icon]:px-2">
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  size="lg"
+                  tooltip="Create Agent or Squad"
+                  onClick={() => setShowCreateChooser(true)}
+                  className="!h-auto cursor-pointer group-data-[collapsible=icon]:justify-center"
+                  aria-label="Create Agent or Squad"
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-muted-foreground/40">
+                    <Plus className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <span className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+                    Create
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </div>
           {/* Global search filter */}
           <div className="px-3 py-2 group-data-[collapsible=icon]:hidden">
             <input
@@ -230,21 +250,6 @@ export function AgentSidebar() {
                         }
                       />
                     ))}
-                    <SidebarMenuItem>
-                      <SidebarMenuButton
-                        size="lg"
-                        tooltip="Create Agent or Squad"
-                        onClick={() => setShowCreateChooser(true)}
-                        className="!h-auto cursor-pointer"
-                      >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-muted-foreground/40">
-                          <Plus className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <span className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-                          Create
-                        </span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
                   </SidebarMenu>
                 </div>
               </CollapsibleContent>
