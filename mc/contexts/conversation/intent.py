@@ -53,10 +53,18 @@ class ResolveResult:
 def _is_negotiable_status(task_data: dict[str, Any]) -> bool:
     """Return True if the task is in a status where plan negotiation is active.
 
-    Active statuses:
+    Only workflow-backed tasks (workMode=ai_workflow) are eligible for plan
+    negotiation. Direct-delegate and human-routed tasks use normal thread
+    behavior instead.
+
+    Active statuses (workflow only):
     - "review" with awaiting_kickoff=True (pre-kickoff plan review)
     - "in_progress" with an execution_plan (during planned execution)
     """
+    work_mode = task_data.get("work_mode") or task_data.get("workMode")
+    if work_mode != "ai_workflow":
+        return False
+
     status = task_data.get("status", "")
     review_phase = task_data.get("review_phase") or task_data.get("reviewPhase")
     if status == "in_progress":
