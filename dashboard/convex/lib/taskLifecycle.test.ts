@@ -1,6 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { testId } from "@/tests/helpers/mockConvex";
-
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
@@ -87,11 +85,7 @@ describe("logTaskStatusChange", () => {
     const ctx = { db: { insert } };
 
     await logTaskStatusChange(ctx, {
-<<<<<<< HEAD
       taskId,
-=======
-      taskId: testId<"tasks">("task-1"),
->>>>>>> worktree-agent-aacc91e7
       fromStatus: "inbox",
       toStatus: "assigned",
       agentName: "coder",
@@ -112,11 +106,7 @@ describe("logTaskStatusChange", () => {
     const ctx = { db: { insert } };
 
     await logTaskStatusChange(ctx, {
-<<<<<<< HEAD
       taskId,
-=======
-      taskId: testId<"tasks">("task-1"),
->>>>>>> worktree-agent-aacc91e7
       fromStatus: "in_progress",
       toStatus: "done",
       taskTitle: "My Great Task",
@@ -137,11 +127,7 @@ describe("logTaskStatusChange", () => {
     const ctx = { db: { insert } };
 
     await logTaskStatusChange(ctx, {
-<<<<<<< HEAD
       taskId,
-=======
-      taskId: testId<"tasks">("task-1"),
->>>>>>> worktree-agent-aacc91e7
       fromStatus: "in_progress",
       toStatus: "review",
       timestamp: "2026-01-01T00:00:00.000Z",
@@ -166,11 +152,7 @@ describe("logTaskCreated", () => {
     const ctx = { db: { insert } };
 
     await logTaskCreated(ctx, {
-<<<<<<< HEAD
       taskId,
-=======
-      taskId: testId<"tasks">("task-1"),
->>>>>>> worktree-agent-aacc91e7
       title: "Manual task",
       isManual: true,
       timestamp: "2026-01-01T00:00:00.000Z",
@@ -190,11 +172,7 @@ describe("logTaskCreated", () => {
     const ctx = { db: { insert } };
 
     await logTaskCreated(ctx, {
-<<<<<<< HEAD
       taskId,
-=======
-      taskId: testId<"tasks">("task-1"),
->>>>>>> worktree-agent-aacc91e7
       title: "Auto task",
       isManual: false,
       assignedAgent: "coder",
@@ -215,11 +193,7 @@ describe("logTaskCreated", () => {
     const ctx = { db: { insert } };
 
     await logTaskCreated(ctx, {
-<<<<<<< HEAD
       taskId,
-=======
-      taskId: testId<"tasks">("task-1"),
->>>>>>> worktree-agent-aacc91e7
       title: "Reviewed task",
       isManual: false,
       trustLevel: "human_approved",
@@ -239,11 +213,7 @@ describe("logTaskCreated", () => {
     const ctx = { db: { insert } };
 
     await logTaskCreated(ctx, {
-<<<<<<< HEAD
       taskId,
-=======
-      taskId: testId<"tasks">("task-1"),
->>>>>>> worktree-agent-aacc91e7
       title: "Supervised task",
       isManual: false,
       assignedAgent: "agent-1",
@@ -264,11 +234,7 @@ describe("logTaskCreated", () => {
     const ctx = { db: { insert } };
 
     await logTaskCreated(ctx, {
-<<<<<<< HEAD
       taskId,
-=======
-      taskId: testId<"tasks">("task-1"),
->>>>>>> worktree-agent-aacc91e7
       title: "Manual task",
       isManual: true,
       supervisionMode: "supervised",
@@ -306,11 +272,7 @@ describe("markPlanStepsCompleted", () => {
       },
     };
 
-<<<<<<< HEAD
     await markPlanStepsCompleted(ctx, taskId, task);
-=======
-    await markPlanStepsCompleted(ctx, testId<"tasks">("task-1"), task);
->>>>>>> worktree-agent-aacc91e7
 
     expect(patch).not.toHaveBeenCalled();
   });
@@ -319,11 +281,7 @@ describe("markPlanStepsCompleted", () => {
     const patch = vi.fn(async () => undefined);
     const ctx = { db: { patch } };
 
-<<<<<<< HEAD
     await markPlanStepsCompleted(ctx, taskId, {});
-=======
-    await markPlanStepsCompleted(ctx, testId<"tasks">("task-1"), {});
->>>>>>> worktree-agent-aacc91e7
 
     expect(patch).not.toHaveBeenCalled();
   });
@@ -332,11 +290,7 @@ describe("markPlanStepsCompleted", () => {
     const patch = vi.fn(async () => undefined);
     const ctx = { db: { patch } };
 
-<<<<<<< HEAD
     await markPlanStepsCompleted(ctx, taskId, {
-=======
-    await markPlanStepsCompleted(ctx, testId<"tasks">("task-1"), {
->>>>>>> worktree-agent-aacc91e7
       executionPlan: { steps: [] },
     });
 

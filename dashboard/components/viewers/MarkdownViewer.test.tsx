@@ -100,11 +100,7 @@ describe("MarkdownViewer", () => {
           content: "![Chart](./images/chart.png)",
           taskId: "task_1",
           sourceFile: OUTPUT_SOURCE_FILE,
-<<<<<<< HEAD
-        } as any)}
-=======
         } as MarkdownViewerProps)}
->>>>>>> worktree-agent-aacc91e7
       />,
     );
 
@@ -122,11 +118,7 @@ describe("MarkdownViewer", () => {
           content: "[Open artifact](../artifact.html)",
           taskId: "task_1",
           sourceFile: OUTPUT_SOURCE_FILE,
-<<<<<<< HEAD
-        } as any)}
-=======
         } as MarkdownViewerProps)}
->>>>>>> worktree-agent-aacc91e7
       />,
     );
 
@@ -141,11 +133,7 @@ describe("MarkdownViewer", () => {
           content: "[External](https://example.com/manual)",
           taskId: "task_1",
           sourceFile: OUTPUT_SOURCE_FILE,
-<<<<<<< HEAD
-        } as any)}
-=======
         } as MarkdownViewerProps)}
->>>>>>> worktree-agent-aacc91e7
       />,
     );
 

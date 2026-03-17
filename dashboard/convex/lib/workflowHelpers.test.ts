@@ -155,11 +155,7 @@ describe("requireEntity", () => {
   it("throws when entity is not found", async () => {
     const ctx = { db: { get: vi.fn(async () => null) } };
 
-<<<<<<< HEAD
-    await expect(requireEntity(ctx, "task-missing" as any, "Task")).rejects.toThrow(
-=======
     await expect(requireEntity(ctx, testId<"tasks">("task-missing"), "Task")).rejects.toThrow(
->>>>>>> worktree-agent-aacc91e7
       /Task not found/,
     );
   });
