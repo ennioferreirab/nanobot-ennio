@@ -1605,6 +1605,69 @@ describe("tasks.transition", () => {
     );
     expect(patch).not.toHaveBeenCalled();
   });
+
+  it("returns noop when a previously successful CAS request is replayed", async () => {
+    const handler = getTransitionHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "review",
+      reviewPhase: "final_approval",
+      stateVersion: 4,
+      title: "Task 1",
+    }));
+
+    const result = await handler(
+      { db: { get, patch, insert } },
+      {
+        taskId: "task-1",
+        fromStatus: "in_progress",
+        expectedStateVersion: 3,
+        toStatus: "review",
+        reviewPhase: "final_approval",
+        reason: "Replay after success",
+        idempotencyKey: "task-1:v3:final-review",
+      },
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        kind: "noop",
+        stateVersion: 4,
+        reason: "already_applied",
+      }),
+    );
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("supports assigned to assigned reassignment through the compatibility path", async () => {
+    const handler = getUpdateStatusHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async () => ({
+      _id: "task-assign",
+      status: "assigned",
+      assignedAgent: "agent-a",
+      stateVersion: 2,
+      title: "Assigned task",
+    }));
+
+    await handler(
+      { db: { get, patch, insert } },
+      { taskId: "task-assign", status: "assigned", agentName: "agent-b" },
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "task-assign",
+      expect.objectContaining({
+        status: "assigned",
+        assignedAgent: "agent-b",
+        stateVersion: 3,
+      }),
+    );
+    expect(insert).toHaveBeenCalled();
+  });
 });
 
 describe("tasks.approveAndKickOff", () => {

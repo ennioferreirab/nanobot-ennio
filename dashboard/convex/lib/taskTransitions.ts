@@ -79,22 +79,31 @@ function normalizeAwaitingKickoff(
   return task.awaitingKickoff === true ? true : undefined;
 }
 
+function normalizeAssignedAgent(
+  task: Doc<"tasks">,
+  toStatus: string,
+  agentName: string | undefined,
+): string | undefined {
+  if (toStatus !== "assigned") {
+    return task.assignedAgent;
+  }
+  return agentName ?? task.assignedAgent;
+}
+
 function isSemanticNoop(
   task: Doc<"tasks">,
   toStatus: string,
   awaitingKickoff: boolean | undefined,
   reviewPhase: ReviewPhase | undefined,
+  agentName: string | undefined,
 ): boolean {
+  const nextReviewPhase = normalizeReviewPhase(toStatus, reviewPhase);
   return (
     task.status === toStatus &&
-    task.reviewPhase === normalizeReviewPhase(toStatus, reviewPhase) &&
+    task.reviewPhase === nextReviewPhase &&
     task.awaitingKickoff ===
-      normalizeAwaitingKickoff(
-        task,
-        toStatus,
-        normalizeReviewPhase(toStatus, reviewPhase),
-        awaitingKickoff,
-      )
+      normalizeAwaitingKickoff(task, toStatus, nextReviewPhase, awaitingKickoff) &&
+    task.assignedAgent === normalizeAssignedAgent(task, toStatus, agentName)
   );
 }
 
@@ -103,6 +112,7 @@ function canApplyTransition(
   toStatus: string,
   awaitingKickoff: boolean | undefined,
   reviewPhase: ReviewPhase | undefined,
+  agentName: string | undefined,
 ): boolean {
   if (task.status === toStatus) {
     const nextReviewPhase = normalizeReviewPhase(toStatus, reviewPhase);
@@ -112,9 +122,17 @@ function canApplyTransition(
       nextReviewPhase,
       awaitingKickoff,
     );
+    const nextAssignedAgent = normalizeAssignedAgent(task, toStatus, agentName);
+    if (task.status === "assigned") {
+      return (
+        isValidTaskTransition(task.status, toStatus) && task.assignedAgent !== nextAssignedAgent
+      );
+    }
     return (
       task.status === "review" &&
-      (task.reviewPhase !== nextReviewPhase || task.awaitingKickoff !== nextAwaitingKickoff)
+      (task.reviewPhase !== nextReviewPhase ||
+        task.awaitingKickoff !== nextAwaitingKickoff ||
+        task.assignedAgent !== nextAssignedAgent)
     );
   }
   return isValidTaskTransition(task.status, toStatus);
@@ -133,6 +151,19 @@ export async function applyTaskTransition(
     nextReviewPhase,
     args.awaitingKickoff,
   );
+  const nextAssignedAgent = normalizeAssignedAgent(task, args.toStatus, args.agentName);
+
+  if (isSemanticNoop(task, args.toStatus, args.awaitingKickoff, args.reviewPhase, args.agentName)) {
+    return {
+      kind: "noop",
+      taskId: args.taskId,
+      status: task.status,
+      awaitingKickoff: task.awaitingKickoff,
+      reviewPhase: task.reviewPhase,
+      stateVersion: currentStateVersion,
+      reason: "already_applied",
+    };
+  }
 
   if (task.status !== args.fromStatus) {
     return {
@@ -146,17 +177,6 @@ export async function applyTaskTransition(
   }
 
   if (currentStateVersion !== args.expectedStateVersion) {
-    if (isSemanticNoop(task, args.toStatus, args.awaitingKickoff, args.reviewPhase)) {
-      return {
-        kind: "noop",
-        taskId: args.taskId,
-        status: task.status,
-        awaitingKickoff: task.awaitingKickoff,
-        reviewPhase: task.reviewPhase,
-        stateVersion: currentStateVersion,
-        reason: "already_applied",
-      };
-    }
     return {
       kind: "conflict",
       taskId: args.taskId,
@@ -167,19 +187,9 @@ export async function applyTaskTransition(
     };
   }
 
-  if (isSemanticNoop(task, args.toStatus, args.awaitingKickoff, args.reviewPhase)) {
-    return {
-      kind: "noop",
-      taskId: args.taskId,
-      status: task.status,
-      awaitingKickoff: task.awaitingKickoff,
-      reviewPhase: task.reviewPhase,
-      stateVersion: currentStateVersion,
-      reason: "already_applied",
-    };
-  }
-
-  if (!canApplyTransition(task, args.toStatus, args.awaitingKickoff, args.reviewPhase)) {
+  if (
+    !canApplyTransition(task, args.toStatus, args.awaitingKickoff, args.reviewPhase, args.agentName)
+  ) {
     throw new ConvexError(`Cannot transition from '${task.status}' to '${args.toStatus}'`);
   }
 
@@ -193,8 +203,8 @@ export async function applyTaskTransition(
     updatedAt: now,
   };
 
-  if (args.toStatus === "assigned" && args.agentName) {
-    patch.assignedAgent = args.agentName;
+  if (args.toStatus === "assigned") {
+    patch.assignedAgent = nextAssignedAgent;
   }
   if (["done", "review", "crashed", "failed", "deleted"].includes(args.toStatus)) {
     patch.activeCronJobId = undefined;
