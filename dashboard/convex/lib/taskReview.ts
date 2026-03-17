@@ -8,6 +8,7 @@ import {
   applyTaskTransition,
   getTaskStateVersion,
 } from "./taskTransitions";
+import { incrementAgentTaskMetric, type AgentMetricDb } from "../agents";
 import { getStepStateVersion, resetStepForRetry } from "./stepTransitions";
 import { logActivity } from "./workflowHelpers";
 
@@ -169,6 +170,12 @@ export async function approveTask(
     suppressActivityLog: true,
   });
 
+  // Increment tasksExecuted for direct-delegate tasks (Story 31.7)
+  const executingAgent = task.assignedAgent;
+  if (executingAgent && task.workMode !== "ai_workflow") {
+    await incrementAgentTaskMetric(ctx.db as unknown as AgentMetricDb, executingAgent);
+  }
+
   await logActivity(ctx, {
     taskId,
     eventType: task.trustLevel === "human_approved" ? "hitl_approved" : "review_approved",
@@ -248,6 +255,14 @@ export async function updateTaskStatusInternal(
     throw new ConvexError(
       `Task transition conflict for ${String(args.taskId)}: ${result.reason} (${result.currentStatus}@v${result.currentStateVersion})`,
     );
+  }
+
+  // Increment tasksExecuted for direct-delegate tasks completing (Story 31.7)
+  if (args.status === "done") {
+    const executingAgent = args.agentName ?? task.assignedAgent;
+    if (executingAgent && task.workMode !== "ai_workflow") {
+      await incrementAgentTaskMetric(ctx.db as unknown as AgentMetricDb, executingAgent);
+    }
   }
 }
 

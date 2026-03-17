@@ -3,6 +3,7 @@ import { ConvexError, v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
+import { incrementAgentStepMetric, type AgentMetricDb } from "./agents";
 
 import {
   type StepWithDependencies,
@@ -463,6 +464,11 @@ export const manualMoveStep = mutation({
     );
 
     if (args.newStatus === "completed") {
+      // Increment stepsExecuted for the executing agent (Story 31.7)
+      if (step.assignedAgent) {
+        await incrementAgentStepMetric(ctx.db as unknown as AgentMetricDb, step.assignedAgent);
+      }
+
       const unblockedIds = findBlockedStepsReadyToUnblock(currentTaskSteps);
       const stepsById = new Map(allTaskSteps.map((s) => [s._id, s] as const));
 
