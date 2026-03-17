@@ -146,9 +146,9 @@ class InboxWorker:
         # Layer 2 defense: bypass planning for workflow missions whose execution
         # plan was already compiled at launch time.  Routing them through
         # planning would overwrite the workflow plan with a lead-agent plan.
-        execution_plan = task_data.get("execution_plan") or task_data.get("executionPlan") or {}
+        execution_plan = task_data.get("execution_plan") or {}
         is_workflow_plan = is_workflow_generated_plan(execution_plan)
-        work_mode = task_data.get("work_mode") or task_data.get("workMode")
+        work_mode = task_data.get("work_mode")
 
         if is_workflow_owned_task(task_data) and is_workflow_plan:
             result = await asyncio.to_thread(
