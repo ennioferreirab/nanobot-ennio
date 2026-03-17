@@ -258,6 +258,10 @@ class BridgeRepositoryFacadeMixin:
         self._ensure_repos()
         return self._agents.get_agent_by_name(name)
 
+    def list_active_registry_view(self) -> list[dict[str, Any]]:
+        self._ensure_repos()
+        return self._agents.list_active_registry_view()
+
     def list_deleted_agents(self) -> list[dict[str, Any]]:
         self._ensure_repos()
         return self._agents.list_deleted_agents()

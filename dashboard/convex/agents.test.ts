@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { publishProjection, upsertByName } from "./agents";
+import { listActiveRegistryView, publishProjection, upsertByName } from "./agents";
 
 type PatchCall = {
   id: string;
@@ -349,5 +349,167 @@ describe("agents.publishProjection", () => {
       (i) => (i as Record<string, unknown>).eventType === "agent_config_updated",
     );
     expect(activity).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agents.listActiveRegistryView
+// ---------------------------------------------------------------------------
+
+type AgentRow = {
+  _id: string;
+  name: string;
+  displayName: string;
+  role: string;
+  skills: string[];
+  status: "active" | "idle" | "crashed";
+  enabled?: boolean;
+  isSystem?: boolean;
+  deletedAt?: string;
+  tasksExecuted?: number;
+  stepsExecuted?: number;
+  lastTaskExecutedAt?: string;
+  lastStepExecutedAt?: string;
+  lastActiveAt?: string;
+};
+
+function makeRegistryCtx(agents: AgentRow[], squadSpecs: Record<string, unknown>[] = []) {
+  const queryImpl = vi.fn((table: string) => {
+    if (table === "agents") {
+      return {
+        collect: vi.fn(async () => agents),
+      };
+    }
+    if (table === "squadSpecs") {
+      return {
+        withIndex: vi.fn(() => ({
+          collect: vi.fn(async () => squadSpecs),
+        })),
+      };
+    }
+    return { collect: vi.fn(async () => []) };
+  });
+
+  return { db: { query: queryImpl } };
+}
+
+function getRegistryHandler() {
+  return (
+    listActiveRegistryView as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<unknown[]>;
+    }
+  )._handler;
+}
+
+const baseAgent: AgentRow = {
+  _id: "agent-id-1",
+  name: "dev-agent",
+  displayName: "Dev Agent",
+  role: "Developer",
+  skills: ["git", "code-review"],
+  status: "active",
+};
+
+describe("agents.listActiveRegistryView", () => {
+  it("excludes soft-deleted agents", async () => {
+    const handler = getRegistryHandler();
+    const ctx = makeRegistryCtx([
+      baseAgent,
+      {
+        ...baseAgent,
+        _id: "agent-id-2",
+        name: "deleted-agent",
+        deletedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    const result = await handler(ctx, {});
+    expect(result).toHaveLength(1);
+    expect((result[0] as Record<string, unknown>).name).toBe("dev-agent");
+  });
+
+  it("excludes system agents", async () => {
+    const handler = getRegistryHandler();
+    const ctx = makeRegistryCtx([
+      baseAgent,
+      { ...baseAgent, _id: "agent-id-3", name: "system-agent", isSystem: true },
+    ]);
+
+    const result = await handler(ctx, {});
+    expect(result).toHaveLength(1);
+    expect((result[0] as Record<string, unknown>).name).toBe("dev-agent");
+  });
+
+  it("excludes disabled agents", async () => {
+    const handler = getRegistryHandler();
+    const ctx = makeRegistryCtx([
+      baseAgent,
+      { ...baseAgent, _id: "agent-id-4", name: "disabled-agent", enabled: false },
+    ]);
+
+    const result = await handler(ctx, {});
+    expect(result).toHaveLength(1);
+    expect((result[0] as Record<string, unknown>).name).toBe("dev-agent");
+  });
+
+  it("returns metric fields defaulting to 0/null when not set", async () => {
+    const handler = getRegistryHandler();
+    const ctx = makeRegistryCtx([baseAgent]);
+
+    const result = await handler(ctx, {});
+    const agent = result[0] as Record<string, unknown>;
+    expect(agent.tasksExecuted).toBe(0);
+    expect(agent.stepsExecuted).toBe(0);
+    expect(agent.lastTaskExecutedAt).toBeNull();
+    expect(agent.lastStepExecutedAt).toBeNull();
+    expect(agent.lastActiveAt).toBeNull();
+  });
+
+  it("returns stored metric values when set", async () => {
+    const handler = getRegistryHandler();
+    const ctx = makeRegistryCtx([
+      {
+        ...baseAgent,
+        tasksExecuted: 5,
+        stepsExecuted: 12,
+        lastTaskExecutedAt: "2026-03-10T10:00:00.000Z",
+        lastStepExecutedAt: "2026-03-10T11:00:00.000Z",
+        lastActiveAt: "2026-03-10T11:30:00.000Z",
+      },
+    ]);
+
+    const result = await handler(ctx, {});
+    const agent = result[0] as Record<string, unknown>;
+    expect(agent.tasksExecuted).toBe(5);
+    expect(agent.stepsExecuted).toBe(12);
+    expect(agent.lastTaskExecutedAt).toBe("2026-03-10T10:00:00.000Z");
+    expect(agent.lastStepExecutedAt).toBe("2026-03-10T11:00:00.000Z");
+  });
+
+  it("includes expected shape fields: agentId, name, displayName, role, skills, squads, enabled, status", async () => {
+    const handler = getRegistryHandler();
+    const ctx = makeRegistryCtx([baseAgent]);
+
+    const result = await handler(ctx, {});
+    const agent = result[0] as Record<string, unknown>;
+    expect(agent).toHaveProperty("agentId");
+    expect(agent).toHaveProperty("name");
+    expect(agent).toHaveProperty("displayName");
+    expect(agent).toHaveProperty("role");
+    expect(agent).toHaveProperty("skills");
+    expect(agent).toHaveProperty("squads");
+    expect(agent).toHaveProperty("enabled");
+    expect(agent).toHaveProperty("status");
+  });
+
+  it("defaults enabled to true when not set", async () => {
+    const handler = getRegistryHandler();
+    const agentWithoutEnabled: AgentRow = { ...baseAgent };
+    delete (agentWithoutEnabled as Record<string, unknown>).enabled;
+    const ctx = makeRegistryCtx([agentWithoutEnabled]);
+
+    const result = await handler(ctx, {});
+    const agent = result[0] as Record<string, unknown>;
+    expect(agent.enabled).toBe(true);
   });
 });
