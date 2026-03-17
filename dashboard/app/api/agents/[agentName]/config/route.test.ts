@@ -53,11 +53,7 @@ describe("PUT /api/agents/[agentName]/config", () => {
       }),
     });
 
-<<<<<<< HEAD
-    const res = await PUT(req as any, {
-=======
     const res = await PUT(req as NextRequest, {
->>>>>>> worktree-agent-aacc91e7
       params: Promise.resolve({ agentName: "youtube-summarizer" }),
     });
 

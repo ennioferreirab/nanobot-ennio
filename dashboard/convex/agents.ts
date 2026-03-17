@@ -9,8 +9,13 @@ import { agentStatusValidator, interactiveProviderValidator } from "./schema";
 
  
 export type AgentMetricDb = {
-  query: (table: string) => any;
-  patch: (id: any, value: Record<string, unknown>) => Promise<void>;
+  query: (table: string) => {
+    withIndex: (
+      index: string,
+      cb: (q: { eq: (k: string, v: string) => unknown }) => unknown,
+    ) => { first: () => Promise<Record<string, unknown> | null> };
+  };
+  patch: (id: unknown, value: Record<string, unknown>) => Promise<void>;
 };
 
 export async function incrementAgentTaskMetric(
@@ -22,8 +27,10 @@ export async function incrementAgentTaskMetric(
     .withIndex("by_name", (q: { eq: (k: string, v: string) => unknown }) => q.eq("name", agentName))
     .first();
   if (!agent) return;
-  await db.patch(agent._id, {
-    tasksExecuted: (agent.tasksExecuted ?? 0) + 1,
+  const id = agent._id as string;
+  const current = (agent.tasksExecuted as number | undefined) ?? 0;
+  await db.patch(id, {
+    tasksExecuted: current + 1,
     lastTaskExecutedAt: new Date().toISOString(),
   });
 }
@@ -37,8 +44,10 @@ export async function incrementAgentStepMetric(
     .withIndex("by_name", (q: { eq: (k: string, v: string) => unknown }) => q.eq("name", agentName))
     .first();
   if (!agent) return;
-  await db.patch(agent._id, {
-    stepsExecuted: (agent.stepsExecuted ?? 0) + 1,
+  const id = agent._id as string;
+  const current = (agent.stepsExecuted as number | undefined) ?? 0;
+  await db.patch(id, {
+    stepsExecuted: current + 1,
     lastStepExecutedAt: new Date().toISOString(),
   });
 }

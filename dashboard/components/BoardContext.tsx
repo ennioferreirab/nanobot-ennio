@@ -1,11 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-<<<<<<< HEAD
 import { Id } from "@/convex/_generated/dataModel";
-=======
-import { Id } from "../convex/_generated/dataModel";
->>>>>>> worktree-agent-aacc91e7
 import { useBoardProviderData } from "@/features/boards/hooks/useBoardProviderData";
 
 const LOCAL_STORAGE_KEY = "nanobot-active-board";

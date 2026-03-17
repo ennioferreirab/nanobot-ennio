@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -219,7 +219,7 @@ class ProviderCliRunnerStrategy:
     def _patch_mcp_config_env(
         self,
         mcp_config: Path,
-        env_overrides: dict[str, str | None],
+        env_overrides: Mapping[str, str | None],
     ) -> None:
         """Patch env vars into the resolved MCP config, omitting ``None`` values."""
         filtered_overrides = {
