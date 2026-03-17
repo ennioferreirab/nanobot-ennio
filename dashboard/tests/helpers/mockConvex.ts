@@ -2,11 +2,11 @@ import { vi } from "vitest";
 import type { Mock } from "vitest";
 import type { FunctionReference } from "convex/server";
 import type { ReactMutation } from "convex/react";
+import type { Id, TableNames } from "@/convex/_generated/dataModel";
 
 /** Cast a string to a branded Convex Id for test mocks */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function testId<T extends string>(value: string): any {
-  return value;
+export function testId<T extends TableNames>(value: string): Id<T> {
+  return value as unknown as Id<T>;
 }
 
 /**

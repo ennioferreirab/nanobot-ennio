@@ -620,10 +620,10 @@ def sync_skills(
         / "skills.py"
     )
     spec = importlib.util.spec_from_file_location("_nanobot_skills", str(_skills_path))
-    if spec is None:
-        raise ImportError(f"Could not load module spec from {_skills_path}")
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load skill module from {_skills_path}")
     skills_mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(skills_mod)  # type: ignore[union-attr]
+    spec.loader.exec_module(skills_mod)
     skills_loader_cls = skills_mod.SkillsLoader
     default_dir = skills_mod.BUILTIN_SKILLS_DIR
 

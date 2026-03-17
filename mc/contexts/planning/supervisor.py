@@ -74,12 +74,12 @@ class PlanNegotiationSupervisor:
 
         asyncio.create_task(_run_and_cleanup())  # noqa: RUF006
 
-    async def process_batch(self, tasks_batch: object) -> None:
+    async def process_batch(self, tasks_batch: list[dict[str, Any]] | None) -> None:
         """Process a batch of tasks from a subscription queue."""
         if not tasks_batch or isinstance(tasks_batch, dict):
             return
 
-        for task_data in tasks_batch:  # type: ignore[union-attr]
+        for task_data in tasks_batch:
             task_id = task_data.get("id")
             if not task_id:
                 continue

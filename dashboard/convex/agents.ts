@@ -7,16 +7,20 @@ import { agentStatusValidator, interactiveProviderValidator } from "./schema";
 // Agent metric helpers — callable from lifecycle completion paths
 // ---------------------------------------------------------------------------
 
- 
-export type AgentMetricDb = {
-  query: (table: string) => {
-    withIndex: (
+/**
+ * Minimal db accessor subset needed by agent metric helpers.
+ * Defined as a structural interface (method shorthand) so both the real
+ * Convex DatabaseWriter and lightweight unit-test mocks satisfy it.
+ */
+export interface AgentMetricDb {
+  query(table: string): {
+    withIndex(
       index: string,
-      cb: (q: { eq: (k: string, v: string) => unknown }) => unknown,
-    ) => { first: () => Promise<Record<string, unknown> | null> };
+      cb: (q: { eq(k: string, v: unknown): unknown }) => unknown,
+    ): { first(): Promise<Record<string, unknown> | null> };
   };
-  patch: (id: unknown, value: Record<string, unknown>) => Promise<void>;
-};
+  patch(id: unknown, value: Record<string, unknown>): Promise<void>;
+}
 
 export async function incrementAgentTaskMetric(
   db: AgentMetricDb,

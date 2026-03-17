@@ -130,7 +130,7 @@ class RuntimeSleepController:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                pass
+                logger.debug("[sleep] Control poll failed", exc_info=True)
             await asyncio.sleep(CONTROL_POLL_INTERVAL_SECONDS)
 
     def runtime_payload(self) -> dict[str, Any]:

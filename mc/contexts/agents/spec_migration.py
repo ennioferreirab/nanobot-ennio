@@ -214,7 +214,7 @@ def migrate_all(
             try:
                 existing = bridge.get_agent_spec_by_name(agent_name)
             except Exception:
-                pass
+                logger.warning("[spec_migration] Failed to lookup spec for agent '%s'", agent_name, exc_info=True)
 
         if existing is not None:
             logger.info("[migration] Skipping '%s' — spec already exists", agent_name)

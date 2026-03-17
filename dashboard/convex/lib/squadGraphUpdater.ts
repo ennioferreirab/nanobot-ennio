@@ -4,6 +4,7 @@ import type {
   SquadGraphWorkflowInput,
   SquadGraphWorkflowStepInput,
 } from "./squadGraphPublisher";
+import type { DbWriter } from "./types";
 
 export interface EditableSquadGraphWorkflowInput extends SquadGraphWorkflowInput {
   id?: string;
@@ -20,9 +21,6 @@ export interface EditableSquadGraphInput {
   workflows: EditableSquadGraphWorkflowInput[];
   reviewPolicy?: string;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DbContext = { db: any };
 
 function validateStepReferences(
   stepKeys: Set<string>,
@@ -57,7 +55,7 @@ function validateStepReferences(
 }
 
 async function resolveAgentIds(
-  ctx: DbContext,
+  ctx: DbWriter,
   agents: SquadGraphAgentInput[],
 ): Promise<Map<string, string>> {
   const agentKeyToId = new Map<string, string>();
@@ -66,16 +64,14 @@ async function resolveAgentIds(
     const lookupName = agent.reuseName ?? agent.name;
     const existingAgent = await ctx.db
       .query("agents")
-      .withIndex("by_name", (q: { eq: (field: string, value: string) => unknown }) =>
-        q.eq("name", lookupName),
-      )
+      .withIndex("by_name", (q) => q.eq("name", lookupName))
       .first();
 
     if (!existingAgent?._id) {
       throw new ConvexError(`Agent "${lookupName}" not found for published squad update`);
     }
 
-    agentKeyToId.set(agent.key, existingAgent._id);
+    agentKeyToId.set(agent.key, existingAgent._id as string);
   }
 
   return agentKeyToId;
@@ -119,7 +115,7 @@ function buildStoredSteps(
 }
 
 export async function updatePublishedSquadGraph(
-  ctx: DbContext,
+  ctx: DbWriter,
   squadSpecId: string,
   graph: EditableSquadGraphInput,
 ): Promise<string> {
@@ -130,15 +126,13 @@ export async function updatePublishedSquadGraph(
 
   const now = new Date().toISOString();
   const agentKeyToId = await resolveAgentIds(ctx, graph.agents);
-  const existingWorkflows = await ctx.db
+  const existingWorkflows = (await ctx.db
     .query("workflowSpecs")
-    .withIndex("by_squadSpecId", (q: { eq: (field: string, value: string) => unknown }) =>
-      q.eq("squadSpecId", squadSpecId),
-    )
-    .collect();
+    .withIndex("by_squadSpecId", (q) => q.eq("squadSpecId", squadSpecId))
+    .collect()) as Array<Record<string, unknown>>;
 
   const existingWorkflowIds = new Set(
-    existingWorkflows.map((workflow: { _id: string }) => workflow._id),
+    existingWorkflows.map((workflow) => workflow._id as string),
   );
   const keptWorkflowIds = new Set<string>();
 
@@ -160,8 +154,8 @@ export async function updatePublishedSquadGraph(
   }
 
   for (const workflow of existingWorkflows) {
-    if (!keptWorkflowIds.has(workflow._id)) {
-      await ctx.db.delete(workflow._id);
+    if (!keptWorkflowIds.has(workflow._id as string)) {
+      await ctx.db.delete(workflow._id as string);
     }
   }
 
