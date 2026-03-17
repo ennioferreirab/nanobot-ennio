@@ -218,7 +218,7 @@ async def _run_agent_on_task(
             ask_user_registry.register(task_id, handler)
             ask_user_cleanup = (ask_user_registry, task_id)
         except Exception:
-            pass
+            logger.warning("[agent_runner] AskUser handler registration failed", exc_info=True)
 
     try:
         direct_result = await loop.process_direct_result(

@@ -93,9 +93,7 @@ export interface SquadGraphInput {
 // ---------------------------------------------------------------------------
 
 import { ConvexError } from "convex/values";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DbContext = { db: any };
+import type { DbWriter } from "./types";
 
 function validateReviewStep(step: SquadGraphWorkflowStepInput): void {
   if (step.type !== "review") {
@@ -129,7 +127,7 @@ function validateReviewStep(step: SquadGraphWorkflowStepInput): void {
  *
  * This function does NOT create tasks or execute workflows.
  */
-export async function publishSquadGraph(ctx: DbContext, graph: SquadGraphInput): Promise<string> {
+export async function publishSquadGraph(ctx: DbWriter, graph: SquadGraphInput): Promise<string> {
   const now = new Date().toISOString();
 
   await validateSquadGraph(ctx, graph);
@@ -141,13 +139,11 @@ export async function publishSquadGraph(ctx: DbContext, graph: SquadGraphInput):
     const lookupName = agent.reuseName ?? agent.name;
     const existingAgent = await ctx.db
       .query("agents")
-      .withIndex("by_name", (q: { eq: (field: string, value: string) => unknown }) =>
-        q.eq("name", lookupName),
-      )
+      .withIndex("by_name", (q) => q.eq("name", lookupName))
       .first();
 
-    const agentId =
-      existingAgent?._id ??
+    const agentId: string =
+      (existingAgent?._id as string | undefined) ??
       (await ctx.db.insert("agents", {
         name: agent.name,
         displayName: agent.displayName ?? agent.name,

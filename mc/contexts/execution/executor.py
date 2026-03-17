@@ -570,7 +570,7 @@ class TaskExecutor(CCExecutorMixin):
                     try:
                         await self._on_task_completed(task_id, "")
                     except Exception:
-                        pass
+                        logger.warning("[executor] Task completion callback failed", exc_info=True)
                 return
 
             result = execution_result.output
@@ -734,7 +734,7 @@ class TaskExecutor(CCExecutorMixin):
                 try:
                     await self._on_task_completed(task_id, "")
                 except Exception:
-                    pass
+                    logger.warning("[executor] Task completion callback failed", exc_info=True)
         finally:
             # Allow re-pickup if task returns to assigned (e.g. after retry)
             self._known_assigned_ids.discard(task_id)

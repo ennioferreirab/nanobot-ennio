@@ -296,7 +296,9 @@ def assist_agent():
         )
 
         if choice in ("y", ""):
-            assert parsed is not None
+            if parsed is None:
+                console.print("[red]Error: parsing failed[/red]")
+                return
             _save_assisted_agent(parsed["name"], yaml_text, create_agent_workspace)
             return
         elif choice == "n":
@@ -309,7 +311,9 @@ def assist_agent():
                     "y",
                     "",
                 ):
-                    assert parsed is not None
+                    if parsed is None:
+                        console.print("[red]Error: parsing failed[/red]")
+                        return
                     _save_assisted_agent(parsed["name"], yaml_text, create_agent_workspace)
                 else:
                     console.print("Cancelled.")
@@ -510,7 +514,9 @@ def register_init_command(mc_app: typer.Typer) -> None:
                         console.print(f"  [red]Error:[/red] {'; '.join(errors)}")
                         continue
 
-                    assert yaml_text is not None
+                    if yaml_text is None:
+                        console.print("[red]Error: parsing failed[/red]")
+                        continue
                     parsed = yaml.safe_load(yaml_text)
                     agent_name = parsed.get("name", "custom-agent")
                     agent_role = parsed.get("role", "Custom Agent")

@@ -140,6 +140,7 @@ export function KanbanColumn({
             try {
               await moveStep(stepId as Id<"steps">, targetStepStatus);
             } catch (err) {
+              // TODO: surface error to user via toast
               console.error("[KanbanColumn] Step move failed:", err);
             }
           }

@@ -596,8 +596,7 @@ export default defineSchema({
     status: workflowRunStatusValidator,
     launchedAt: v.string(),
     completedAt: v.optional(v.string()),
-    // v.any(): dynamic step ID mapping between workflow spec and execution
-    stepMapping: v.optional(v.any()),
+    stepMapping: v.optional(v.record(v.string(), v.string())),
   })
     .index("by_taskId", ["taskId"])
     .index("by_status", ["status"]),

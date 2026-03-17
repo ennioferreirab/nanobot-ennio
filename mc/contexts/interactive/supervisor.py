@@ -118,7 +118,7 @@ class InteractiveExecutionSupervisor:
             _set_if(activity_payload, "provider", event.provider)
             self._bridge.mutation("sessionActivityLog:append", activity_payload)
         except Exception:
-            pass  # Activity log write failure must not break supervision
+            logger.debug("[supervisor] Activity log write failed", exc_info=True)
         if _string_or_none(metadata.get("control_mode")) == "human":
             return updated_metadata
         current_control_mode = _string_or_none(updated_metadata.get("control_mode"))

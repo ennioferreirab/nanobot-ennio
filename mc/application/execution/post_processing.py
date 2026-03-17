@@ -117,7 +117,8 @@ async def nanobot_memory_consolidation_hook(
 
     async def _consolidate() -> None:
         try:
-            assert result.session_loop is not None
+            if result.session_loop is None:
+                return
             await result.session_loop.end_task_session(result.session_id)
             _log_consolidation_event(
                 agent_name=request.agent_name,
