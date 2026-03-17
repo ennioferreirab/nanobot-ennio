@@ -3,6 +3,37 @@ import { v } from "convex/values";
 
 import { interactiveProviderValidator } from "./schema";
 
+// ---------------------------------------------------------------------------
+// Agent metric helpers — callable from lifecycle completion paths
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AgentMetricDb = { query: (table: string) => any; patch: (id: any, value: Record<string, unknown>) => Promise<void> };
+
+export async function incrementAgentTaskMetric(db: AgentMetricDb, agentName: string): Promise<void> {
+  const agent = await db
+    .query("agents")
+    .withIndex("by_name", (q: { eq: (k: string, v: string) => unknown }) => q.eq("name", agentName))
+    .first();
+  if (!agent) return;
+  await db.patch(agent._id, {
+    tasksExecuted: (agent.tasksExecuted ?? 0) + 1,
+    lastTaskExecutedAt: new Date().toISOString(),
+  });
+}
+
+export async function incrementAgentStepMetric(db: AgentMetricDb, agentName: string): Promise<void> {
+  const agent = await db
+    .query("agents")
+    .withIndex("by_name", (q: { eq: (k: string, v: string) => unknown }) => q.eq("name", agentName))
+    .first();
+  if (!agent) return;
+  await db.patch(agent._id, {
+    stepsExecuted: (agent.stepsExecuted ?? 0) + 1,
+    lastStepExecutedAt: new Date().toISOString(),
+  });
+}
+
 export const list = query({
   args: {},
   handler: async (ctx) => {
@@ -538,5 +569,19 @@ export const deactivateExcept = internalMutation({
         });
       }
     }
+  },
+});
+
+export const incrementTaskMetric = internalMutation({
+  args: { agentName: v.string() },
+  handler: async (ctx, args) => {
+    await incrementAgentTaskMetric(ctx.db as unknown as AgentMetricDb, args.agentName);
+  },
+});
+
+export const incrementStepMetric = internalMutation({
+  args: { agentName: v.string() },
+  handler: async (ctx, args) => {
+    await incrementAgentStepMetric(ctx.db as unknown as AgentMetricDb, args.agentName);
   },
 });

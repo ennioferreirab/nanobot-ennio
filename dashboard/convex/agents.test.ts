@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { listActiveRegistryView, publishProjection, upsertByName } from "./agents";
+import {
+  incrementAgentStepMetric,
+  incrementAgentTaskMetric,
+  listActiveRegistryView,
+  publishProjection,
+  upsertByName,
+} from "./agents";
 
 type PatchCall = {
   id: string;
@@ -349,6 +355,78 @@ describe("agents.publishProjection", () => {
       (i) => (i as Record<string, unknown>).eventType === "agent_config_updated",
     );
     expect(activity).toBeDefined();
+  });
+});
+
+describe("incrementAgentTaskMetric", () => {
+  function makeMetricDb(agent?: Record<string, unknown>) {
+    const patches: Array<{ id: unknown; patch: Record<string, unknown> }> = [];
+    const first = vi.fn(async () => agent ?? null);
+    const withIndex = vi.fn(() => ({ first }));
+    const query = vi.fn(() => ({ withIndex }));
+    const patch = vi.fn(async (id: unknown, value: Record<string, unknown>) => {
+      patches.push({ id, patch: value });
+    });
+    return { db: { query, patch }, patches };
+  }
+
+  it("increments tasksExecuted from 0 and sets lastTaskExecutedAt", async () => {
+    const { db, patches } = makeMetricDb({ _id: "agent-1", name: "alpha", tasksExecuted: 0 });
+    await incrementAgentTaskMetric(db, "alpha");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.patch.tasksExecuted).toBe(1);
+    expect(patches[0]?.patch.lastTaskExecutedAt).toBeDefined();
+  });
+
+  it("increments tasksExecuted additively", async () => {
+    const { db, patches } = makeMetricDb({ _id: "agent-2", name: "beta", tasksExecuted: 5 });
+    await incrementAgentTaskMetric(db, "beta");
+    expect(patches[0]?.patch.tasksExecuted).toBe(6);
+  });
+
+  it("skips when agent not found", async () => {
+    const { db, patches } = makeMetricDb(undefined);
+    await incrementAgentTaskMetric(db, "ghost");
+    expect(patches).toHaveLength(0);
+  });
+});
+
+describe("incrementAgentStepMetric", () => {
+  function makeMetricDb(agent?: Record<string, unknown>) {
+    const patches: Array<{ id: unknown; patch: Record<string, unknown> }> = [];
+    const first = vi.fn(async () => agent ?? null);
+    const withIndex = vi.fn(() => ({ first }));
+    const query = vi.fn(() => ({ withIndex }));
+    const patch = vi.fn(async (id: unknown, value: Record<string, unknown>) => {
+      patches.push({ id, patch: value });
+    });
+    return { db: { query, patch }, patches };
+  }
+
+  it("increments stepsExecuted from 0 and sets lastStepExecutedAt", async () => {
+    const { db, patches } = makeMetricDb({ _id: "agent-1", name: "alpha", stepsExecuted: 0 });
+    await incrementAgentStepMetric(db, "alpha");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.patch.stepsExecuted).toBe(1);
+    expect(patches[0]?.patch.lastStepExecutedAt).toBeDefined();
+  });
+
+  it("increments stepsExecuted additively", async () => {
+    const { db, patches } = makeMetricDb({ _id: "agent-2", name: "beta", stepsExecuted: 3 });
+    await incrementAgentStepMetric(db, "beta");
+    expect(patches[0]?.patch.stepsExecuted).toBe(4);
+  });
+
+  it("does not touch tasksExecuted", async () => {
+    const { db, patches } = makeMetricDb({
+      _id: "agent-3",
+      name: "gamma",
+      stepsExecuted: 1,
+      tasksExecuted: 10,
+    });
+    await incrementAgentStepMetric(db, "gamma");
+    expect(patches[0]?.patch.stepsExecuted).toBe(2);
+    expect(patches[0]?.patch.tasksExecuted).toBeUndefined();
   });
 });
 
