@@ -77,6 +77,19 @@ class AgentRepository:
         """
         return self._client.query("agents:getByName", {"name": name})
 
+    def list_active_registry_view(self) -> list[dict[str, Any]]:
+        """Return the active delegatable agent roster with role, skills, squads, and metrics.
+
+        Returns:
+            List of registry view dicts. Each entry contains agentId, name,
+            displayName, role, skills, squads, enabled, status, tasksExecuted,
+            stepsExecuted, lastTaskExecutedAt, lastStepExecutedAt, and lastActiveAt.
+        """
+        result = self._client.query("agents:listActiveRegistryView")
+        if result is None:
+            return []
+        return result
+
     def list_deleted_agents(self) -> list[dict[str, Any]]:
         """List all soft-deleted agents from Convex.
 

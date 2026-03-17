@@ -440,6 +440,39 @@ class TestAgentRepository:
         result = repo.get_agent_by_name("dev")
         assert result == {"name": "dev", "role": "Developer"}
 
+    def test_list_active_registry_view(self):
+        client = _make_client_mock()
+        registry_entry = {
+            "agentId": "agent-id-1",
+            "name": "dev-agent",
+            "displayName": "Dev Agent",
+            "role": "Developer",
+            "skills": ["git"],
+            "squads": [],
+            "enabled": True,
+            "status": "active",
+            "tasksExecuted": 3,
+            "stepsExecuted": 7,
+            "lastTaskExecutedAt": "2026-03-10T10:00:00.000Z",
+            "lastStepExecutedAt": "2026-03-10T11:00:00.000Z",
+            "lastActiveAt": "2026-03-10T11:30:00.000Z",
+        }
+        client.query.return_value = [registry_entry]
+        repo = AgentRepository(client)
+
+        result = repo.list_active_registry_view()
+
+        client.query.assert_called_once_with("agents:listActiveRegistryView")
+        assert result == [registry_entry]
+
+    def test_list_active_registry_view_none(self):
+        client = _make_client_mock()
+        client.query.return_value = None
+        repo = AgentRepository(client)
+
+        result = repo.list_active_registry_view()
+        assert result == []
+
     def test_list_deleted_agents(self):
         client = _make_client_mock()
         client.query.return_value = [{"name": "old"}]

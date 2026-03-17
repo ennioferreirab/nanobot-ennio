@@ -11,6 +11,46 @@ export const list = query({
   },
 });
 
+export const listActiveRegistryView = query({
+  args: {},
+  handler: async (ctx) => {
+    const allAgents = await ctx.db.query("agents").collect();
+    // Filter: not deleted, not system, enabled
+    const active = allAgents.filter((a) => !a.deletedAt && !a.isSystem && a.enabled !== false);
+
+    // Resolve squad memberships
+    const allSquadSpecs = await ctx.db
+      .query("squadSpecs")
+      .withIndex("by_status", (q) => q.eq("status", "published"))
+      .collect();
+
+    return active.map((agent) => {
+      const squads = allSquadSpecs
+        .filter((s) => {
+          const agentIds = (s.agentIds ?? []) as string[];
+          return agentIds.includes(String(agent._id));
+        })
+        .map((s) => ({ id: s._id, name: s.name, displayName: s.displayName }));
+
+      return {
+        agentId: agent._id,
+        name: agent.name,
+        displayName: agent.displayName,
+        role: agent.role,
+        skills: agent.skills,
+        squads,
+        enabled: agent.enabled ?? true,
+        status: agent.status,
+        tasksExecuted: agent.tasksExecuted ?? 0,
+        stepsExecuted: agent.stepsExecuted ?? 0,
+        lastTaskExecutedAt: agent.lastTaskExecutedAt ?? null,
+        lastStepExecutedAt: agent.lastStepExecutedAt ?? null,
+        lastActiveAt: agent.lastActiveAt ?? null,
+      };
+    });
+  },
+});
+
 export const upsertByName = mutation({
   args: {
     name: v.string(),
