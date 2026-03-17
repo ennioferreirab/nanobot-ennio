@@ -654,8 +654,30 @@ export const retryStep = mutation({
       idempotencyKey: `retry:${String(args.stepId)}:${getStepStateVersion(step)}`,
     });
 
-    await ctx.db.patch(step.taskId, {
+    const retryingResult = await applyTaskTransition(
+      ctx,
+      task as Parameters<typeof applyTaskTransition>[1],
+      {
+        taskId: step.taskId,
+        fromStatus: task.status,
+        expectedStateVersion: getTaskStateVersion(task),
+        toStatus: "retrying",
+        reason: `Retrying step ${String(args.stepId)}`,
+        idempotencyKey: `retry-task:${String(step.taskId)}:${getTaskStateVersion(task)}:${task.status}:retrying`,
+        suppressActivityLog: true,
+      },
+    );
+
+    const retryingTaskSnapshot = {
+      ...task,
       status: "retrying",
+      stateVersion:
+        retryingResult.kind === "conflict"
+          ? getTaskStateVersion(task)
+          : retryingResult.stateVersion,
+    };
+
+    await ctx.db.patch(step.taskId, {
       stalledAt: undefined,
       updatedAt: timestamp,
     });
@@ -678,8 +700,17 @@ export const retryStep = mutation({
       timestamp,
     });
 
+    await applyTaskTransition(ctx, retryingTaskSnapshot, {
+      taskId: step.taskId,
+      fromStatus: retryingTaskSnapshot.status,
+      expectedStateVersion: getTaskStateVersion(retryingTaskSnapshot),
+      toStatus: "in_progress",
+      reason: `Retry resumed for step ${String(args.stepId)}`,
+      idempotencyKey: `retry-task:${String(step.taskId)}:${getTaskStateVersion(retryingTaskSnapshot)}:${retryingTaskSnapshot.status}:in_progress`,
+      suppressActivityLog: true,
+    });
+
     await ctx.db.patch(step.taskId, {
-      status: "in_progress",
       stalledAt: undefined,
       updatedAt: timestamp,
     });
