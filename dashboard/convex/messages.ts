@@ -2,8 +2,8 @@ import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v, ConvexError } from "convex/values";
-import { isValidTransition } from "./tasks";
 
+import { applyRequiredTaskTransition } from "./lib/taskTransitions";
 import { canPostComment, logThreadMessageSent } from "./lib/threadRules";
 import {
   answerPendingExecutionQuestionForTask,
@@ -316,10 +316,14 @@ export const postUserPlanMessage = mutation({
     const timestamp = new Date().toISOString();
 
     if (task.status === "done") {
-      await ctx.db.patch(args.taskId, {
-        status: "review",
-        awaitingKickoff: undefined,
-        updatedAt: timestamp,
+      await applyRequiredTaskTransition(ctx, task, {
+        taskId: args.taskId,
+        fromStatus: "done",
+        toStatus: "review",
+        awaitingKickoff: false,
+        reason: "User reopened completed task plan discussion",
+        idempotencyKey: `task:${String(args.taskId)}:${task.stateVersion ?? 0}:reopen-plan-chat`,
+        suppressActivityLog: true,
       });
     }
 
@@ -566,26 +570,24 @@ export const sendThreadMessage = mutation({
     // 2. For manual tasks, skip status transitions — just record the message.
     //    For agent tasks, transition to "assigned" to trigger agent pickup.
     if (!task.isManual) {
+      if (task.status !== "assigned" || task.assignedAgent !== args.agentName) {
+        await applyRequiredTaskTransition(ctx, task, {
+          taskId: args.taskId,
+          fromStatus: task.status,
+          toStatus: "assigned",
+          reason: `User sent follow-up message to ${args.agentName}`,
+          idempotencyKey: `task:${String(args.taskId)}:${task.stateVersion ?? 0}:thread-message:${args.agentName}`,
+          agentName: args.agentName,
+          suppressActivityLog: true,
+        });
+      }
       if (task.status !== "assigned") {
-        if (!isValidTransition(task.status, "assigned")) {
-          throw new ConvexError(`Invalid transition: ${task.status} -> assigned`);
-        }
         await ctx.db.patch(args.taskId, {
-          status: "assigned",
-          assignedAgent: args.agentName,
           previousStatus: task.status,
           executionPlan: undefined,
           stalledAt: undefined,
           updatedAt: timestamp,
         });
-      } else {
-        // Already assigned — only update agent if changed
-        if (task.assignedAgent !== args.agentName) {
-          await ctx.db.patch(args.taskId, {
-            assignedAgent: args.agentName,
-            updatedAt: timestamp,
-          });
-        }
       }
     }
 

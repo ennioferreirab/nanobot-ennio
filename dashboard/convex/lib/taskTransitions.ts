@@ -25,6 +25,8 @@ export type TaskTransitionArgs = {
   reason: string;
   idempotencyKey: string;
   agentName?: string;
+  activityDescription?: string;
+  suppressActivityLog?: boolean;
 };
 
 export type TaskTransitionResult =
@@ -53,6 +55,10 @@ export type TaskTransitionResult =
       currentStateVersion: number;
       reason: "stale_state" | "status_mismatch";
     };
+
+export function getTaskStateVersion(task: Pick<Doc<"tasks">, "stateVersion">): number {
+  return task.stateVersion ?? 0;
+}
 
 function normalizeReviewPhase(
   toStatus: string,
@@ -143,7 +149,7 @@ export async function applyTaskTransition(
   task: Doc<"tasks">,
   args: TaskTransitionArgs,
 ): Promise<TaskTransitionResult> {
-  const currentStateVersion = task.stateVersion ?? 0;
+  const currentStateVersion = getTaskStateVersion(task);
   const nextReviewPhase = normalizeReviewPhase(args.toStatus, args.reviewPhase);
   const nextAwaitingKickoff = normalizeAwaitingKickoff(
     task,
@@ -212,24 +218,37 @@ export async function applyTaskTransition(
 
   await ctx.db.patch(args.taskId, patch);
 
-  if (task.status !== args.toStatus) {
-    await logTaskStatusChange(ctx, {
-      taskId: args.taskId,
-      fromStatus: task.status,
-      toStatus: args.toStatus,
-      agentName: args.agentName,
-      taskTitle: task.title,
-      timestamp: now,
-    });
-  } else {
-    const eventType = getTaskEventType("in_progress", "review") as ActivityEventType;
-    await logActivity(ctx, {
-      taskId: args.taskId,
-      agentName: args.agentName,
-      eventType,
-      description: args.reason,
-      timestamp: now,
-    });
+  if (!args.suppressActivityLog) {
+    if (task.status !== args.toStatus) {
+      if (args.activityDescription) {
+        const eventType = getTaskEventType(task.status, args.toStatus) as ActivityEventType;
+        await logActivity(ctx, {
+          taskId: args.taskId,
+          agentName: args.agentName,
+          eventType,
+          description: args.activityDescription,
+          timestamp: now,
+        });
+      } else {
+        await logTaskStatusChange(ctx, {
+          taskId: args.taskId,
+          fromStatus: task.status,
+          toStatus: args.toStatus,
+          agentName: args.agentName,
+          taskTitle: task.title,
+          timestamp: now,
+        });
+      }
+    } else {
+      const eventType = getTaskEventType("in_progress", "review") as ActivityEventType;
+      await logActivity(ctx, {
+        taskId: args.taskId,
+        agentName: args.agentName,
+        eventType,
+        description: args.activityDescription ?? args.reason,
+        timestamp: now,
+      });
+    }
   }
 
   if (args.toStatus === "done") {
@@ -249,4 +268,21 @@ export async function applyTaskTransition(
     reviewPhase: nextReviewPhase,
     stateVersion: nextStateVersion,
   };
+}
+
+export async function applyRequiredTaskTransition(
+  ctx: TransitionMutationCtx,
+  task: Doc<"tasks">,
+  args: Omit<TaskTransitionArgs, "expectedStateVersion">,
+): Promise<Exclude<TaskTransitionResult, { kind: "conflict" }>> {
+  const result = await applyTaskTransition(ctx, task, {
+    ...args,
+    expectedStateVersion: getTaskStateVersion(task),
+  });
+  if (result.kind === "conflict") {
+    throw new ConvexError(
+      `Task transition conflict for ${String(args.taskId)}: ${result.reason} (${result.currentStatus}@v${result.currentStateVersion})`,
+    );
+  }
+  return result;
 }

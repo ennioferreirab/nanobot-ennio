@@ -3,6 +3,7 @@ import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
+import { applyRequiredTaskTransition } from "./taskTransitions";
 import { logActivity } from "./workflowHelpers";
 
 type PlanningMutationCtx = Pick<MutationCtx, "db">;
@@ -88,8 +89,19 @@ export async function clearTaskExecutionPlan(
 
   const now = new Date().toISOString();
   const nextStatus = task.status === "in_progress" ? "review" : task.status;
+  if (nextStatus !== task.status) {
+    await applyRequiredTaskTransition(ctx, task, {
+      taskId,
+      fromStatus: task.status,
+      toStatus: nextStatus,
+      awaitingKickoff: false,
+      reviewPhase: undefined,
+      reason: "Cleared execution plan and returned task to review",
+      idempotencyKey: `task:${String(taskId)}:${task.stateVersion ?? 0}:clear-plan`,
+      suppressActivityLog: true,
+    });
+  }
   await ctx.db.patch(taskId, {
-    status: nextStatus,
     executionPlan: undefined,
     awaitingKickoff: undefined,
     stalledAt: undefined,
@@ -148,23 +160,29 @@ export async function startManualInboxTask(
   }
   for (const step of planToSave.steps) {
     if (!step.tempId || !step.title || !step.assignedAgent) {
-      throw new ConvexError(
-        "Existing execution plan has invalid steps. Please rebuild the plan.",
-      );
+      throw new ConvexError("Existing execution plan has invalid steps. Please rebuild the plan.");
     }
   }
 
   const now = new Date().toISOString();
-  const patch: Record<string, unknown> = {
-    status: "in_progress",
-    updatedAt: now,
-  };
+  await applyRequiredTaskTransition(ctx, task, {
+    taskId,
+    fromStatus: "inbox",
+    toStatus: "in_progress",
+    reason: "User started inbox task with manual execution plan",
+    idempotencyKey: `task:${String(taskId)}:${task.stateVersion ?? 0}:start-manual-inbox`,
+    suppressActivityLog: true,
+  });
+
+  const patch: Record<string, unknown> = { updatedAt: now };
   if (executionPlan) {
     patch.executionPlan = planToSave;
   }
-  await ctx.db.patch(taskId, patch);
+  if (Object.keys(patch).length > 1) {
+    await ctx.db.patch(taskId, patch);
+  }
 
-  await ctx.db.insert("activities", {
+  await logActivity(ctx, {
     taskId,
     eventType: "task_started",
     description: "User started inbox task with manual execution plan",
@@ -192,16 +210,19 @@ export async function kickOffTask(
     throw new ConvexError("stepCount must be >= 0");
   }
 
-  const now = new Date().toISOString();
-  await ctx.db.patch(taskId, {
-    status: "in_progress",
-    updatedAt: now,
+  await applyRequiredTaskTransition(ctx, task, {
+    taskId,
+    fromStatus: task.status,
+    toStatus: "in_progress",
+    reason: `Task kicked off with ${stepCount} step${stepCount === 1 ? "" : "s"}`,
+    idempotencyKey: `task:${String(taskId)}:${task.stateVersion ?? 0}:kickoff:${stepCount}`,
+    suppressActivityLog: true,
   });
 
   await logActivity(ctx, {
     taskId,
     eventType: "task_started",
     description: `Task kicked off with ${stepCount} step${stepCount === 1 ? "" : "s"}`,
-    timestamp: now,
+    timestamp: new Date().toISOString(),
   });
 }

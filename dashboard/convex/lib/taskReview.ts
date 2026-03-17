@@ -4,11 +4,10 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
 import {
-  isValidTaskTransition,
-  logTaskStatusChange,
-  markPlanStepsCompleted,
-} from "./taskLifecycle";
-import { cascadeMergeSourceTasksToDone } from "./taskMerge";
+  applyRequiredTaskTransition,
+  applyTaskTransition,
+  getTaskStateVersion,
+} from "./taskTransitions";
 import { logActivity } from "./workflowHelpers";
 
 type ReviewMutationCtx = Pick<MutationCtx, "db">;
@@ -33,11 +32,15 @@ export async function retryTask(ctx: ReviewMutationCtx, taskId: Id<"tasks">): Pr
   const hasMaterializedSteps = steps.length > 0;
 
   if (hasExecutionPlan || hasMaterializedSteps) {
-    await ctx.db.patch(taskId, {
-      status: "retrying",
-      stalledAt: undefined,
-      updatedAt: now,
+    await applyRequiredTaskTransition(ctx, task, {
+      taskId,
+      fromStatus: task.status,
+      toStatus: "retrying",
+      reason: `Manual retry initiated by user for "${task.title}"`,
+      idempotencyKey: `task:${String(taskId)}:${task.stateVersion ?? 0}:retrying`,
+      suppressActivityLog: true,
     });
+    await ctx.db.patch(taskId, { stalledAt: undefined, updatedAt: now });
 
     for (const step of steps) {
       if (step.status === "deleted") {
@@ -68,16 +71,32 @@ export async function retryTask(ctx: ReviewMutationCtx, taskId: Id<"tasks">): Pr
       timestamp: now,
     });
 
-    await ctx.db.patch(taskId, {
-      status: "in_progress",
+    const retryingTask = {
+      ...task,
+      status: "retrying",
+      stateVersion: (task.stateVersion ?? 0) + 1,
       stalledAt: undefined,
-      updatedAt: now,
+    };
+    await applyRequiredTaskTransition(ctx, retryingTask, {
+      taskId,
+      fromStatus: "retrying",
+      toStatus: "in_progress",
+      reason: `Manual retry resumed execution for "${task.title}"`,
+      idempotencyKey: `task:${String(taskId)}:${retryingTask.stateVersion ?? 0}:retry-resume`,
+      suppressActivityLog: true,
     });
     return;
   }
 
+  await applyRequiredTaskTransition(ctx, task, {
+    taskId,
+    fromStatus: task.status,
+    toStatus: "inbox",
+    reason: `Manual retry re-queued task "${task.title}"`,
+    idempotencyKey: `task:${String(taskId)}:${task.stateVersion ?? 0}:retry-inbox`,
+    suppressActivityLog: true,
+  });
   await ctx.db.patch(taskId, {
-    status: "inbox",
     assignedAgent: undefined,
     stalledAt: undefined,
     updatedAt: now,
@@ -128,13 +147,15 @@ export async function approveTask(
   const now = new Date().toISOString();
   const approver = userName || "User";
 
-  await ctx.db.patch(taskId, { status: "done", reviewPhase: undefined, updatedAt: now });
-  await cascadeMergeSourceTasksToDone(
-    ctx,
-    task as { _id: Id<"tasks">; isMergeTask?: boolean; mergeSourceTaskIds?: Id<"tasks">[] },
-    now,
-  );
-  await markPlanStepsCompleted(ctx, taskId, task);
+  await applyRequiredTaskTransition(ctx, task, {
+    taskId,
+    fromStatus: "review",
+    toStatus: "done",
+    reviewPhase: undefined,
+    reason: `User approved "${task.title}"`,
+    idempotencyKey: `task:${String(taskId)}:${task.stateVersion ?? 0}:approve-done`,
+    suppressActivityLog: true,
+  });
 
   await logActivity(ctx, {
     taskId,
@@ -169,18 +190,14 @@ export async function moveManualTask(
 
   const now = new Date().toISOString();
 
-  await ctx.db.patch(taskId, {
-    status: newStatus,
-    updatedAt: now,
+  await applyRequiredTaskTransition(ctx, task, {
+    taskId,
+    fromStatus: oldStatus,
+    toStatus: newStatus,
+    reason: `Manual task moved from ${oldStatus} to ${newStatus}`,
+    idempotencyKey: `task:${String(taskId)}:${task.stateVersion ?? 0}:manual-move:${newStatus}`,
+    suppressActivityLog: true,
   });
-
-  if (newStatus === "done") {
-    await cascadeMergeSourceTasksToDone(
-      ctx,
-      task as { _id: Id<"tasks">; isMergeTask?: boolean; mergeSourceTaskIds?: Id<"tasks">[] },
-      now,
-    );
-  }
 
   await logActivity(ctx, {
     taskId,
@@ -204,63 +221,21 @@ export async function updateTaskStatusInternal(
   if (!task) {
     throw new ConvexError("Task not found");
   }
-
-  const currentStatus = task.status;
-  const newStatus = args.status;
-  const currentAwaitingKickoff = task.awaitingKickoff === true;
-  const nextAwaitingKickoff = args.awaitingKickoff === true;
-  const currentReviewPhase = task.reviewPhase;
-  const nextReviewPhase = args.reviewPhase;
-  const isReviewKickoffToggle =
-    currentStatus === "review" &&
-    newStatus === "review" &&
-    ((args.awaitingKickoff !== undefined && currentAwaitingKickoff !== nextAwaitingKickoff) ||
-      (args.reviewPhase !== undefined && currentReviewPhase !== nextReviewPhase));
-
-  if (!isReviewKickoffToggle && !isValidTaskTransition(currentStatus, newStatus)) {
-    throw new ConvexError(`Cannot transition from '${currentStatus}' to '${newStatus}'`);
-  }
-
-  const now = new Date().toISOString();
-  const patch: Record<string, unknown> = {
-    status: newStatus,
-    updatedAt: now,
-  };
-  if (newStatus !== "review" && args.reviewPhase === undefined) {
-    patch.reviewPhase = undefined;
-  }
-  if (newStatus === "assigned" && args.agentName) {
-    patch.assignedAgent = args.agentName;
-  }
-  if (args.awaitingKickoff !== undefined) {
-    patch.awaitingKickoff = args.awaitingKickoff || undefined;
-  }
-  if (args.reviewPhase !== undefined) {
-    patch.reviewPhase = args.reviewPhase;
-  }
-  if (["done", "review", "crashed", "failed", "deleted"].includes(newStatus)) {
-    patch.activeCronJobId = undefined;
-  }
-  await ctx.db.patch(args.taskId, patch);
-
-  if (newStatus === "done") {
-    await cascadeMergeSourceTasksToDone(
-      ctx,
-      task as { _id: Id<"tasks">; isMergeTask?: boolean; mergeSourceTaskIds?: Id<"tasks">[] },
-      now,
+  const result = await applyTaskTransition(ctx, task, {
+    taskId: args.taskId,
+    fromStatus: task.status,
+    expectedStateVersion: getTaskStateVersion(task),
+    toStatus: args.status,
+    awaitingKickoff: args.awaitingKickoff,
+    reviewPhase: args.reviewPhase,
+    reason: `Compatibility transition via updateTaskStatusInternal (${args.status})`,
+    idempotencyKey: `compat:${String(args.taskId)}:${getTaskStateVersion(task)}:${args.status}:${args.reviewPhase ?? "none"}:${args.agentName ?? "none"}`,
+    agentName: args.agentName,
+  });
+  if (result.kind === "conflict") {
+    throw new ConvexError(
+      `Task transition conflict for ${String(args.taskId)}: ${result.reason} (${result.currentStatus}@v${result.currentStateVersion})`,
     );
-    await markPlanStepsCompleted(ctx, args.taskId, task);
-  }
-
-  if (!isReviewKickoffToggle) {
-    await logTaskStatusChange(ctx, {
-      taskId: args.taskId,
-      fromStatus: currentStatus,
-      toStatus: newStatus,
-      agentName: args.agentName,
-      taskTitle: task.title,
-      timestamp: now,
-    });
   }
 }
 
@@ -320,8 +295,15 @@ export async function returnTaskToLeadAgent(
   const now = new Date().toISOString();
   const actor = userName || "User";
 
+  await applyRequiredTaskTransition(ctx, task, {
+    taskId,
+    fromStatus: "review",
+    toStatus: "inbox",
+    reason: `Task returned to Lead Agent: "${task.title}"`,
+    idempotencyKey: `task:${String(taskId)}:${task.stateVersion ?? 0}:return-lead`,
+    suppressActivityLog: true,
+  });
   await ctx.db.patch(taskId, {
-    status: "inbox",
     assignedAgent: undefined,
     updatedAt: now,
   });

@@ -175,6 +175,7 @@ function makeTakeoverCtx({
   const taskDoc = {
     _id: session.taskId ?? "task-123",
     status: taskStatus,
+    stateVersion: 2,
     title: "Task title",
     updatedAt: "2026-03-13T11:00:00.000Z",
   };
@@ -411,6 +412,7 @@ describe("interactiveSessions takeover controls", () => {
           id: "task-123",
           patch: expect.objectContaining({
             status: "review",
+            stateVersion: 3,
           }),
         }),
         expect.objectContaining({
@@ -458,6 +460,7 @@ describe("interactiveSessions takeover controls", () => {
           id: "task-123",
           patch: expect.objectContaining({
             status: "in_progress",
+            stateVersion: 3,
           }),
         }),
         expect.objectContaining({
@@ -468,6 +471,41 @@ describe("interactiveSessions takeover controls", () => {
         }),
       ]),
     );
+  });
+
+  it("keeps the takeover flow working when the task is already in review", async () => {
+    const handler = getRequestHumanTakeoverHandler();
+    const { ctx, patches } = makeTakeoverCtx({
+      session: {
+        ...takeoverSessionBase,
+        sessionId: "session-123",
+        taskId: "task-123",
+        stepId: "step-123",
+        status: "attached",
+      },
+      taskStatus: "review",
+      stepStatus: "running",
+    });
+
+    await handler(ctx, {
+      sessionId: "session-123",
+      taskId: "task-123",
+      stepId: "step-123",
+      agentName: "claude-pair",
+      provider: "claude-code",
+    });
+
+    expect(
+      patches.some(
+        (entry) =>
+          entry.id === "task-123" && Object.prototype.hasOwnProperty.call(entry.patch, "status"),
+      ),
+    ).toBe(false);
+    expect(
+      patches.some(
+        (entry) => entry.id === "interactive-doc-1" && entry.patch.controlMode === "human",
+      ),
+    ).toBe(true);
   });
 
   it("marks only the active step done manually and records a canonical human result", async () => {

@@ -228,6 +228,7 @@ describe("messages.sendThreadMessage", () => {
       status: "in_progress",
       assignedAgent: "human",
       isManual: false,
+      stateVersion: 4,
     });
 
     await handler(ctx, {
@@ -239,14 +240,26 @@ describe("messages.sendThreadMessage", () => {
     const msgInsert = inserts.find((entry) => entry.table === "messages");
     expect(msgInsert?.value.content).toBe("please take this over");
 
-    expect(mocks.patch).toHaveBeenCalledWith("task-1", {
-      status: "assigned",
-      assignedAgent: "reviewer",
-      previousStatus: "in_progress",
-      executionPlan: undefined,
-      stalledAt: undefined,
-      updatedAt: expect.any(String),
-    });
+    expect(mocks.patch).toHaveBeenNthCalledWith(
+      1,
+      "task-1",
+      expect.objectContaining({
+        status: "assigned",
+        assignedAgent: "reviewer",
+        stateVersion: 5,
+      }),
+    );
+    expect(mocks.patch).toHaveBeenNthCalledWith(
+      2,
+      "task-1",
+      expect.objectContaining({
+        previousStatus: "in_progress",
+        executionPlan: undefined,
+        stalledAt: undefined,
+        updatedAt: expect.any(String),
+      }),
+    );
+    expect((mocks.patch as ReturnType<typeof vi.fn>).mock.calls[1][1].status).toBeUndefined();
   });
 
   it("keeps rejecting in-progress tasks assigned to non-human agents", async () => {
@@ -265,6 +278,25 @@ describe("messages.sendThreadMessage", () => {
         agentName: "reviewer",
       }),
     ).rejects.toThrow(/Cannot send messages while task is in_progress/);
+
+    expect(mocks.patch).not.toHaveBeenCalled();
+  });
+
+  it("treats same-agent assigned follow-ups as an explicit noop", async () => {
+    const handler = getSendHandler();
+    const { ctx, mocks } = makeCtx({
+      _id: "task-1",
+      status: "assigned",
+      assignedAgent: "reviewer",
+      isManual: false,
+      stateVersion: 3,
+    });
+
+    await handler(ctx, {
+      taskId: "task-1",
+      content: "ping",
+      agentName: "reviewer",
+    });
 
     expect(mocks.patch).not.toHaveBeenCalled();
   });
@@ -332,6 +364,7 @@ describe("messages.postUserPlanMessage", () => {
       _id: "task-1",
       status: "done",
       title: "Completed plan task",
+      stateVersion: 7,
       executionPlan: {
         generatedAt: "2026-03-11T10:00:00Z",
         generatedBy: "lead-agent",
@@ -345,11 +378,14 @@ describe("messages.postUserPlanMessage", () => {
     });
 
     expect(result).toBe("msg-id-123");
-    expect(mocks.patch).toHaveBeenCalledWith("task-1", {
-      status: "review",
-      awaitingKickoff: undefined,
-      updatedAt: expect.any(String),
-    });
+    expect(mocks.patch).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({
+        status: "review",
+        awaitingKickoff: undefined,
+        stateVersion: 8,
+      }),
+    );
 
     const msgInsert = inserts.find((entry) => entry.table === "messages");
     expect(msgInsert?.value.leadAgentConversation).toBe(true);

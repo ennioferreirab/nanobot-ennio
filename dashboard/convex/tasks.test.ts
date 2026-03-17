@@ -18,6 +18,7 @@ import {
   resumeTask,
   retry,
   softDelete,
+  startInboxTask,
   transition,
   updateStatus,
 } from "./tasks";
@@ -56,6 +57,14 @@ function getKickOffHandler() {
   return (
     kickOff as unknown as {
       _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<void>;
+    }
+  )._handler;
+}
+
+function getStartInboxTaskHandler() {
+  return (
+    startInboxTask as unknown as {
+      _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
     }
   )._handler;
 }
@@ -883,6 +892,7 @@ describe("tasks.kickOff", () => {
     const get = vi.fn(async () => ({
       _id: "task-1",
       status: "planning",
+      stateVersion: 2,
       title: "Kick me off",
       executionPlan: { steps: [] },
     }));
@@ -891,7 +901,7 @@ describe("tasks.kickOff", () => {
 
     expect(patch).toHaveBeenCalledWith(
       "task-1",
-      expect.objectContaining({ status: "in_progress" }),
+      expect.objectContaining({ status: "in_progress", stateVersion: 3 }),
     );
     expect(insert).toHaveBeenCalledWith(
       "activities",
@@ -930,13 +940,17 @@ describe("tasks.pauseTask", () => {
     const get = vi.fn(async () => ({
       _id: "task-1",
       status: "in_progress",
+      stateVersion: 4,
       title: "Running Task",
     }));
 
     const taskId = await handler({ db: { get, patch, insert } }, { taskId: "task-1" });
 
     expect(taskId).toBe("task-1");
-    expect(patch).toHaveBeenCalledWith("task-1", expect.objectContaining({ status: "review" }));
+    expect(patch).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({ status: "review", stateVersion: 5 }),
+    );
     // awaitingKickoff must NOT be set (paused state has no awaitingKickoff)
     const patchArg = (patch as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(patchArg.awaitingKickoff).toBeUndefined();
@@ -994,6 +1008,7 @@ describe("tasks.resumeTask", () => {
       status: "review",
       title: "Paused Task",
       reviewPhase: "execution_pause",
+      stateVersion: 1,
       // awaitingKickoff is NOT set — this is the paused state
     }));
 
@@ -1002,7 +1017,7 @@ describe("tasks.resumeTask", () => {
     expect(taskId).toBe("task-1");
     expect(patch).toHaveBeenCalledWith(
       "task-1",
-      expect.objectContaining({ status: "in_progress" }),
+      expect.objectContaining({ status: "in_progress", stateVersion: 2 }),
     );
     const patchArg = (patch as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(patchArg.reviewPhase).toBeUndefined();
@@ -1081,10 +1096,17 @@ describe("tasks.resumeTask", () => {
     const updatedPlan = { steps: [{ tempId: "s1", title: "Step A" }] };
     await handler({ db: { get, patch, insert } }, { taskId: "task-1", executionPlan: updatedPlan });
 
-    expect(patch).toHaveBeenCalledWith(
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
       "task-1",
       expect.objectContaining({
         status: "in_progress",
+      }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      2,
+      "task-1",
+      expect.objectContaining({
         executionPlan: updatedPlan,
       }),
     );
@@ -1153,6 +1175,7 @@ describe("tasks.clearExecutionPlan", () => {
     const get = vi.fn(async () => ({
       _id: "task-1",
       status: "in_progress",
+      stateVersion: 2,
       title: "Running Manual Task",
       isManual: true,
       executionPlan: { steps: [{ tempId: "step_1", title: "Do work" }] },
@@ -1163,9 +1186,60 @@ describe("tasks.clearExecutionPlan", () => {
 
     await handler({ db: { get, patch, insert, query } }, { taskId: "task-1" });
 
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      "task-1",
+      expect.objectContaining({ status: "review", stateVersion: 3 }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      2,
+      "task-1",
+      expect.objectContaining({ executionPlan: undefined }),
+    );
+    expect((patch as ReturnType<typeof vi.fn>).mock.calls[1][1].status).toBeUndefined();
+  });
+});
+
+describe("tasks.startInboxTask", () => {
+  it("starts a manual inbox task through the canonical transition path", async () => {
+    const handler = getStartInboxTaskHandler();
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "activity-1");
+    const get = vi.fn(async () => ({
+      _id: "task-1",
+      status: "inbox",
+      stateVersion: 3,
+      title: "Manual inbox task",
+      isManual: true,
+      executionPlan: {
+        steps: [
+          {
+            tempId: "step_1",
+            title: "Do work",
+            description: "desc",
+            assignedAgent: "coder",
+            blockedBy: [],
+            parallelGroup: 0,
+            order: 0,
+          },
+        ],
+      },
+    }));
+
+    const taskId = await handler({ db: { get, patch, insert } }, { taskId: "task-1" });
+
+    expect(taskId).toBe("task-1");
     expect(patch).toHaveBeenCalledWith(
       "task-1",
-      expect.objectContaining({ status: "review", executionPlan: undefined }),
+      expect.objectContaining({ status: "in_progress", stateVersion: 4 }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "activities",
+      expect.objectContaining({
+        taskId: "task-1",
+        eventType: "task_started",
+        description: "User started inbox task with manual execution plan",
+      }),
     );
   });
 });
@@ -1178,6 +1252,7 @@ describe("tasks.retry", () => {
     const task = {
       _id: "task-1",
       status: "crashed",
+      stateVersion: 2,
       title: "Retry with plan",
       executionPlan: { steps: [{ tempId: "s1" }, { tempId: "s2" }] },
       stalledAt: "2026-03-05T10:11:00Z",
@@ -1207,11 +1282,14 @@ describe("tasks.retry", () => {
 
     expect(patchedTasks[0]).toMatchObject({
       status: "retrying",
-      stalledAt: undefined,
+      stateVersion: 3,
     });
     expect(patchedTasks[1]).toMatchObject({
-      status: "in_progress",
       stalledAt: undefined,
+    });
+    expect(patchedTasks[2]).toMatchObject({
+      status: "in_progress",
+      stateVersion: 4,
     });
     expect(patchedSteps["step-1"]).toMatchObject({
       status: "assigned",
@@ -1273,6 +1351,7 @@ describe("tasks.retry", () => {
     const task = {
       _id: "task-1",
       status: "failed",
+      stateVersion: 5,
       title: "Retry without plan",
     };
 
@@ -1295,6 +1374,12 @@ describe("tasks.retry", () => {
       "task-1",
       expect.objectContaining({
         status: "inbox",
+        stateVersion: 6,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({
         assignedAgent: undefined,
       }),
     );
@@ -1683,6 +1768,7 @@ describe("tasks.approveAndKickOff", () => {
       _id: "task-1",
       status: "review",
       awaitingKickoff: true,
+      stateVersion: 4,
       title: "Reviewed task",
       executionPlan: {
         generatedAt: "2026-03-10T10:00:00Z",
@@ -1717,6 +1803,7 @@ describe("tasks.approveAndKickOff", () => {
       _id: "task-1",
       status: "review",
       isManual: true,
+      stateVersion: 1,
       title: "Manual merge task",
       executionPlan: { steps: [{ tempId: "s1" }] },
     }));
@@ -1729,7 +1816,7 @@ describe("tasks.approveAndKickOff", () => {
     expect(taskId).toBe("task-1");
     expect(patch).toHaveBeenCalledWith(
       "task-1",
-      expect.objectContaining({ status: "in_progress" }),
+      expect.objectContaining({ status: "in_progress", stateVersion: 2 }),
     );
   });
 

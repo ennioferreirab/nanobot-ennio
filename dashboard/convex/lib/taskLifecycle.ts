@@ -24,12 +24,12 @@ import {
 export const TASK_TRANSITIONS: Record<string, string[]> = {
   planning: ["failed", "review", "ready", "in_progress"],
   ready: ["in_progress", "planning", "failed"],
-  failed: ["planning"],
+  failed: ["planning", "inbox"],
   inbox: ["assigned", "planning", "in_progress"],
   assigned: ["in_progress", "assigned"],
   in_progress: ["review", "done", "assigned"],
   review: ["done", "inbox", "assigned", "in_progress", "planning"],
-  done: ["assigned"],
+  done: ["assigned", "review"],
   retrying: ["in_progress", "crashed"],
   crashed: ["inbox", "assigned"],
 };
@@ -47,6 +47,7 @@ export const TRANSITION_EVENT_MAP: Record<string, string> = {
   "ready->planning": "task_planning",
   "ready->failed": "task_failed",
   "failed->planning": "task_planning",
+  "failed->inbox": "task_retrying",
   "inbox->assigned": "task_assigned",
   "inbox->planning": "task_planning",
   "inbox->in_progress": "task_started",
@@ -63,6 +64,7 @@ export const TRANSITION_EVENT_MAP: Record<string, string> = {
   "retrying->crashed": "task_crashed",
   "crashed->inbox": "task_retrying",
   "done->assigned": "thread_message_sent",
+  "done->review": "review_requested",
   "review->assigned": "thread_message_sent",
   "crashed->assigned": "thread_message_sent",
 };
@@ -88,16 +90,8 @@ export const RESTORE_TARGET_MAP: Record<string, string> = {
 /**
  * Check if a task state transition is valid.
  */
-export function isValidTaskTransition(
-  currentStatus: string,
-  newStatus: string
-): boolean {
-  return isTransitionAllowed(
-    currentStatus,
-    newStatus,
-    TASK_TRANSITIONS,
-    TASK_UNIVERSAL_TARGETS
-  );
+export function isValidTaskTransition(currentStatus: string, newStatus: string): boolean {
+  return isTransitionAllowed(currentStatus, newStatus, TASK_TRANSITIONS, TASK_UNIVERSAL_TARGETS);
 }
 
 /**
@@ -108,9 +102,7 @@ export function getTaskEventType(from: string, to: string): string {
   if (to === "crashed") return "task_crashed";
   const eventType = TRANSITION_EVENT_MAP[`${from}->${to}`];
   if (!eventType) {
-    throw new Error(
-      `No event type mapping for transition '${from}' -> '${to}'`
-    );
+    throw new Error(`No event type mapping for transition '${from}' -> '${to}'`);
   }
   return eventType;
 }
@@ -132,7 +124,7 @@ export async function logTaskStatusChange(
     agentName?: string;
     taskTitle?: string;
     timestamp?: string;
-  }
+  },
 ): Promise<void> {
   const eventType = getTaskEventType(params.fromStatus, params.toStatus);
 
@@ -165,7 +157,7 @@ export async function logTaskCreated(
     trustLevel?: string;
     supervisionMode?: string;
     timestamp?: string;
-  }
+  },
 ): Promise<void> {
   let description = params.isManual
     ? `Manual task created: "${params.title}"`
@@ -174,8 +166,7 @@ export async function logTaskCreated(
       : `Task created: "${params.title}"`;
 
   if (!params.isManual && params.trustLevel && params.trustLevel !== "autonomous") {
-    const levelLabel =
-      params.trustLevel === "agent_reviewed" ? "agent reviewed" : "human approved";
+    const levelLabel = params.trustLevel === "agent_reviewed" ? "agent reviewed" : "human approved";
     description += ` (trust: ${levelLabel})`;
   }
   if (!params.isManual && params.supervisionMode === "supervised") {
@@ -199,15 +190,29 @@ export async function logTaskCreated(
  * Mark all execution plan steps as completed on a task.
  * Called when a task transitions to "done" to keep the plan UI in sync.
  */
+type ExecutionPlanStep = Record<string, unknown>;
+type ExecutionPlanTask = {
+  executionPlan?: {
+    steps?: ExecutionPlanStep[];
+  };
+};
+
 export async function markPlanStepsCompleted(
-  ctx: { db: { patch: (id: any, value: any) => Promise<void> } },
+  ctx: {
+    db: {
+      patch: (
+        id: Id<"tasks">,
+        value: { executionPlan: { steps: ExecutionPlanStep[] } },
+      ) => Promise<void>;
+    };
+  },
   taskId: Id<"tasks">,
-  task: { executionPlan?: any }
+  task: ExecutionPlanTask,
 ): Promise<void> {
   const plan = task.executionPlan;
   if (!plan?.steps?.length) return;
 
-  const updatedSteps = plan.steps.map((step: any) => ({
+  const updatedSteps = plan.steps.map((step) => ({
     ...step,
     status: "completed",
   }));
