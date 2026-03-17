@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Iterator
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from typing import Any
 
 
 class BridgeRepositoryFacadeMixin:
@@ -414,7 +415,7 @@ class BridgeRepositoryFacadeMixin:
         args: dict[str, Any] | None = None,
         poll_interval: float = 2.0,
         sleep_controller: Any | None = None,
-    ) -> "Any":
+    ) -> Any:
         self._ensure_repos()
         return self._subscriptions.async_subscribe(
             function_name,
@@ -433,7 +434,7 @@ class BridgeRepositoryFacadeMixin:
         args: dict[str, Any] = {
             "event_type": event_type,
             "description": description,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         if task_id and not task_id.startswith("chat-"):
             args["task_id"] = task_id

@@ -1,7 +1,6 @@
-# ruff: noqa: N803
 """Unit tests for ConvexBridge: case conversion, query/mutation/subscribe, retry logic."""
 
-from pathlib import Path  # noqa: F401 - used by TestCreateTaskDirectory
+from pathlib import Path
 from unittest.mock import call, patch
 
 import pytest

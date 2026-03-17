@@ -8,9 +8,15 @@ import { agentStatusValidator, interactiveProviderValidator } from "./schema";
 // ---------------------------------------------------------------------------
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AgentMetricDb = { query: (table: string) => any; patch: (id: any, value: Record<string, unknown>) => Promise<void> };
+export type AgentMetricDb = {
+  query: (table: string) => any;
+  patch: (id: any, value: Record<string, unknown>) => Promise<void>;
+};
 
-export async function incrementAgentTaskMetric(db: AgentMetricDb, agentName: string): Promise<void> {
+export async function incrementAgentTaskMetric(
+  db: AgentMetricDb,
+  agentName: string,
+): Promise<void> {
   const agent = await db
     .query("agents")
     .withIndex("by_name", (q: { eq: (k: string, v: string) => unknown }) => q.eq("name", agentName))
@@ -22,7 +28,10 @@ export async function incrementAgentTaskMetric(db: AgentMetricDb, agentName: str
   });
 }
 
-export async function incrementAgentStepMetric(db: AgentMetricDb, agentName: string): Promise<void> {
+export async function incrementAgentStepMetric(
+  db: AgentMetricDb,
+  agentName: string,
+): Promise<void> {
   const agent = await db
     .query("agents")
     .withIndex("by_name", (q: { eq: (k: string, v: string) => unknown }) => q.eq("name", agentName))
@@ -52,10 +61,7 @@ export const listActiveRegistryView = query({
     // Filter: not deleted, not system, enabled, and delegatable role
     const active = allAgents.filter(
       (a) =>
-        !a.deletedAt &&
-        !a.isSystem &&
-        a.enabled !== false &&
-        !NON_DELEGATABLE_ROLES.has(a.role),
+        !a.deletedAt && !a.isSystem && a.enabled !== false && !NON_DELEGATABLE_ROLES.has(a.role),
     );
 
     // Resolve squad memberships

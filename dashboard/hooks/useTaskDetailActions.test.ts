@@ -137,9 +137,7 @@ describe("useTaskDetailActions", () => {
   });
 
   it("sets pauseError on failure", async () => {
-    mockMutationFns["tasks:pauseTask"] = vi
-      .fn()
-      .mockRejectedValue(new Error("Pause failed"));
+    mockMutationFns["tasks:pauseTask"] = vi.fn().mockRejectedValue(new Error("Pause failed"));
     const { result } = renderHook(() => useTaskDetailActions());
     await act(async () => {
       await result.current.pause("task1" as any);

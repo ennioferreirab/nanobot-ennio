@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from mc.contexts.interactive.metrics import increment_interactive_metric
@@ -56,7 +56,7 @@ class InteractiveExecutionSupervisor:
         if not event.session_id:
             raise ValueError("Interactive supervision events require a session_id")
 
-        timestamp = event.occurred_at or datetime.now(timezone.utc).isoformat()
+        timestamp = event.occurred_at or datetime.now(UTC).isoformat()
         metadata = self._registry.get(event.session_id) or {}
         merged_event = self._merge_event_context(event, metadata)
         event_payload: dict[str, Any] = {"kind": merged_event.kind}
@@ -134,7 +134,7 @@ class InteractiveExecutionSupervisor:
         content: str,
         source: str,
     ) -> dict[str, Any]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         metadata = self._registry.record_final_result(
             session_id,
             content=content,

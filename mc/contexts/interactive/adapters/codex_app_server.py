@@ -6,9 +6,10 @@ import asyncio
 import contextlib
 import inspect
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from mc.contexts.interactive.errors import InteractiveSessionStartupError
 from mc.contexts.interactive.supervision_types import InteractiveSupervisionEvent

@@ -72,12 +72,7 @@ export function isGatewaySleepRuntime(value: unknown): value is GatewaySleepRunt
     return false;
   }
 
-  if (
-    reason !== "startup" &&
-    reason !== "idle" &&
-    reason !== "manual" &&
-    reason !== "work_found"
-  ) {
+  if (reason !== "startup" && reason !== "idle" && reason !== "manual" && reason !== "work_found") {
     return false;
   }
 

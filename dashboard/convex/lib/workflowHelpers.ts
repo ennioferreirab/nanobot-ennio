@@ -72,7 +72,7 @@ export type ActivityInsertCtx = {
         eventType: ActivityEventType;
         description: string;
         timestamp: string;
-      }
+      },
     ) => Promise<unknown>;
   };
 };
@@ -94,7 +94,7 @@ export type EntityGetCtx = {
 export async function requireEntity<T>(
   ctx: EntityGetCtx,
   id: Id<"tasks"> | Id<"steps">,
-  entityName: string
+  entityName: string,
 ): Promise<T> {
   const entity = await ctx.db.get(id);
   if (!entity) {
@@ -115,7 +115,7 @@ export function isTransitionAllowed(
   currentStatus: string,
   newStatus: string,
   transitionMap: Record<string, string[]>,
-  universalTargets: string[] = []
+  universalTargets: string[] = [],
 ): boolean {
   if (universalTargets.includes(newStatus)) {
     return true;
@@ -132,11 +132,11 @@ export function assertValidTransition(
   newStatus: string,
   transitionMap: Record<string, string[]>,
   universalTargets: string[] = [],
-  entityLabel: string = "Entity"
+  entityLabel: string = "Entity",
 ): void {
   if (!isTransitionAllowed(currentStatus, newStatus, transitionMap, universalTargets)) {
     throw new ConvexError(
-      `Cannot transition ${entityLabel} from '${currentStatus}' to '${newStatus}'`
+      `Cannot transition ${entityLabel} from '${currentStatus}' to '${newStatus}'`,
     );
   }
 }
@@ -157,7 +157,7 @@ export async function logActivity(
     eventType: ActivityEventType;
     description: string;
     timestamp?: string;
-  }
+  },
 ): Promise<void> {
   const timestamp = params.timestamp ?? new Date().toISOString();
   await ctx.db.insert("activities", {

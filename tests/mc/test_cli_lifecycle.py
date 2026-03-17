@@ -13,7 +13,7 @@ runner = CliRunner()
 
 
 class _FakeProcessManager:
-    instances: list["_FakeProcessManager"] = []
+    instances: list[_FakeProcessManager] = []
 
     def __init__(
         self,

@@ -29,9 +29,7 @@ export default function RootLayout({
     // and is needed by `ThemeProvider` which sets the theme
     // class attribute on it
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ConvexClientProvider>
           <ThemeProvider attribute="class">{children}</ThemeProvider>
         </ConvexClientProvider>

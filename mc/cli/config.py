@@ -18,10 +18,12 @@ tasks_app = typer.Typer(
 
 def register_docs_command(mc_app: typer.Typer) -> None:
     """Register the docs command on the main mc_app."""
+
     @mc_app.command()
     def docs():
         """Show auto-generated API documentation from Convex schema."""
         from rich.markdown import Markdown
+
         from mc.cli import _find_dashboard_dir
 
         dashboard_dir = _find_dashboard_dir()
@@ -44,9 +46,7 @@ def register_docs_command(mc_app: typer.Typer) -> None:
             if ts_file.name.startswith("_") or ts_file.name == "schema.ts":
                 continue
             doc_lines.append(f"\n## {ts_file.stem}\n")
-            doc_lines.append(
-                _parse_convex_functions(ts_file.read_text(), ts_file.stem)
-            )
+            doc_lines.append(_parse_convex_functions(ts_file.read_text(), ts_file.stem))
 
         md_text = "\n".join(doc_lines)
         console.print(Markdown(md_text))
@@ -55,9 +55,7 @@ def register_docs_command(mc_app: typer.Typer) -> None:
 def _parse_schema_tables(schema_text: str) -> str:
     """Extract table definitions from a Convex schema.ts file."""
     lines = []
-    table_matches = re.findall(
-        r"(\w+):\s*defineTable\(\{(.*?)\}\)", schema_text, re.DOTALL
-    )
+    table_matches = re.findall(r"(\w+):\s*defineTable\(\{(.*?)\}\)", schema_text, re.DOTALL)
     for table_name, body in table_matches:
         lines.append(f"### {table_name}\n")
         fields = re.findall(r"(\w+):\s*v\.(\w+)\(([^)]*)\)", body)
@@ -69,9 +67,7 @@ def _parse_schema_tables(schema_text: str) -> str:
                 lines.append(f"| {field_name} | {vtype} | {detail_clean} |")
         lines.append("")
 
-    index_matches = re.findall(
-        r'\.index\("(\w+)",\s*\[([^\]]+)\]\)', schema_text
-    )
+    index_matches = re.findall(r'\.index\("(\w+)",\s*\[([^\]]+)\]\)', schema_text)
     if index_matches:
         lines.append("### Indexes\n")
         for idx_name, idx_fields in index_matches:
@@ -105,9 +101,7 @@ def _parse_convex_functions(file_text: str, module_name: str) -> str:
 @tasks_app.command("create")
 def tasks_create(
     title: str = typer.Argument(None, help="Task title"),
-    description: str = typer.Option(
-        None, "--description", "-d", help="Task description"
-    ),
+    description: str = typer.Option(None, "--description", "-d", help="Task description"),
     tags: str = typer.Option(None, "--tags", "-t", help="Comma-separated tags"),
     trust_level: str = typer.Option(
         None,
@@ -138,9 +132,7 @@ def tasks_create(
 
     bridge = _cli._get_bridge()
     try:
-        tag_list = (
-            [t.strip() for t in tags.split(",") if t.strip()] if tags else None
-        )
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
         args: dict = {"title": title}
         if description:
             args["description"] = description
@@ -182,6 +174,7 @@ def tasks_list(
 ):
     """List all tasks."""
     import json as _json
+
     import mc.cli as _cli
 
     bridge = _cli._get_bridge()
@@ -252,6 +245,7 @@ def tasks_get(
 ):
     """Show details of a task plus last 10 thread messages."""
     import json as _json
+
     import mc.cli as _cli
 
     bridge = _cli._get_bridge()
@@ -281,7 +275,7 @@ def tasks_get(
         console.print(f"  [dim]Tags:[/dim]          {', '.join(tags) if tags else '-'}")
         description = task.get("description") or ""
         if description:
-            console.print(f"\n[bold]Description:[/bold]")
+            console.print("\n[bold]Description:[/bold]")
             console.print(f"  {description}")
 
         if messages:

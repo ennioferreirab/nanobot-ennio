@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from mc.bridge.runtime_claims import acquire_runtime_claim
@@ -342,7 +342,7 @@ class KickoffResumeWorker:
             if plan_step.workflow_step_id:
                 step_mapping[plan_step.workflow_step_id] = real_id
 
-        launched_at = datetime.now(timezone.utc).isoformat()
+        launched_at = datetime.now(UTC).isoformat()
         try:
             await asyncio.to_thread(
                 self._bridge.mutation,

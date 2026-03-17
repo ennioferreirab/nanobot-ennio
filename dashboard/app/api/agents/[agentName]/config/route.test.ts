@@ -32,13 +32,15 @@ beforeEach(() => {
 
 describe("PUT /api/agents/[agentName]/config", () => {
   it("persists an explicit empty skills list instead of dropping the field", async () => {
-    mockReadFile.mockResolvedValue([
-      "name: youtube-summarizer",
-      "role: Summarizer",
-      "prompt: test",
-      "skills:",
-      "  - legacy-skill",
-    ].join("\n"));
+    mockReadFile.mockResolvedValue(
+      [
+        "name: youtube-summarizer",
+        "role: Summarizer",
+        "prompt: test",
+        "skills:",
+        "  - legacy-skill",
+      ].join("\n"),
+    );
 
     const req = new Request("http://localhost/api/agents/youtube-summarizer/config", {
       method: "PUT",
@@ -50,7 +52,9 @@ describe("PUT /api/agents/[agentName]/config", () => {
       }),
     });
 
-    const res = await PUT(req as any, { params: Promise.resolve({ agentName: "youtube-summarizer" }) });
+    const res = await PUT(req as any, {
+      params: Promise.resolve({ agentName: "youtube-summarizer" }),
+    });
 
     expect(res.status).toBe(204);
     expect(mockWriteFile).toHaveBeenCalledWith(

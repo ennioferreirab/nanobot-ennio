@@ -28,8 +28,22 @@ const mockUseQuery = useQuery as ReturnType<typeof vi.fn>;
 const mockUseMutation = useMutation as ReturnType<typeof vi.fn>;
 
 const MOCK_AGENTS = [
-  { _id: "a1", name: "security-agent", displayName: "Security Agent", role: "security", enabled: true, isSystem: false },
-  { _id: "a2", name: "dev-agent", displayName: "Dev Agent", role: "developer", enabled: true, isSystem: false },
+  {
+    _id: "a1",
+    name: "security-agent",
+    displayName: "Security Agent",
+    role: "security",
+    enabled: true,
+    isSystem: false,
+  },
+  {
+    _id: "a2",
+    name: "dev-agent",
+    displayName: "Dev Agent",
+    role: "developer",
+    enabled: true,
+    isSystem: false,
+  },
 ];
 
 const MOCK_BOARD = { _id: "b1", enabledAgents: [] };
@@ -183,7 +197,12 @@ describe("AgentMentionAutocomplete (via ThreadInput)", () => {
 
   it("does NOT show autocomplete in plan-chat mode", async () => {
     const user = userEvent.setup();
-    render(<ThreadInput task={makeTask({ status: "review", awaitingKickoff: true })} mode="lead-agent" />);
+    render(
+      <ThreadInput
+        task={makeTask({ status: "review", awaitingKickoff: true })}
+        mode="lead-agent"
+      />,
+    );
     const textarea = screen.getByPlaceholderText(/Ask the Lead Agent to change the plan/i);
     await user.click(textarea);
     await user.type(textarea, "@");

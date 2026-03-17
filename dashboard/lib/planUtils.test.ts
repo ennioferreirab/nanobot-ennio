@@ -258,7 +258,8 @@ describe("insertMergeStep", () => {
     const result = insertMergeStep(steps, "step_2");
 
     const mergeStep = result.find(
-      (s) => !["step_1", "step_2", "step_3", "step_4", "step_5", "step_6", "step_7"].includes(s.tempId),
+      (s) =>
+        !["step_1", "step_2", "step_3", "step_4", "step_5", "step_6", "step_7"].includes(s.tempId),
     )!;
     const mergedDownstream = result.find((s) => s.tempId === "step_6")!;
     const unrelatedDownstream = result.find((s) => s.tempId === "step_7")!;

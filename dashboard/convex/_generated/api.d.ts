@@ -20,6 +20,7 @@ import type * as executionSessions from "../executionSessions.js";
 import type * as interactiveSessions from "../interactiveSessions.js";
 import type * as lib_executionInteractionState from "../lib/executionInteractionState.js";
 import type * as lib_readModels from "../lib/readModels.js";
+import type * as lib_runtimeGuards from "../lib/runtimeGuards.js";
 import type * as lib_specCompiler from "../lib/specCompiler.js";
 import type * as lib_squadGraphPublisher from "../lib/squadGraphPublisher.js";
 import type * as lib_squadGraphUpdater from "../lib/squadGraphUpdater.js";
@@ -77,6 +78,7 @@ declare const fullApi: ApiFromModules<{
   interactiveSessions: typeof interactiveSessions;
   "lib/executionInteractionState": typeof lib_executionInteractionState;
   "lib/readModels": typeof lib_readModels;
+  "lib/runtimeGuards": typeof lib_runtimeGuards;
   "lib/specCompiler": typeof lib_specCompiler;
   "lib/squadGraphPublisher": typeof lib_squadGraphPublisher;
   "lib/squadGraphUpdater": typeof lib_squadGraphUpdater;

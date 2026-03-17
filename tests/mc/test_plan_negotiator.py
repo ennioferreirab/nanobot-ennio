@@ -303,7 +303,7 @@ class TestHandlePlanNegotiation:
         bridge = _make_bridge()
 
         async def _timeout_wait_for(coro, timeout):
-            raise asyncio.TimeoutError
+            raise TimeoutError
 
         with (
             patch(

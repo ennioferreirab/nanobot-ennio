@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from claude_code.ipc_server import MCSocketServer
 from claude_code.workspace import CCWorkspaceManager

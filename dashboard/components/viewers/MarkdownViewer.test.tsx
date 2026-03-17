@@ -4,13 +4,7 @@ import { MarkdownViewer } from "./MarkdownViewer";
 
 // Mock react-syntax-highlighter to avoid JSDOM rendering issues
 vi.mock("react-syntax-highlighter", () => ({
-  default: ({
-    children,
-    language,
-  }: {
-    children: string;
-    language: string;
-  }) => (
+  default: ({ children, language }: { children: string; language: string }) => (
     <pre data-testid="syntax-highlighter" data-language={language}>
       {children}
     </pre>
@@ -104,13 +98,13 @@ describe("MarkdownViewer", () => {
           taskId: "task_1",
           sourceFile: OUTPUT_SOURCE_FILE,
         } as any)}
-      />
+      />,
     );
 
     const image = screen.getByRole("img", { name: "Chart" });
     expect(image).toHaveAttribute(
       "src",
-      "/api/tasks/task_1/files/output/reports%2Fdaily%2Fimages%2Fchart.png"
+      "/api/tasks/task_1/files/output/reports%2Fdaily%2Fimages%2Fchart.png",
     );
   });
 
@@ -122,14 +116,11 @@ describe("MarkdownViewer", () => {
           taskId: "task_1",
           sourceFile: OUTPUT_SOURCE_FILE,
         } as any)}
-      />
+      />,
     );
 
     const link = screen.getByRole("link", { name: "Open artifact" });
-    expect(link).toHaveAttribute(
-      "href",
-      "/api/tasks/task_1/files/output/reports%2Fartifact.html"
-    );
+    expect(link).toHaveAttribute("href", "/api/tasks/task_1/files/output/reports%2Fartifact.html");
   });
 
   it("keeps absolute URLs unchanged when rendering links", () => {
@@ -140,12 +131,12 @@ describe("MarkdownViewer", () => {
           taskId: "task_1",
           sourceFile: OUTPUT_SOURCE_FILE,
         } as any)}
-      />
+      />,
     );
 
     expect(screen.getByRole("link", { name: "External" })).toHaveAttribute(
       "href",
-      "https://example.com/manual"
+      "https://example.com/manual",
     );
   });
 

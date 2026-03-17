@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Awaitable, Callable
 from inspect import isawaitable
 from pathlib import Path
-from typing import Awaitable, Callable
 
 from mc.contexts.interactive.adapters.codex_app_server import (
     CodexAppServerSession,

@@ -24,8 +24,14 @@ describe("canSendThreadMessage", () => {
 
   it("returns true for non-blocked statuses", () => {
     const allowedStatuses = [
-      "inbox", "assigned", "planning", "ready", "failed",
-      "review", "done", "crashed",
+      "inbox",
+      "assigned",
+      "planning",
+      "ready",
+      "failed",
+      "review",
+      "done",
+      "crashed",
     ];
     for (const status of allowedStatuses) {
       expect(canSendThreadMessage(status)).toBe(true);
@@ -46,8 +52,15 @@ describe("canPostPlanMessage", () => {
 
   it("returns false for non-allowed statuses", () => {
     const disallowedStatuses = [
-      "inbox", "assigned", "planning", "ready", "failed",
-      "done", "crashed", "retrying", "deleted",
+      "inbox",
+      "assigned",
+      "planning",
+      "ready",
+      "failed",
+      "done",
+      "crashed",
+      "retrying",
+      "deleted",
     ];
     for (const status of disallowedStatuses) {
       expect(canPostPlanMessage(status)).toBe(false);
@@ -66,8 +79,16 @@ describe("canPostComment", () => {
 
   it("returns true for all other statuses", () => {
     const statuses = [
-      "inbox", "assigned", "planning", "ready", "failed",
-      "in_progress", "review", "done", "crashed", "retrying",
+      "inbox",
+      "assigned",
+      "planning",
+      "ready",
+      "failed",
+      "in_progress",
+      "review",
+      "done",
+      "crashed",
+      "retrying",
     ];
     for (const status of statuses) {
       expect(canPostComment(status)).toBe(true);
@@ -109,14 +130,15 @@ describe("logThreadMessageSent", () => {
       description: "User posted a comment",
     });
 
-    expect(insert).toHaveBeenCalledWith("activities",
+    expect(insert).toHaveBeenCalledWith(
+      "activities",
       expect.objectContaining({
         taskId: "task-1",
         agentName: undefined,
         eventType: "thread_message_sent",
         description: "User posted a comment",
         timestamp: expect.any(String),
-      })
+      }),
     );
   });
 });

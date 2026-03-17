@@ -82,9 +82,7 @@ describe("CompactFavoriteCard", () => {
   it("does not call onClick when star is clicked (stopPropagation)", async () => {
     const user = userEvent.setup();
     const handleClick = vi.fn();
-    const { container } = render(
-      <CompactFavoriteCard task={makeTask()} onClick={handleClick} />
-    );
+    const { container } = render(<CompactFavoriteCard task={makeTask()} onClick={handleClick} />);
     const star = container.querySelector(".fill-amber-400")!;
     await user.click(star);
     expect(handleClick).not.toHaveBeenCalled();

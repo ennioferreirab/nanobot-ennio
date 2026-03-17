@@ -42,7 +42,7 @@ export function TagAttributeEditor({
         value: val,
       });
     },
-    [upsert, taskId, tagName, attribute._id]
+    [upsert, taskId, tagName, attribute._id],
   );
 
   const handleDebouncedChange = useCallback(
@@ -51,7 +51,7 @@ export function TagAttributeEditor({
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => save(val), 300);
     },
-    [save]
+    [save],
   );
 
   const handleImmediateChange = useCallback(
@@ -59,7 +59,7 @@ export function TagAttributeEditor({
       setLocalValue(val);
       save(val);
     },
-    [save]
+    [save],
   );
 
   const handleClear = useCallback(() => {

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -40,7 +40,7 @@ def _make_task(
 ) -> dict:
     """Create a mock task dict."""
     if updated_at is None:
-        updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        updated_at = datetime.now(UTC) - timedelta(minutes=5)
     return {
         "id": task_id,
         "title": title,
@@ -86,7 +86,7 @@ class TestStalledTaskDetection:
         checker = TimeoutChecker(bridge)
 
         stalled_task = _make_task(
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=35),
+            updated_at=datetime.now(UTC) - timedelta(minutes=35),
         )
 
         # No settings configured (use defaults)
@@ -124,7 +124,7 @@ class TestStalledTaskDetection:
         checker = TimeoutChecker(bridge)
 
         fresh_task = _make_task(
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+            updated_at=datetime.now(UTC) - timedelta(minutes=5),
         )
 
         bridge.query.side_effect = lambda fn, args=None: {
@@ -146,7 +146,7 @@ class TestStalledTaskDetection:
         checker = TimeoutChecker(bridge)
 
         stalled_task = _make_task(
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=45),
+            updated_at=datetime.now(UTC) - timedelta(minutes=45),
         )
 
         bridge.query.side_effect = lambda fn, args=None: {
@@ -181,7 +181,7 @@ class TestPerTaskTimeoutOverride:
 
         # 35 min elapsed, but per-task timeout is 60 min
         task = _make_task(
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=35),
+            updated_at=datetime.now(UTC) - timedelta(minutes=35),
             task_timeout=60,
         )
 
@@ -201,7 +201,7 @@ class TestPerTaskTimeoutOverride:
         checker = TimeoutChecker(bridge)
 
         task = _make_task(
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=15),
+            updated_at=datetime.now(UTC) - timedelta(minutes=15),
             task_timeout=10,
         )
 
@@ -230,7 +230,7 @@ class TestGlobalSettings:
         checker = TimeoutChecker(bridge)
 
         task = _make_task(
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=25),
+            updated_at=datetime.now(UTC) - timedelta(minutes=25),
         )
 
         def mock_query(fn, args=None):
@@ -260,7 +260,7 @@ class TestGlobalSettings:
 
         # 25 min — less than default 30 min
         task = _make_task(
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=25),
+            updated_at=datetime.now(UTC) - timedelta(minutes=25),
         )
 
         bridge.query.side_effect = lambda fn, args=None: {
@@ -292,7 +292,7 @@ class TestReviewEscalation:
             task_id="review_1",
             title="Review Task",
             status="review",
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=15),
+            updated_at=datetime.now(UTC) - timedelta(minutes=15),
             reviewers=["reviewer-agent"],
         )
 
@@ -327,7 +327,7 @@ class TestReviewEscalation:
         review_task = _make_task(
             task_id="review_2",
             status="review",
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=15),
+            updated_at=datetime.now(UTC) - timedelta(minutes=15),
             reviewers=None,
         )
 
@@ -352,7 +352,7 @@ class TestReviewEscalation:
             task_id="review_3",
             title="Review Dup",
             status="review",
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=20),
+            updated_at=datetime.now(UTC) - timedelta(minutes=20),
             reviewers=["agent-a"],
         )
 
@@ -379,7 +379,7 @@ class TestReviewEscalation:
         review_task = _make_task(
             task_id="review_4",
             status="review",
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=8),
+            updated_at=datetime.now(UTC) - timedelta(minutes=8),
             reviewers=["agent-a"],
             inter_agent_timeout=20,
         )

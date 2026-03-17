@@ -56,13 +56,9 @@ export function StepFileAttachment({
         files: uploadedFiles,
       });
 
-      const newFileNames: string[] = uploadedFiles.map(
-        (f: { name: string }) => f.name
-      );
+      const newFileNames: string[] = uploadedFiles.map((f: { name: string }) => f.name);
       const existingNames = new Set(attachedFiles);
-      const uniqueNewNames = newFileNames.filter(
-        (name) => !existingNames.has(name)
-      );
+      const uniqueNewNames = newFileNames.filter((name) => !existingNames.has(name));
       if (uniqueNewNames.length > 0) {
         onFilesAttached(stepTempId, uniqueNewNames);
       }
@@ -110,9 +106,7 @@ export function StepFileAttachment({
           )}
           Attach
         </Button>
-        {uploadError && (
-          <span className="text-xs text-red-500">{uploadError}</span>
-        )}
+        {uploadError && <span className="text-xs text-red-500">{uploadError}</span>}
       </div>
     </div>
   );

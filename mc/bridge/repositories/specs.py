@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 class SpecsRepository:
     """Data access methods for Agent Spec V2 entities in Convex."""
 
-    def __init__(self, client: "BridgeClient") -> None:
+    def __init__(self, client: BridgeClient) -> None:
         self._client = client
 
     def create_agent_spec(
