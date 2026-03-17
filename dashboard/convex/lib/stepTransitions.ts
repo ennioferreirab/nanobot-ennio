@@ -31,6 +31,15 @@ export type StepTransitionArgs = {
   suppressActivityLog?: boolean;
 };
 
+export type StepRetryResetArgs = {
+  stepId: Id<"steps">;
+  expectedStateVersion: number;
+  toStatus: "assigned" | "blocked";
+  reason: string;
+  idempotencyKey: string;
+  suppressActivityLog?: boolean;
+};
+
 export type StepTransitionResult =
   | {
       kind: "applied";
@@ -190,7 +199,104 @@ export async function applyStepTransition(
     stepId: args.stepId,
     status: args.toStatus,
     stateVersion: nextStateVersion,
-  };
+  } satisfies StepTransitionResult;
+  await storeRuntimeReceipt(ctx, {
+    idempotencyKey: args.idempotencyKey,
+    scope: "steps:transition",
+    entityType: "step",
+    entityId: String(args.stepId),
+    response: {
+      kind: "noop",
+      stepId: args.stepId,
+      status: args.toStatus,
+      stateVersion: nextStateVersion,
+      reason: "already_applied",
+    } satisfies StepTransitionResult,
+  });
+  return result;
+}
+
+export async function applyRequiredStepTransition(
+  ctx: TransitionMutationCtx,
+  step: StepSnapshot,
+  args: Omit<StepTransitionArgs, "expectedStateVersion">,
+): Promise<Exclude<StepTransitionResult, { kind: "conflict" }>> {
+  const result = await applyStepTransition(ctx, step, {
+    ...args,
+    expectedStateVersion: getStepStateVersion(step),
+  });
+  if (result.kind === "conflict") {
+    throw new ConvexError(
+      `Step transition conflict for ${String(args.stepId)}: ${result.reason} (${result.currentStatus}@v${result.currentStateVersion})`,
+    );
+  }
+  return result;
+}
+
+export async function resetStepForRetry(
+  ctx: TransitionMutationCtx,
+  step: StepSnapshot,
+  args: StepRetryResetArgs,
+): Promise<StepTransitionResult> {
+  const receipt = await getRuntimeReceipt<StepTransitionResult>(ctx, args.idempotencyKey);
+  if (receipt) {
+    return receipt;
+  }
+
+  const currentStateVersion = getStepStateVersion(step);
+  if (currentStateVersion !== args.expectedStateVersion) {
+    return {
+      kind: "conflict",
+      stepId: args.stepId,
+      currentStatus: step.status,
+      currentStateVersion,
+      reason: "stale_state",
+    };
+  }
+
+  if (step.status === "deleted") {
+    throw new ConvexError(`Cannot reset deleted step ${String(args.stepId)} for retry`);
+  }
+
+  if (
+    step.status === args.toStatus &&
+    step.startedAt === undefined &&
+    step.completedAt === undefined &&
+    step.errorMessage === undefined
+  ) {
+    return {
+      kind: "noop",
+      stepId: args.stepId,
+      status: step.status,
+      stateVersion: currentStateVersion,
+      reason: "already_applied",
+    };
+  }
+
+  const now = new Date().toISOString();
+  const nextStateVersion = currentStateVersion + 1;
+  await ctx.db.patch(
+    args.stepId,
+    buildStepTransitionPatch(step, args.toStatus, undefined, nextStateVersion, now),
+  );
+
+  if (!args.suppressActivityLog) {
+    await logStepStatusChange(ctx, {
+      taskId: step.taskId,
+      stepTitle: step.title,
+      previousStatus: step.status,
+      nextStatus: args.toStatus,
+      assignedAgent: step.assignedAgent,
+      timestamp: now,
+    });
+  }
+
+  const result = {
+    kind: "applied",
+    stepId: args.stepId,
+    status: args.toStatus,
+    stateVersion: nextStateVersion,
+  } satisfies StepTransitionResult;
   await storeRuntimeReceipt(ctx, {
     idempotencyKey: args.idempotencyKey,
     scope: "steps:transition",

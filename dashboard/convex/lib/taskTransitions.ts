@@ -275,7 +275,7 @@ export async function applyTaskTransition(
     awaitingKickoff: nextAwaitingKickoff,
     reviewPhase: nextReviewPhase,
     stateVersion: nextStateVersion,
-  };
+  } satisfies TaskTransitionResult;
   await storeRuntimeReceipt(ctx, {
     idempotencyKey: args.idempotencyKey,
     scope: "tasks:transition",

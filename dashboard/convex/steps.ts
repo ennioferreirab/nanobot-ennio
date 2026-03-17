@@ -18,7 +18,9 @@ import { applyTaskTransition, getTaskStateVersion } from "./lib/taskTransitions"
 import { workflowStepTypeValidator } from "./schema";
 import { logActivity } from "./lib/workflowHelpers";
 
-function deriveHumanParentTaskStatus(
+type ParentTaskTransitionStatus = "assigned" | "in_progress" | "review" | "done" | "crashed";
+
+function deriveManualParentTaskStatus(
   steps: Array<{
     status?: string;
     workflowStepType?: string;
@@ -37,52 +39,19 @@ function deriveHumanParentTaskStatus(
   return "in_progress";
 }
 
-async function cascadeMergedSourceTasksToDone(
-  ctx: Pick<MutationCtx, "db">,
-  task: { _id: Id<"tasks">; isMergeTask?: boolean; mergeSourceTaskIds?: Id<"tasks">[] },
-  timestamp: string,
-): Promise<void> {
-  if (task.isMergeTask !== true || !Array.isArray(task.mergeSourceTaskIds)) return;
-
-  for (const sourceTaskId of task.mergeSourceTaskIds) {
-    const sourceTask = await ctx.db.get(sourceTaskId);
-    if (!sourceTask || sourceTask.mergedIntoTaskId !== task._id) continue;
-
-    await ctx.db.patch(sourceTaskId, {
-      status: "done",
-      updatedAt: timestamp,
-    });
-  }
-}
-
-async function reconcileParentTaskAfterStepChange(
+async function applyManualParentTaskTransition(
   ctx: MutationCtx,
   args: {
-    task: {
-      _id: Id<"tasks">;
-      status: string;
-      stateVersion?: number;
-      title?: string;
-      executionPlan?: unknown;
-      isMergeTask?: boolean;
-      mergeSourceTaskIds?: Id<"tasks">[];
-    };
+    task: Parameters<typeof applyTaskTransition>[1];
     step: {
       _id: Id<"steps">;
       taskId: Id<"tasks">;
-      title?: string;
-      description?: string;
-      assignedAgent: string;
-      order?: number;
-      status?: string;
     };
-    nextStepStatus: StepStatus;
     currentTaskSteps: StepWithDependencies[];
-    timestamp: string;
   },
 ): Promise<void> {
-  const { task, step, currentTaskSteps, timestamp } = args;
-  const nextTaskStatus = deriveHumanParentTaskStatus(currentTaskSteps);
+  const { task, step, currentTaskSteps } = args;
+  const nextTaskStatus = deriveManualParentTaskStatus(currentTaskSteps);
 
   if (task.status === nextTaskStatus) {
     return;
@@ -93,16 +62,14 @@ async function reconcileParentTaskAfterStepChange(
       ? `All ${currentTaskSteps.filter((taskStep) => taskStep.status !== "deleted").length} steps completed`
       : nextTaskStatus === "crashed"
         ? "One or more steps crashed"
-        : "Step state changed; task returned to in_progress";
+        : nextTaskStatus === "review"
+          ? "Workflow review is pending"
+          : "Step state changed; task returned to in_progress";
 
-  const transitionStatuses: string[] = [];
+  const transitionStatuses: ParentTaskTransitionStatus[] = [];
   let transitionStartStatus = task.status;
 
-  if (
-    transitionStartStatus === "done" &&
-    nextTaskStatus !== "assigned" &&
-    nextTaskStatus !== "review"
-  ) {
+  if (transitionStartStatus === "done" && nextTaskStatus !== "review") {
     transitionStatuses.push("assigned");
     transitionStartStatus = "assigned";
   }
@@ -114,12 +81,7 @@ async function reconcileParentTaskAfterStepChange(
     transitionStatuses.push(nextTaskStatus);
   }
 
-  let currentTask = task as {
-    _id: Id<"tasks">;
-    status: string;
-    stateVersion?: number;
-  };
-  let finalTransitionApplied = false;
+  let currentTask: Parameters<typeof applyTaskTransition>[1] = task;
 
   for (const [index, transitionStatus] of transitionStatuses.entries()) {
     const isFinalTransition = index === transitionStatuses.length - 1;
@@ -143,75 +105,10 @@ async function reconcileParentTaskAfterStepChange(
     }
     currentTask = {
       ...currentTask,
-      status: transitionStatus,
+      status: transitionStatus as Parameters<typeof applyTaskTransition>[1]["status"],
       stateVersion: transitionResult.stateVersion,
     };
-    finalTransitionApplied = isFinalTransition && transitionResult.kind === "applied";
   }
-
-  if (!finalTransitionApplied || nextTaskStatus !== "done") {
-    return;
-  }
-
-  await cascadeMergedSourceTasksToDone(
-    ctx,
-    task as { _id: Id<"tasks">; isMergeTask?: boolean; mergeSourceTaskIds?: Id<"tasks">[] },
-    timestamp,
-  );
-}
-
-function buildCurrentTaskSteps(
-  allTaskSteps: StepWithDependencies[],
-  args: {
-    stepId: Id<"steps">;
-    nextStepStatus: StepStatus;
-  },
-): StepWithDependencies[] {
-  return allTaskSteps.map((taskStep) =>
-    taskStep._id === args.stepId
-      ? {
-          _id: taskStep._id,
-          status: args.nextStepStatus,
-          blockedBy: taskStep.blockedBy,
-          workflowStepType: taskStep.workflowStepType,
-        }
-      : {
-          _id: taskStep._id,
-          status: taskStep.status as StepStatus,
-          blockedBy: taskStep.blockedBy,
-          workflowStepType: taskStep.workflowStepType,
-        },
-  );
-}
-
-async function reconcileParentTaskForStepTransition(
-  ctx: MutationCtx,
-  args: {
-    step: Parameters<typeof applyStepTransition>[1];
-    nextStepStatus: StepStatus;
-    timestamp: string;
-  },
-): Promise<void> {
-  const task = await ctx.db.get(args.step.taskId);
-  if (!task) {
-    throw new ConvexError("Parent task not found");
-  }
-
-  const allTaskSteps = await ctx.db
-    .query("steps")
-    .withIndex("by_taskId", (q) => q.eq("taskId", args.step.taskId))
-    .collect();
-
-  await reconcileParentTaskAfterStepChange(ctx, {
-    task,
-    step: args.step,
-    nextStepStatus: args.nextStepStatus,
-    currentTaskSteps: buildCurrentTaskSteps(allTaskSteps, {
-      stepId: args.step._id,
-      nextStepStatus: args.nextStepStatus,
-    }),
-    timestamp: args.timestamp,
-  });
 }
 
 // Re-export pure functions for testability and backward compatibility
@@ -412,7 +309,6 @@ export const updateStatus = internalMutation({
       };
     }
 
-    const timestamp = new Date().toISOString();
     const transitionResult = await applyStepTransition(
       ctx,
       step as Parameters<typeof applyStepTransition>[1],
@@ -430,12 +326,6 @@ export const updateStatus = internalMutation({
     if (transitionResult.kind !== "applied") {
       return transitionResult;
     }
-
-    await reconcileParentTaskForStepTransition(ctx, {
-      step: step as Parameters<typeof applyStepTransition>[1],
-      nextStepStatus: args.status as StepStatus,
-      timestamp,
-    });
 
     return transitionResult;
   },
@@ -464,12 +354,6 @@ export const transition = internalMutation({
     if (transitionResult.kind !== "applied") {
       return transitionResult;
     }
-
-    await reconcileParentTaskForStepTransition(ctx, {
-      step: step as Parameters<typeof applyStepTransition>[1],
-      nextStepStatus: args.toStatus as StepStatus,
-      timestamp: new Date().toISOString(),
-    });
     return transitionResult;
   },
 });
@@ -605,12 +489,10 @@ export const manualMoveStep = mutation({
       }
     }
 
-    await reconcileParentTaskAfterStepChange(ctx, {
+    await applyManualParentTaskTransition(ctx, {
       task,
       step,
-      nextStepStatus: args.newStatus as StepStatus,
       currentTaskSteps,
-      timestamp,
     });
 
     return step.taskId;
@@ -691,15 +573,19 @@ export const retryStep = mutation({
       timestamp,
     });
 
-    await applyTaskTransition(ctx, retryingTaskSnapshot, {
-      taskId: step.taskId,
-      fromStatus: retryingTaskSnapshot.status,
-      expectedStateVersion: getTaskStateVersion(retryingTaskSnapshot),
-      toStatus: "in_progress",
-      reason: `Retry resumed for step ${String(args.stepId)}`,
-      idempotencyKey: `retry-task:${String(step.taskId)}:${getTaskStateVersion(retryingTaskSnapshot)}:${retryingTaskSnapshot.status}:in_progress`,
-      suppressActivityLog: true,
-    });
+    await applyTaskTransition(
+      ctx,
+      retryingTaskSnapshot as Parameters<typeof applyTaskTransition>[1],
+      {
+        taskId: step.taskId,
+        fromStatus: retryingTaskSnapshot.status,
+        expectedStateVersion: getTaskStateVersion(retryingTaskSnapshot),
+        toStatus: "in_progress",
+        reason: `Retry resumed for step ${String(args.stepId)}`,
+        idempotencyKey: `retry-task:${String(step.taskId)}:${getTaskStateVersion(retryingTaskSnapshot)}:${retryingTaskSnapshot.status}:in_progress`,
+        suppressActivityLog: true,
+      },
+    );
 
     await ctx.db.patch(step.taskId, {
       stalledAt: undefined,
@@ -955,13 +841,7 @@ export const updateStep = mutation({
         reason: "Blocked-by dependencies updated",
         idempotencyKey: `update-step:${String(args.stepId)}:${getStepStateVersion(step)}:${step.status}:${nextStepStatus}`,
       });
-      if (transitionResult.kind === "applied") {
-        await reconcileParentTaskForStepTransition(ctx, {
-          step: stepSnapshot,
-          nextStepStatus,
-          timestamp: new Date().toISOString(),
-        });
-      }
+      void transitionResult;
     }
 
     // Also update the executionPlan JSON on the task
@@ -1016,11 +896,6 @@ export const deleteStep = mutation({
     });
     await ctx.db.patch(args.stepId, {
       deletedAt: timestamp,
-    });
-    await reconcileParentTaskForStepTransition(ctx, {
-      step: step as Parameters<typeof applyStepTransition>[1],
-      nextStepStatus: "deleted",
-      timestamp,
     });
   },
 });

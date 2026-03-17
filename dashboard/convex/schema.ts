@@ -137,7 +137,7 @@ export default defineSchema({
     reviewPhase: v.optional(
       v.union(v.literal("plan_review"), v.literal("execution_pause"), v.literal("final_approval")),
     ),
-    stateVersion: v.number(),
+    stateVersion: v.optional(v.number()),
     deletedAt: v.optional(v.string()),
     previousStatus: v.optional(v.string()),
     activeCronJobId: v.optional(v.string()),
@@ -188,7 +188,7 @@ export default defineSchema({
     blockedBy: v.optional(v.array(v.id("steps"))),
     parallelGroup: v.number(),
     order: v.number(),
-    stateVersion: v.number(),
+    stateVersion: v.optional(v.number()),
     createdAt: v.string(),
     deletedAt: v.optional(v.string()),
     startedAt: v.optional(v.string()),

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 
 import {
   isValidTaskTransition,
@@ -251,6 +252,14 @@ describe("logTaskCreated", () => {
 // ---------------------------------------------------------------------------
 
 describe("markPlanStepsCompleted", () => {
+  it("accepts the Convex mutation db shape", async () => {
+    const ctx = {
+      db: { patch: vi.fn(async () => undefined) },
+    } as unknown as Pick<MutationCtx, "db">;
+
+    await markPlanStepsCompleted(ctx, taskId, {});
+  });
+
   it("does not rewrite executionPlan when a task completes", async () => {
     const patch = vi.fn(async () => undefined);
     const ctx = { db: { patch } };

@@ -9,6 +9,7 @@
  */
 
 import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import {
   isTransitionAllowed,
   logActivity,
@@ -186,8 +187,16 @@ export async function logTaskCreated(
 // Execution Plan Helpers
 // ---------------------------------------------------------------------------
 
+type TaskLifecycleCtx =
+  | Pick<MutationCtx, "db">
+  | {
+      db: {
+        patch: (...args: never[]) => Promise<void>;
+      };
+    };
+
 export async function markPlanStepsCompleted(
-  _ctx: { db: { patch: (id: Id<"tasks">, value: unknown) => Promise<void> } },
+  _ctx: TaskLifecycleCtx,
   _taskId: Id<"tasks">,
   _task: { executionPlan?: { steps?: Array<Record<string, unknown>> } },
 ): Promise<void> {

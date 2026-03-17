@@ -352,7 +352,7 @@ describe("updateStatus", () => {
     )._handler;
   }
 
-  it("moves the parent task to done when the last active agent step completes", async () => {
+  it("does not move the parent task when the last active agent step completes", async () => {
     const handler = getHandler();
     const patchedById: Record<string, Record<string, unknown>> = {};
     const inserted: Array<{ table: string; value: Record<string, unknown> }> = [];
@@ -425,19 +425,7 @@ describe("updateStatus", () => {
       status: "completed",
       stateVersion: 1,
     });
-    expect(patchedById["task-1"]).toMatchObject({
-      status: "done",
-      stateVersion: 3,
-    });
-    expect(patchedById["task-1"]).not.toHaveProperty("executionPlan");
-    expect(
-      inserted.some(
-        ({ table, value }) =>
-          table === "activities" &&
-          value.eventType === "task_completed" &&
-          String(value.description).includes("All 1 steps completed"),
-      ),
-    ).toBe(true);
+    expect(patchedById["task-1"]).toBeUndefined();
   });
 });
 
@@ -983,11 +971,15 @@ describe("batchCreate", () => {
     });
 
     expect(created).toEqual(["step-1", "step-2"]);
-    expect(records.get("step-1").status).toBe("assigned");
-    expect(records.get("step-1").stateVersion).toBe(0);
-    expect(records.get("step-2").status).toBe("blocked");
-    expect(records.get("step-2").stateVersion).toBe(0);
-    expect(records.get("step-2").blockedBy).toEqual(["step-1"]);
+    const firstStep = records.get("step-1");
+    const secondStep = records.get("step-2");
+    expect(firstStep).toBeDefined();
+    expect(secondStep).toBeDefined();
+    expect(firstStep!.status).toBe("assigned");
+    expect(firstStep!.stateVersion).toBe(0);
+    expect(secondStep!.status).toBe("blocked");
+    expect(secondStep!.stateVersion).toBe(0);
+    expect(secondStep!.blockedBy).toEqual(["step-1"]);
   });
 
   it("rejects unknown dependency temp IDs", async () => {
@@ -1239,7 +1231,7 @@ describe("transition", () => {
     )._handler;
   }
 
-  it("reconciles parent task status for canonical step transitions", async () => {
+  it("does not reconcile parent task status for canonical step transitions", async () => {
     const handler = getHandler();
     const patchedById: Record<string, Record<string, unknown>> = {};
 
@@ -1306,11 +1298,7 @@ describe("transition", () => {
       status: "completed",
       stateVersion: 3,
     });
-    expect(patchedById["task-1"]).toMatchObject({
-      status: "done",
-      stateVersion: 5,
-    });
-    expect(patchedById["task-1"]).not.toHaveProperty("executionPlan");
+    expect(patchedById["task-1"]).toBeUndefined();
   });
 
   it("persists one receipt for a successful step transition replay", async () => {

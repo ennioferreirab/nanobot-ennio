@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { approveTask } from "./taskReview";
+import { approveTask, retryTask } from "./taskReview";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -106,5 +106,61 @@ describe("approveTask", () => {
     await approveTask({ db }, "task-1" as never);
 
     expect(patch).toHaveBeenCalledWith("task-1", expect.objectContaining({ status: "done" }));
+  });
+});
+
+describe("retryTask", () => {
+  it("resets materialized steps with canonical lifecycle bookkeeping", async () => {
+    const task = {
+      _id: "task-1",
+      title: "Retry task",
+      status: "crashed",
+      stateVersion: 2,
+      executionPlan: { steps: [{ title: "One" }, { title: "Two" }] },
+    };
+    const steps = [
+      {
+        _id: "step-1",
+        taskId: "task-1",
+        title: "One",
+        assignedAgent: "nanobot",
+        status: "completed",
+        stateVersion: 4,
+      },
+      {
+        _id: "step-2",
+        taskId: "task-1",
+        title: "Two",
+        assignedAgent: "nanobot",
+        status: "crashed",
+        stateVersion: 1,
+        errorMessage: "boom",
+      },
+    ];
+    const patch = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => "new-id");
+    const get = vi.fn(async () => task);
+    const collect = vi.fn(async () => steps);
+    const withIndex = vi.fn(() => ({ collect }));
+    const query = vi.fn(() => ({ withIndex }));
+    const db = { get, patch, insert, query } as never;
+
+    await retryTask({ db }, "task-1" as never);
+
+    expect(patch).toHaveBeenCalledWith(
+      "step-1",
+      expect.objectContaining({
+        status: "assigned",
+        stateVersion: 5,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "step-2",
+      expect.objectContaining({
+        status: "assigned",
+        stateVersion: 2,
+        errorMessage: undefined,
+      }),
+    );
   });
 });
