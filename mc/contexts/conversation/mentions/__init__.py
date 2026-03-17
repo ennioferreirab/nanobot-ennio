@@ -7,7 +7,7 @@ from mc.contexts.conversation.mentions.handler import (
     handle_mention,
     is_mention_message,
 )
-from mc.contexts.conversation.mentions.watcher import MentionWatcher, POLL_INTERVAL_SECONDS
+from mc.contexts.conversation.mentions.watcher import POLL_INTERVAL_SECONDS, MentionWatcher
 
 __all__ = [
     "extract_mentions",
