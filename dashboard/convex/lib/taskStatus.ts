@@ -3,6 +3,7 @@ import { ConvexError } from "convex/values";
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 
+import { applyRequiredTaskTransition } from "./taskTransitions";
 import { logActivity } from "./workflowHelpers";
 
 export async function pauseTaskExecution(
@@ -14,19 +15,21 @@ export async function pauseTaskExecution(
     throw new ConvexError(`Cannot pause task in status '${task.status}'. Expected: in_progress`);
   }
 
-  const now = new Date().toISOString();
-
-  await ctx.db.patch(taskId, {
-    status: "review",
+  await applyRequiredTaskTransition(ctx, task, {
+    taskId,
+    fromStatus: "in_progress",
+    toStatus: "review",
     reviewPhase: "execution_pause",
-    updatedAt: now,
+    reason: "User paused task execution",
+    idempotencyKey: `task:${String(taskId)}:${task.stateVersion ?? 0}:pause-execution`,
+    suppressActivityLog: true,
   });
 
   await logActivity(ctx, {
     taskId,
     eventType: "review_requested",
     description: "User paused task execution",
-    timestamp: now,
+    timestamp: new Date().toISOString(),
   });
 
   return taskId;
@@ -52,23 +55,31 @@ export async function resumeTaskExecution(
     );
   }
 
-  const now = new Date().toISOString();
-  const patch: Record<string, unknown> = {
-    status: "in_progress",
-    awaitingKickoff: undefined,
+  await applyRequiredTaskTransition(ctx, task, {
+    taskId,
+    fromStatus: "review",
+    toStatus: "in_progress",
     reviewPhase: undefined,
-    updatedAt: now,
-  };
+    awaitingKickoff: false,
+    reason: "User resumed task execution",
+    idempotencyKey: `task:${String(taskId)}:${task.stateVersion ?? 0}:resume-execution`,
+    suppressActivityLog: true,
+  });
+
+  const patch: Record<string, unknown> = {};
   if (executionPlan !== undefined) {
     patch.executionPlan = executionPlan;
   }
-  await ctx.db.patch(taskId, patch);
+  if (Object.keys(patch).length > 0) {
+    patch.updatedAt = new Date().toISOString();
+    await ctx.db.patch(taskId, patch);
+  }
 
   await logActivity(ctx, {
     taskId,
     eventType: "task_started",
     description: "User resumed task execution",
-    timestamp: now,
+    timestamp: new Date().toISOString(),
   });
 
   return taskId;
@@ -91,7 +102,6 @@ export async function approveKickOffTask(
     throw new ConvexError("Cannot kick off task: requires awaitingKickoff or isManual");
   }
 
-  const now = new Date().toISOString();
   const plan = executionPlan ?? task.executionPlan;
   const planGeneratedAt =
     typeof plan === "object" &&
@@ -101,16 +111,25 @@ export async function approveKickOffTask(
       ? plan.generatedAt
       : undefined;
 
-  const patch: Record<string, unknown> = {
-    status: "in_progress",
-    awaitingKickoff: undefined,
+  await applyRequiredTaskTransition(ctx, task, {
+    taskId,
+    fromStatus: "review",
+    toStatus: "in_progress",
     reviewPhase: undefined,
-    updatedAt: now,
-  };
+    awaitingKickoff: false,
+    reason: "User approved plan and kicked off task",
+    idempotencyKey: `task:${String(taskId)}:${task.stateVersion ?? 0}:approve-kickoff`,
+    suppressActivityLog: true,
+  });
+
+  const patch: Record<string, unknown> = {};
   if (executionPlan !== undefined) {
     patch.executionPlan = executionPlan;
   }
-  await ctx.db.patch(taskId, patch);
+  if (Object.keys(patch).length > 0) {
+    patch.updatedAt = new Date().toISOString();
+    await ctx.db.patch(taskId, patch);
+  }
 
   if (planGeneratedAt) {
     await ctx.db.insert("messages", {
@@ -124,7 +143,7 @@ export async function approveKickOffTask(
         planGeneratedAt,
         decision: "approved",
       },
-      timestamp: now,
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -137,7 +156,7 @@ export async function approveKickOffTask(
     taskId,
     eventType: "task_started",
     description: `User approved plan and kicked off task (${stepCount} step${stepCount === 1 ? "" : "s"})`,
-    timestamp: now,
+    timestamp: new Date().toISOString(),
   });
 
   return taskId;

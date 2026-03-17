@@ -9,6 +9,7 @@ import {
   interactiveSessionScopeKindValidator,
   interactiveSessionStatusValidator,
 } from "./schema";
+import { applyRequiredTaskTransition } from "./lib/taskTransitions";
 
 function omitAttachToken<T extends { attachToken?: string }>(session: T): Omit<T, "attachToken"> {
   const safeSession = { ...session };
@@ -288,9 +289,13 @@ export const requestHumanTakeover = mutation({
       manualTakeoverAt: timestamp,
       updatedAt: timestamp,
     });
-    await ctx.db.patch(task._id, {
-      status: "review",
-      updatedAt: timestamp,
+    await applyRequiredTaskTransition(ctx, task, {
+      taskId: task._id,
+      fromStatus: task.status,
+      toStatus: "review",
+      reason: `Human operator took over the Live session for step "${step.title}".`,
+      idempotencyKey: `task:${String(task._id)}:${task.stateVersion ?? 0}:human-takeover`,
+      suppressActivityLog: true,
     });
     await ctx.db.patch(step._id, {
       status: "review",
@@ -332,9 +337,13 @@ export const resumeAgentControl = mutation({
       controlMode: "agent",
       updatedAt: timestamp,
     });
-    await ctx.db.patch(task._id, {
-      status: "in_progress",
-      updatedAt: timestamp,
+    await applyRequiredTaskTransition(ctx, task, {
+      taskId: task._id,
+      fromStatus: task.status,
+      toStatus: "in_progress",
+      reason: `Live session returned to agent control for step "${step.title}".`,
+      idempotencyKey: `task:${String(task._id)}:${task.stateVersion ?? 0}:resume-agent-control`,
+      suppressActivityLog: true,
     });
     await ctx.db.patch(step._id, {
       status: "running",
