@@ -10,13 +10,24 @@
 
 All code (variables, functions, classes, comments, commit messages, docstrings) must be written in English.
 
-## Convex Local Backend
+## Stack Lifecycle
 
-This project runs Convex locally (`npx convex dev --local`). Only **one instance** of the local backend is allowed at a time — it binds to port 3210 exclusively. If you see the error `A local backend is still running on port 3210`, do NOT try to start a second instance. Instead, restart the existing one.
+Use `make start` / `make down` to manage the stack. Use `make validate` for pre-commit checks (no Convex needed). Use `make takeover` from a worktree to steal the Convex instance. See [`building_the_project.md`](agent_docs/building_the_project.md) for full details.
 
-**Implications for worktrees:** When working in a git worktree, the Convex schema and functions are deployed to the same local backend as the main tree. Do not run `npx convex dev --local` from a worktree — it will fail. Any Convex function changes in a worktree must be deployed by restarting the single local backend instance from the main tree, or by stopping the existing instance first (`lsof -ti:3210 | xargs kill`) and starting it from the worktree.
+**Convex singleton:** only one local backend can run (port 3210). `make start` kills any existing instance before starting. Never run `npx convex dev --local` directly.
 
-**`make start` must account for this:** If a local backend is already running, the start command should restart it rather than attempt to launch a parallel instance.
+## Development Method
+
+All features follow the **BMAD method**. Use `/bmad-help` to see next steps. The phases are:
+
+1. **Analysis** (optional) — Brainstorm, research, product brief
+2. **Planning** (required) — PRD → UX design
+3. **Solutioning** (required) — Architecture → Epics & Stories → Implementation Readiness check
+4. **Implementation** (per story cycle) — Sprint Plan → Create Story → Validate Story → Dev Story → Code Review → next story
+
+- Artifacts go to `_bmad-output/` (planning and implementation)
+- BMAD engine lives in `_bmad/` — do not edit
+- Legacy artifacts from prior cycles are in `bmad_history/` (read-only reference)
 
 ## Worktree Lifecycle
 
@@ -29,11 +40,22 @@ git worktree remove .claude/worktrees/<name>
 git worktree prune
 ```
 
-## Code Conventions
+## Agent Docs
 
-Follow the conventions documented in `agent_docs/code_conventions/`:
+Before starting work, scan the list below and **read whichever docs are relevant** to the task at hand. You do not need to read all of them — pick the ones that apply.
 
-- [`python.md`](agent_docs/code_conventions/python.md) — `mc/` and `tests/mc/`
-- [`convex.md`](agent_docs/code_conventions/convex.md) — `dashboard/convex/`
-- [`typescript.md`](agent_docs/code_conventions/typescript.md) — `dashboard/` (excluding `convex/`)
-- [`cross_service_naming.md`](agent_docs/code_conventions/cross_service_naming.md) — shared naming contract between all layers
+`agent_docs/` is the **canonical index** of project documentation for agents. **Only permanent reference docs belong here.** Do NOT add ephemeral files (audit reports, one-off analyses, migration checklists, plan artifacts) to this directory or to the table below.
+
+`agent_docs/` contains:
+
+| File | Scope | Description |
+|------|-------|-------------|
+| [`building_the_project.md`](agent_docs/building_the_project.md) | All layers | Prerequisites, setup, startup sequence, ports, baseline checks, npm scripts |
+| [`service_architecture.md`](agent_docs/service_architecture.md) | All layers | Runtime services, processes, communication protocols, IPC, env vars, and task execution lifecycle |
+| [`service_communication_patterns.md`](agent_docs/service_communication_patterns.md) | All layers | IPC socket protocol, Convex bridge, MCP bridge, polling loops, dashboard comm, inter-agent patterns, hooks |
+| [`database_schema.md`](agent_docs/database_schema.md) | `dashboard/convex/` | All 26 Convex tables with fields, types, indexes, and relationships |
+| [`code_conventions/python.md`](agent_docs/code_conventions/python.md) | `mc/`, `tests/mc/` | Python tooling, naming, type hints, ruff rules |
+| [`code_conventions/convex.md`](agent_docs/code_conventions/convex.md) | `dashboard/convex/` | Convex function patterns, lib modules, testing |
+| [`code_conventions/typescript.md`](agent_docs/code_conventions/typescript.md) | `dashboard/` (excl. `convex/`) | React/Next.js patterns, feature modules, hooks |
+| [`code_conventions/cross_service_naming.md`](agent_docs/code_conventions/cross_service_naming.md) | All layers | Shared naming contract: key conversion, status values, entity types |
+| [`running_tests.md`](agent_docs/running_tests.md) | All layers | When to test, what to skip, testing pipeline, commands, quality checklist |

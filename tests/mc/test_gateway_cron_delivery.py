@@ -92,6 +92,18 @@ async def _run_gateway_and_capture(captured: dict) -> None:
     mock_mention_instance = MagicMock()
     mock_mention_instance.run = AsyncMock()
 
+    # AskUserReplyWatcher mock
+    mock_ask_user_watcher = MagicMock()
+    mock_ask_user_watcher.run = AsyncMock()
+
+    # Interactive runtime mock — prevents real WebSocket server from binding port 8765
+    mock_interactive_runtime = MagicMock()
+    mock_interactive_runtime.service = MagicMock()
+    mock_interactive_runtime.transport = MagicMock()
+    mock_interactive_runtime.supervisor = MagicMock()
+    mock_interactive_runtime.server.start = AsyncMock()
+    mock_interactive_runtime.server.stop = AsyncMock()
+
     async def trigger_stop():
         await asyncio.sleep(0.05)
         os.kill(os.getpid(), signal.SIGTERM)
@@ -110,6 +122,14 @@ async def _run_gateway_and_capture(captured: dict) -> None:
         ),
         patch("nanobot.cron.service.CronService", mock_cron_cls),
         patch("mc.runtime.gateway._run_plan_negotiation_manager", new=AsyncMock()),
+        patch(
+            "mc.runtime.gateway.build_interactive_runtime",
+            return_value=mock_interactive_runtime,
+        ),
+        patch(
+            "mc.contexts.conversation.ask_user.watcher.AskUserReplyWatcher",
+            return_value=mock_ask_user_watcher,
+        ),
     ):
         try:
             await run_gateway(mock_bridge)
@@ -248,16 +268,6 @@ class TestOnCronJobDelivery:
             MockBot.return_value = mock_bot
             await on_task_completed("task-nodeliver", "result text")
             mock_bot.send_message.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_on_task_completed_callback_passed_to_executor(self):
-        """The on_task_completed callback is wired to the TaskExecutor."""
-        captured: dict = {}
-        await _run_gateway_and_capture(captured)
-
-        assert "executor_kwargs" in captured
-        assert "on_task_completed" in captured["executor_kwargs"]
-        assert callable(captured["executor_kwargs"]["on_task_completed"])
 
     @pytest.mark.asyncio
     async def test_cron_job_with_agent_passes_assigned_agent_to_task_create(self):

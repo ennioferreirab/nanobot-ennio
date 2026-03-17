@@ -125,17 +125,6 @@ class TestResolveBoardWorkspace:
 
 
 class TestBoardSessionKey:
-    def test_session_key_format_with_board(self):
-        board_name = "project-alpha"
-        agent_name = "dev-agent"
-        expected = f"mc:board:{board_name}:task:{agent_name}"
-        assert expected == f"mc:board:{board_name}:task:{agent_name}"
-
-    def test_session_key_without_board(self):
-        agent_name = "dev-agent"
-        expected = f"mc:task:{agent_name}"
-        assert expected == f"mc:task:{agent_name}"
-
     async def test_run_agent_uses_board_session_key(self, tmp_path):
         """_run_agent_on_task uses board-scoped session key when board_name provided."""
         from unittest.mock import AsyncMock, patch
@@ -144,12 +133,19 @@ class TestBoardSessionKey:
 
         captured_session_key = {}
 
-        async def fake_process_direct(content, session_key, channel, chat_id, task_id=None):
+        direct_result = MagicMock()
+        direct_result.content = "done"
+        direct_result.is_error = False
+        direct_result.error_message = None
+
+        async def fake_process_direct_result(
+            content, session_key, channel, chat_id, task_id=None, on_progress=None
+        ):
             captured_session_key["key"] = session_key
-            return "done"
+            return direct_result
 
         mock_loop = MagicMock()
-        mock_loop.process_direct = fake_process_direct
+        mock_loop.process_direct_result = fake_process_direct_result
         mock_loop.end_task_session = AsyncMock()
 
         with (

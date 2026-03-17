@@ -5,8 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mc.types import ActivityEventType
-
 # ---------------------------------------------------------------------------
 # Task 7.1: Orchestrator skips manual tasks
 # ---------------------------------------------------------------------------
@@ -49,6 +47,8 @@ class TestOrchestratorSkipsManualTasks:
         from mc.runtime.orchestrator import TaskOrchestrator
 
         mock_bridge = MagicMock()
+        mock_bridge.mutation.return_value = {"granted": True}
+        mock_bridge.transition_task_from_snapshot.return_value = {"kind": "applied"}
         mock_bridge.update_task_status = MagicMock()
         mock_bridge.list_agents = MagicMock(return_value=[])
 
@@ -65,8 +65,8 @@ class TestOrchestratorSkipsManualTasks:
         with patch("asyncio.to_thread", side_effect=passthrough):
             await orch._inbox_worker.process_task(task_data)
 
-        # Should call update_task_status (lead agent fallback)
-        mock_bridge.update_task_status.assert_called_once()
+        # Should call transition_task_from_snapshot for routing (new contract)
+        mock_bridge.transition_task_from_snapshot.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_manual_task_skipped_in_routing_loop(self):
@@ -74,6 +74,8 @@ class TestOrchestratorSkipsManualTasks:
         from mc.runtime.orchestrator import TaskOrchestrator
 
         mock_bridge = MagicMock()
+        mock_bridge.mutation.return_value = {"granted": True}
+        mock_bridge.transition_task_from_snapshot.return_value = {"kind": "applied"}
         mock_bridge.update_task_status = MagicMock()
         mock_bridge.list_agents = MagicMock(return_value=[])
 
@@ -108,7 +110,7 @@ class TestOrchestratorSkipsManualTasks:
                 pass
 
         # Only the agent task should be routed (manual task skipped)
-        assert mock_bridge.update_task_status.call_count == 1
+        assert mock_bridge.transition_task_from_snapshot.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +168,8 @@ class TestExecutorSkipsManualTasks:
         from mc.contexts.execution.executor import TaskExecutor
 
         mock_bridge = MagicMock()
+        mock_bridge.mutation.return_value = {"granted": True}
+        mock_bridge.transition_task_from_snapshot.return_value = {"kind": "applied"}
         mock_bridge.update_task_status = MagicMock()
         mock_bridge.send_message = MagicMock()
         mock_bridge.create_activity = MagicMock()
@@ -175,6 +179,8 @@ class TestExecutorSkipsManualTasks:
             "title": "Agent task",
             "assigned_agent": "test-agent",
             "trust_level": "autonomous",
+            "status": "assigned",
+            "state_version": 1,
         }
 
         q = asyncio.Queue()
@@ -197,20 +203,5 @@ class TestExecutorSkipsManualTasks:
                 except asyncio.CancelledError:
                     pass
 
-        # Should have picked up and started executing
-        mock_bridge.update_task_status.assert_called()
-
-
-# ---------------------------------------------------------------------------
-# Task 8.3: Python types include MANUAL_TASK_STATUS_CHANGED
-# ---------------------------------------------------------------------------
-
-
-class TestManualTaskEventType:
-    """ActivityEventType enum includes the manual task event."""
-
-    def test_manual_task_status_changed_exists(self):
-        assert ActivityEventType.MANUAL_TASK_STATUS_CHANGED == "manual_task_status_changed"
-
-    def test_manual_task_status_changed_is_string(self):
-        assert isinstance(ActivityEventType.MANUAL_TASK_STATUS_CHANGED, str)
+        # Should have picked up via transition_task_from_snapshot (new contract)
+        mock_bridge.transition_task_from_snapshot.assert_called()

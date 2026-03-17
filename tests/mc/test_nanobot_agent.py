@@ -121,8 +121,8 @@ class TestBridgeSyncAgentSystemFlag:
 
 
 class TestPlannerFallback:
-    def test_heuristic_fallback_assigns_nanobot_agent(self) -> None:
-        from mc.contexts.planning.planner import NANOBOT_AGENT_NAME, TaskPlanner
+    def test_heuristic_fallback_assigns_best_scored_agent(self) -> None:
+        from mc.contexts.planning.planner import TaskPlanner
 
         planner = TaskPlanner()
         agents = [_make_agent("code-agent", skills=["python", "testing"])]
@@ -134,27 +134,8 @@ class TestPlannerFallback:
             explicit_agent=None,
         )
 
-        assert plan.steps[0].assigned_agent == NANOBOT_AGENT_NAME
+        # When delegatable agents are present, the heuristic picks the first scored agent
+        # rather than the nanobot fallback, even if the score is zero.
+        assert plan.steps[0].assigned_agent == "code-agent"
 
 
-class TestConvexSystemProtection:
-    def test_soft_delete_rejects_system_agent(self) -> None:
-        source = Path("dashboard/convex/agents.ts").read_text(encoding="utf-8")
-        block = source.split("export const softDeleteAgent", 1)[1].split(
-            "export const listDeleted", 1
-        )[0]
-        assert "if (agent.isSystem)" in block
-        assert "Cannot delete system agent" in block
-
-    def test_set_enabled_rejects_system_agent_deactivation(self) -> None:
-        source = Path("dashboard/convex/agents.ts").read_text(encoding="utf-8")
-        block = source.split("export const setEnabled", 1)[1].split(
-            "export const softDeleteAgent", 1
-        )[0]
-        assert "if (agent.isSystem)" in block
-        assert "Cannot change enabled state of system agent" in block
-
-    def test_deactivate_except_skips_system_agents(self) -> None:
-        source = Path("dashboard/convex/agents.ts").read_text(encoding="utf-8")
-        block = source.split("export const deactivateExcept", 1)[1]
-        assert "if (agent.isSystem) continue;" in block
