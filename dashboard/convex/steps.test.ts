@@ -1159,6 +1159,95 @@ describe("updateStatus", () => {
       status: "completed",
     });
   });
+
+  it("preserves parent workflow review when another human step is manually moved", async () => {
+    const handler = (
+      manualMoveStep as unknown as {
+        _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
+      }
+    )._handler;
+    const patchedById: Record<string, Record<string, unknown>> = {};
+
+    const task = {
+      _id: "task-1",
+      title: "Workflow review task",
+      status: "review",
+      stateVersion: 3,
+      executionPlan: {
+        steps: [
+          {
+            tempId: "step_1",
+            title: "Human follow-up",
+            description: "Do the adjustment",
+            assignedAgent: "human",
+            blockedBy: [],
+            parallelGroup: 1,
+            order: 1,
+            status: "running",
+          },
+          {
+            tempId: "step_2",
+            title: "Formal review",
+            description: "Approve the result",
+            assignedAgent: "human",
+            blockedBy: [],
+            parallelGroup: 2,
+            order: 2,
+            status: "review",
+          },
+        ],
+      },
+    };
+
+    const movedStep = {
+      _id: "step-1",
+      taskId: "task-1",
+      title: "Human follow-up",
+      description: "Do the adjustment",
+      status: "running",
+      assignedAgent: "human",
+      order: 1,
+      stateVersion: 2,
+    };
+    const reviewStep = {
+      _id: "step-2",
+      taskId: "task-1",
+      title: "Formal review",
+      description: "Approve the result",
+      status: "review",
+      assignedAgent: "human",
+      workflowStepType: "review",
+      order: 2,
+      stateVersion: 1,
+    };
+
+    const ctx = {
+      db: {
+        get: async (id: string) => {
+          if (id === "step-1") return movedStep;
+          if (id === "task-1") return task;
+          return null;
+        },
+        patch: async (id: string, value: Record<string, unknown>) => {
+          patchedById[id] = { ...(patchedById[id] ?? {}), ...value };
+        },
+        insert: async () => "activity-1",
+        query: () => ({
+          withIndex: () => ({
+            collect: async () => [movedStep, reviewStep],
+          }),
+        }),
+      },
+    };
+
+    await expect(handler(ctx, { stepId: "step-1", newStatus: "assigned" })).resolves.toBe("task-1");
+
+    expect(patchedById["step-1"]).toMatchObject({
+      status: "assigned",
+      stateVersion: 3,
+    });
+    expect(patchedById["task-1"]?.status).toBeUndefined();
+  });
 });
 
 describe("transition", () => {
@@ -1370,6 +1459,36 @@ describe("deleteStep", () => {
       order: 1,
       createdAt: "2026-03-08T12:00:00Z",
     };
+    const task = {
+      _id: taskId,
+      title: "Delete task",
+      status: "in_progress",
+      stateVersion: 1,
+      executionPlan: {
+        steps: [
+          {
+            tempId: "step_1",
+            title: "Run integration",
+            description: "Execute workflow",
+            assignedAgent: "nanobot",
+            blockedBy: [],
+            parallelGroup: 1,
+            order: 1,
+            status: "running",
+          },
+          {
+            tempId: "step_2",
+            title: "Finalize",
+            description: "Wait for previous step",
+            assignedAgent: "nanobot",
+            blockedBy: ["step-1"],
+            parallelGroup: 2,
+            order: 2,
+            status: "blocked",
+          },
+        ],
+      },
+    };
     const blockedSibling = {
       _id: "step-2",
       taskId,
@@ -1387,6 +1506,7 @@ describe("deleteStep", () => {
       db: {
         get: async (id: string) => {
           if (id === "step-1") return runningStep;
+          if (id === taskId) return task;
           return null;
         },
         patch: async (id: string, value: Record<string, unknown>) => {
@@ -1423,6 +1543,72 @@ describe("deleteStep", () => {
           String(value.description).includes("deleted"),
       ),
     ).toBe(true);
+  });
+
+  it("syncs the parent execution plan when a step is deleted", async () => {
+    const handler = getHandler();
+    const patchedById: Record<string, Record<string, unknown>> = {};
+
+    const task = {
+      _id: "task-1",
+      title: "Delete step task",
+      status: "in_progress",
+      stateVersion: 4,
+      executionPlan: {
+        steps: [
+          {
+            tempId: "step_1",
+            title: "Run integration",
+            description: "Execute workflow",
+            assignedAgent: "nanobot",
+            blockedBy: [],
+            parallelGroup: 1,
+            order: 1,
+            status: "running",
+          },
+        ],
+      },
+    };
+    const step = {
+      _id: "step-1",
+      taskId: "task-1",
+      title: "Run integration",
+      description: "Execute workflow",
+      assignedAgent: "nanobot",
+      status: "running",
+      order: 1,
+      stateVersion: 2,
+    };
+
+    const ctx = {
+      db: {
+        get: async (id: string) => {
+          if (id === "step-1") return step;
+          if (id === "task-1") return task;
+          return null;
+        },
+        patch: async (id: string, value: Record<string, unknown>) => {
+          patchedById[id] = { ...(patchedById[id] ?? {}), ...value };
+        },
+        insert: async () => "activity-1",
+        query: () => ({
+          withIndex: () => ({
+            collect: async () => [step],
+          }),
+        }),
+      },
+    };
+
+    await handler(ctx, { stepId: "step-1" });
+
+    expect(patchedById["step-1"]).toMatchObject({
+      status: "deleted",
+    });
+    expect(
+      (patchedById["task-1"]?.executionPlan as { steps: Array<{ status: string }> }).steps[0],
+    ).toMatchObject({
+      status: "deleted",
+    });
   });
 });
 
