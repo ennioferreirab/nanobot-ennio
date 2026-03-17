@@ -8,6 +8,7 @@ import {
   applyTaskTransition,
   getTaskStateVersion,
 } from "./taskTransitions";
+import { getStepStateVersion, resetStepForRetry } from "./stepTransitions";
 import { logActivity } from "./workflowHelpers";
 
 type ReviewMutationCtx = Pick<MutationCtx, "db">;
@@ -47,12 +48,23 @@ export async function retryTask(ctx: ReviewMutationCtx, taskId: Id<"tasks">): Pr
         continue;
       }
       const nextStatus = (step.blockedBy?.length ?? 0) > 0 ? "blocked" : "assigned";
-      await ctx.db.patch(step._id, {
-        status: nextStatus,
-        errorMessage: undefined,
-        startedAt: undefined,
-        completedAt: undefined,
-      });
+      const resetResult = await resetStepForRetry(
+        ctx,
+        step as Parameters<typeof resetStepForRetry>[1],
+        {
+          stepId: step._id,
+          expectedStateVersion: getStepStateVersion(step),
+          toStatus: nextStatus,
+          reason: `Manual retry reset for "${step.title}"`,
+          idempotencyKey: `task-retry:${String(taskId)}:${String(step._id)}:${getStepStateVersion(step)}:${nextStatus}`,
+          suppressActivityLog: true,
+        },
+      );
+      if (resetResult.kind === "conflict") {
+        throw new ConvexError(
+          `Step transition conflict for ${String(step._id)}: ${resetResult.reason} (${resetResult.currentStatus}@v${resetResult.currentStateVersion})`,
+        );
+      }
     }
 
     await ctx.db.insert("activities", {
@@ -71,7 +83,7 @@ export async function retryTask(ctx: ReviewMutationCtx, taskId: Id<"tasks">): Pr
       timestamp: now,
     });
 
-    const retryingTask = {
+    const retryingTask: Doc<"tasks"> = {
       ...task,
       status: "retrying",
       stateVersion: (task.stateVersion ?? 0) + 1,

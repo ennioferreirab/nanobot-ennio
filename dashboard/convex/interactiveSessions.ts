@@ -10,6 +10,7 @@ import {
   interactiveSessionStatusValidator,
 } from "./schema";
 import { applyRequiredTaskTransition } from "./lib/taskTransitions";
+import { applyRequiredStepTransition } from "./lib/stepTransitions";
 
 function omitAttachToken<T extends { attachToken?: string }>(session: T): Omit<T, "attachToken"> {
   const safeSession = { ...session };
@@ -293,12 +294,19 @@ export const requestHumanTakeover = mutation({
       taskId: task._id,
       fromStatus: task.status,
       toStatus: "review",
+      awaitingKickoff: false,
+      reviewPhase: "execution_pause",
       reason: `Human operator took over the Live session for step "${step.title}".`,
       idempotencyKey: `task:${String(task._id)}:${task.stateVersion ?? 0}:human-takeover`,
       suppressActivityLog: true,
     });
-    await ctx.db.patch(step._id, {
-      status: "review",
+    await applyRequiredStepTransition(ctx, step, {
+      stepId: step._id,
+      fromStatus: step.status,
+      toStatus: "waiting_human",
+      reason: `Human operator took over the Live session for step "${step.title}".`,
+      idempotencyKey: `step:${String(step._id)}:${step.stateVersion ?? 0}:human-takeover`,
+      suppressActivityLog: true,
     });
     await ctx.db.insert("activities", {
       taskId: task._id,
@@ -341,14 +349,18 @@ export const resumeAgentControl = mutation({
       taskId: task._id,
       fromStatus: task.status,
       toStatus: "in_progress",
+      reviewPhase: undefined,
       reason: `Live session returned to agent control for step "${step.title}".`,
       idempotencyKey: `task:${String(task._id)}:${task.stateVersion ?? 0}:resume-agent-control`,
       suppressActivityLog: true,
     });
-    await ctx.db.patch(step._id, {
-      status: "running",
-      startedAt: step.startedAt ?? timestamp,
-      errorMessage: undefined,
+    await applyRequiredStepTransition(ctx, step, {
+      stepId: step._id,
+      fromStatus: step.status,
+      toStatus: "running",
+      reason: `Live session returned to agent control for step "${step.title}".`,
+      idempotencyKey: `step:${String(step._id)}:${step.stateVersion ?? 0}:resume-agent-control`,
+      suppressActivityLog: true,
     });
     await ctx.db.insert("activities", {
       taskId: task._id,

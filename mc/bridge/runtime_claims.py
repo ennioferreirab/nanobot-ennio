@@ -51,7 +51,7 @@ def acquire_runtime_claim(
         entity_id,
         result,
     )
-    return True
+    return False
 
 
 def task_snapshot_claim_kind(scope: str, task_data: dict[str, Any]) -> str:

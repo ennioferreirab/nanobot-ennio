@@ -31,6 +31,13 @@ def _make_bridge() -> MagicMock:
     bridge.send_message.return_value = None
     bridge.get_steps_by_task.return_value = []
 
+    def _mutation(name: str, *_args, **_kwargs):
+        if name == "runtimeClaims:acquire":
+            return {"granted": True, "claimId": "claim-1"}
+        return None
+
+    bridge.mutation.side_effect = _mutation
+
     def _query(name: str, *_args, **_kwargs):
         if name == "executionQuestions:hasPendingForTask":
             return False

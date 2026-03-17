@@ -1,4 +1,4 @@
-import { internalMutation, query } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 export const getActiveClaim = query({
@@ -24,7 +24,7 @@ export const getActiveClaim = query({
   },
 });
 
-export const acquire = internalMutation({
+export const acquire = mutation({
   args: {
     claimKind: v.string(),
     entityType: v.string(),
@@ -73,7 +73,7 @@ export const acquire = internalMutation({
   },
 });
 
-export const release = internalMutation({
+export const release = mutation({
   args: {
     claimKind: v.string(),
     entityType: v.string(),

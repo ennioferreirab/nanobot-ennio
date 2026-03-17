@@ -166,16 +166,19 @@ function makeTakeoverCtx({
   session,
   taskStatus = "in_progress",
   stepStatus = "running",
+  taskReviewPhase,
 }: {
   session: InteractiveSessionDoc;
   taskStatus?: string;
   stepStatus?: string;
+  taskReviewPhase?: string;
 }) {
   const sessionDoc = { _id: "interactive-doc-1", ...session };
   const taskDoc = {
     _id: session.taskId ?? "task-123",
     status: taskStatus,
     stateVersion: 2,
+    reviewPhase: taskReviewPhase,
     title: "Task title",
     updatedAt: "2026-03-13T11:00:00.000Z",
   };
@@ -185,6 +188,7 @@ function makeTakeoverCtx({
     title: "Step title",
     assignedAgent: session.agentName,
     status: stepStatus,
+    stateVersion: 0,
   };
   const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
   const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
@@ -423,12 +427,14 @@ describe("interactiveSessions takeover controls", () => {
           patch: expect.objectContaining({
             status: "review",
             stateVersion: 3,
+            reviewPhase: "execution_pause",
           }),
         }),
         expect.objectContaining({
           id: "step-123",
           patch: expect.objectContaining({
-            status: "review",
+            status: "waiting_human",
+            stateVersion: 1,
           }),
         }),
       ]),
@@ -447,7 +453,8 @@ describe("interactiveSessions takeover controls", () => {
         controlMode: "human",
       },
       taskStatus: "review",
-      stepStatus: "review",
+      taskReviewPhase: "execution_pause",
+      stepStatus: "waiting_human",
     });
 
     await handler(ctx, {
@@ -477,13 +484,14 @@ describe("interactiveSessions takeover controls", () => {
           id: "step-123",
           patch: expect.objectContaining({
             status: "running",
+            stateVersion: 1,
           }),
         }),
       ]),
     );
   });
 
-  it("keeps the takeover flow working when the task is already in review", async () => {
+  it("makes reviewPhase explicit when the task is already in review", async () => {
     const handler = getRequestHumanTakeoverHandler();
     const { ctx, patches } = makeTakeoverCtx({
       session: {
@@ -508,12 +516,22 @@ describe("interactiveSessions takeover controls", () => {
     expect(
       patches.some(
         (entry) =>
-          entry.id === "task-123" && Object.prototype.hasOwnProperty.call(entry.patch, "status"),
+          entry.id === "task-123" &&
+          entry.patch.status === "review" &&
+          entry.patch.reviewPhase === "execution_pause",
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       patches.some(
         (entry) => entry.id === "interactive-doc-1" && entry.patch.controlMode === "human",
+      ),
+    ).toBe(true);
+    expect(
+      patches.some(
+        (entry) =>
+          entry.id === "step-123" &&
+          entry.patch.status === "waiting_human" &&
+          entry.patch.stateVersion === 1,
       ),
     ).toBe(true);
   });

@@ -3,8 +3,6 @@
 *.pyc
 dist/
 build/
-docs/*
-!docs/ARCHITECTURE.md
 *.egg-info/
 *.egg
 *.pyc

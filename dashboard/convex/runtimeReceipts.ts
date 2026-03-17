@@ -1,39 +1,44 @@
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
-type ReceiptCtx = {
-  db: {
+type ReceiptReadCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
+type ReceiptWriteCtx = Pick<MutationCtx, "db">;
+
+type RuntimeReceiptRecord = { response?: unknown };
+
+function getReceiptQuery(ctx: ReceiptReadCtx | ReceiptWriteCtx) {
+  const db = ctx.db as {
     query?: (table: "runtimeReceipts") => {
       withIndex: (
         indexName: "by_idempotencyKey",
         apply: (q: { eq: (field: "idempotencyKey", value: string) => unknown }) => unknown,
       ) => {
-        first?: () => Promise<Record<string, unknown> | null>;
+        first?: () => Promise<RuntimeReceiptRecord | null>;
       };
     };
-    insert?: (table: "runtimeReceipts", value: Record<string, unknown>) => Promise<unknown>;
   };
-};
+  return db.query?.("runtimeReceipts");
+}
 
 export async function getRuntimeReceipt<T>(
-  ctx: ReceiptCtx,
+  ctx: ReceiptReadCtx,
   idempotencyKey: string | undefined,
 ): Promise<T | null> {
   if (!idempotencyKey) {
     return null;
   }
-  if (!ctx.db.query) {
-    return null;
-  }
-  const receipt = await ctx.db
-    .query("runtimeReceipts")
-    .withIndex("by_idempotencyKey", (q) => q.eq("idempotencyKey", idempotencyKey))
-    .first?.();
+  const receiptQuery = getReceiptQuery(ctx);
+  const receipt = receiptQuery
+    ? await receiptQuery
+        .withIndex("by_idempotencyKey", (q) => q.eq("idempotencyKey", idempotencyKey))
+        .first?.()
+    : null;
   return (receipt?.response as T | undefined) ?? null;
 }
 
 export async function storeRuntimeReceipt(
-  ctx: ReceiptCtx,
+  ctx: ReceiptWriteCtx,
   args: {
     idempotencyKey: string | undefined;
     scope: string;
@@ -45,12 +50,12 @@ export async function storeRuntimeReceipt(
   if (!args.idempotencyKey) {
     return;
   }
-  if (!ctx.db.query || !ctx.db.insert) {
+  const receiptQuery = getReceiptQuery(ctx);
+  if (!receiptQuery) {
     return;
   }
 
-  const existing = await ctx.db
-    .query("runtimeReceipts")
+  const existing = await receiptQuery
     .withIndex("by_idempotencyKey", (q) => q.eq("idempotencyKey", args.idempotencyKey!))
     .first?.();
   if (existing) {
