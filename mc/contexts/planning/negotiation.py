@@ -23,7 +23,7 @@ import asyncio
 import json
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from mc.contexts.planning.parser import parse_plan_payload
 from mc.contexts.planning.planner import TaskPlanner
@@ -640,7 +640,7 @@ async def start_plan_negotiation_loop(
     seen_ids_max = 1000
 
     while True:
-        messages = await queue.get()
+        messages = cast(list[dict[str, Any]], await queue.get())
 
         # Check for polling errors
         if isinstance(messages, dict) and messages.get("_error"):

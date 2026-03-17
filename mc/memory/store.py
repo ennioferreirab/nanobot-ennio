@@ -26,9 +26,18 @@ class HybridMemoryStore(MemoryStore):
     def __init__(self, workspace: Path, embedding_model: str | None = None):
         super().__init__(workspace)
         settings = self._read_settings()
-        model = embedding_model or os.environ.get("NANOBOT_MEMORY_EMBEDDING_MODEL") or settings.get("embedding_model") or None
-        self._history_context_days: int = settings.get("history_context_days", _DEFAULT_HISTORY_CONTEXT_DAYS)
-        self._memory_context_max_chars: int = settings.get("memory_context_max_chars", _DEFAULT_MEMORY_CONTEXT_MAX_CHARS)
+        model = (
+            embedding_model
+            or os.environ.get("NANOBOT_MEMORY_EMBEDDING_MODEL")
+            or settings.get("embedding_model")
+            or None
+        )
+        self._history_context_days: int = settings.get(
+            "history_context_days", _DEFAULT_HISTORY_CONTEXT_DAYS
+        )
+        self._memory_context_max_chars: int = settings.get(
+            "memory_context_max_chars", _DEFAULT_MEMORY_CONTEXT_MAX_CHARS
+        )
         self._index = MemoryIndex(self.memory_dir, model)
         self._consolidation_in_progress = False
         self._consolidation_retry_after = 0.0
@@ -118,6 +127,7 @@ class HybridMemoryStore(MemoryStore):
             return
 
         from mc.memory.consolidation import is_history_above_threshold
+
         if not is_history_above_threshold(self.memory_dir):
             return
 
@@ -132,6 +142,7 @@ class HybridMemoryStore(MemoryStore):
         async def _run():
             try:
                 from mc.memory.consolidation import consolidate_history_and_memory
+
                 ran = False
                 while is_history_above_threshold(self.memory_dir):
                     ok = await consolidate_history_and_memory(self.memory_dir, model)

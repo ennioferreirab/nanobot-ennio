@@ -1,4 +1,5 @@
 """Plan capture — captures plan approval via ExitPlanMode."""
+
 from __future__ import annotations
 
 

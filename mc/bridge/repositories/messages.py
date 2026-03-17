@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mc.bridge.client import BridgeClient
+    from mc.bridge.client import BridgeClientProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class MessageRepository:
     """Data access methods for message entities in Convex."""
 
-    def __init__(self, client: "BridgeClient"):
+    def __init__(self, client: "BridgeClientProtocol"):
         self._client = client
 
     def get_task_messages(self, task_id: str) -> list[dict[str, Any]]:
@@ -63,9 +63,7 @@ class MessageRepository:
         if msg_type is not None:
             args["type"] = msg_type
         result = self._client.mutation("messages:create", args)
-        self._log_state_transition(
-            "message", f"Message sent by {author_name} on task {task_id}"
-        )
+        self._log_state_transition("message", f"Message sent by {author_name} on task {task_id}")
         return result
 
     def post_step_completion(
@@ -160,9 +158,7 @@ class MessageRepository:
         if step_id is not None:
             args["step_id"] = step_id
         result = self._client.mutation("messages:create", args)
-        self._log_state_transition(
-            "message", f"System error posted on task {task_id}"
-        )
+        self._log_state_transition("message", f"System error posted on task {task_id}")
         return result
 
     @staticmethod

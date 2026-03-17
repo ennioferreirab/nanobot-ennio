@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from mc.application.execution.completion_status import resolve_completion_status
@@ -70,6 +69,7 @@ from mc.types import (
     ActivityEventType,
     AgentData,
     AuthorType,
+    CCTaskResult,  # noqa: E402 -- needed at runtime for constructor
     LeadAgentExecutionError,
     MessageType,
     TaskStatus,
@@ -533,10 +533,11 @@ class TaskExecutor(CCExecutorMixin):
             artifacts = await asyncio.to_thread(_collect_output_artifacts, task_id, pre_snapshot)
 
             if req.runner_type == RunnerType.CLAUDE_CODE:
-                cc_result = SimpleNamespace(
+                cc_result = CCTaskResult(
                     output=result,
                     cost_usd=execution_result.cost_usd,
                     session_id=execution_result.session_id or "",
+                    usage={},
                     is_error=False,
                 )
                 await self._complete_cc_task(
