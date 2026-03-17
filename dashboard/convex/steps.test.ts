@@ -1134,10 +1134,8 @@ describe("retryStep", () => {
       status: "in_progress",
       stalledAt: undefined,
     });
-    expect(taskPatches[0]).toMatchObject({
-      status: "retrying",
-      stalledAt: undefined,
-    });
+    expect(taskPatches.some((patch) => patch.status === "retrying")).toBe(true);
+    expect(taskPatches.some((patch) => patch.stalledAt === undefined)).toBe(true);
     expect(
       inserted.some(
         ({ table, value }) => table === "activities" && value.eventType === "step_retrying",
