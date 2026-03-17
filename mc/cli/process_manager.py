@@ -368,12 +368,12 @@ class ProcessManager:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
                 await asyncio.wait_for(process.wait(), timeout=5.0)
-            except (ProcessLookupError, OSError):
-                pass
             except asyncio.TimeoutError:
                 logger.error(
                     f"[MC] Process {label} (PID: {process.pid}) did not exit after SIGKILL"
                 )
+            except (ProcessLookupError, OSError):
+                pass
             return "killed"
 
     async def _kill_port(self, port: int) -> None:

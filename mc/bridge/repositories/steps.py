@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mc.bridge.client import BridgeClient
+    from mc.bridge.client import BridgeClientProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class StepRepository:
     """Data access methods for step entities in Convex."""
 
-    def __init__(self, client: "BridgeClient"):
+    def __init__(self, client: "BridgeClientProtocol"):
         self._client = client
 
     def create_step(self, step_data: dict[str, Any]) -> str:

@@ -13,11 +13,11 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from mc.application.execution.completion_status import resolve_completion_status
 from mc.application.execution.background_tasks import (
     create_background_task,
     get_background_tasks,
 )
+from mc.application.execution.completion_status import resolve_completion_status
 from mc.application.execution.file_enricher import (
     build_merged_source_context,
     load_merged_source_payloads,
@@ -35,7 +35,6 @@ from mc.types import (
     AuthorType,
     MessageType,
     TaskStatus,
-    TrustLevel,
     extract_cc_model_name,
     is_cc_model,
     task_safe_id,
@@ -67,6 +66,10 @@ class CCExecutorMixin:
     _on_task_completed: Any
     _ask_user_registry: Any
 
+    async def _handle_provider_error(
+        self, task_id: str, title: str, agent_name: str, exc: Exception
+    ) -> None: ...
+
     async def _enrich_cc_description(
         self,
         task_id: str,
@@ -75,10 +78,10 @@ class CCExecutorMixin:
     ) -> str:
         """Enrich CC task description with file manifest, thread context, and tag attributes."""
         description = description or ""
+        fresh_task: dict[str, Any] | None = None
         try:
             safe_id = task_safe_id(task_id)
             files_dir = str(Path.home() / ".nanobot" / "tasks" / safe_id)
-            fresh_task: dict[str, Any] | None = None
             try:
                 fresh_task = await asyncio.to_thread(
                     self._bridge.query, "tasks:getById", {"task_id": task_id}
