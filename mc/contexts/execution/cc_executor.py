@@ -169,7 +169,7 @@ class CCExecutorMixin:
         title: str,
         description: str | None,
         agent_name: str,
-        agent_data: "AgentData",
+        agent_data: AgentData,
         trust_level: str = "autonomous",
         task_data: dict | None = None,
         reasoning_level: str | None = None,
@@ -344,7 +344,7 @@ class CCExecutorMixin:
 
     # ── CC helper methods ─────────────────────────────────────────────────
 
-    async def _sync_cc_convex_agent(self, agent_name: str, agent_data: "AgentData") -> dict | None:
+    async def _sync_cc_convex_agent(self, agent_name: str, agent_data: AgentData) -> dict | None:
         """Sync Convex prompt, variables, model into agent_data. Returns convex_agent dict."""
         convex_agent: dict | None = None
         try:
@@ -505,7 +505,7 @@ class CCExecutorMixin:
         task_id: str,
         title: str,
         agent_name: str,
-        result: "CCTaskResult",
+        result: CCTaskResult,
         task_data: dict[str, Any] | None = None,
         trust_level: str = "autonomous",
     ) -> None:
@@ -609,7 +609,7 @@ class CCExecutorMixin:
         task_id: str,
         agent_name: str,
         user_message: str,
-        agent_data: "AgentData",
+        agent_data: AgentData,
     ) -> str | None:
         """Handle a user follow-up message in a CC agent's task thread."""
         from claude_code.ipc_server import MCSocketServer

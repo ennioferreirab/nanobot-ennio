@@ -205,7 +205,7 @@ class TestPlanningWorkerDirectDelegateGuard:
 
     @pytest.mark.asyncio
     async def test_planning_worker_rejects_direct_delegate(self) -> None:
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import MagicMock
 
         from mc.runtime.workers.planning import PlanningWorker
 
@@ -260,14 +260,13 @@ class TestPlanningWorkerDirectDelegateGuard:
             patch("mc.runtime.workers.planning.TaskPlanner") as mock_planner_class,
         ):
             mock_planner = MagicMock()
-            mock_planner.plan_task = AsyncMock(
-                return_value=MagicMock(steps=[], to_dict=lambda: {})
-            )
+            mock_planner.plan_task = AsyncMock(return_value=MagicMock(steps=[], to_dict=lambda: {}))
             mock_planner_class.return_value = mock_planner
             await worker.process_task(task)
 
         # Regular task should invoke planning machinery (list_agents is called)
         bridge.list_agents.assert_called_once()
+
 
 class TestInboxWorkerHumanRouting:
     """Tests that human-routed tasks bypass the DirectDelegationRouter."""

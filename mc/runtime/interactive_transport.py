@@ -16,8 +16,9 @@ import logging
 import os
 import time
 from collections import Counter
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
 from websockets.exceptions import ConnectionClosed
 
@@ -71,7 +72,7 @@ class InteractiveSocketTransport:
         attach_token: str | None = None,
         timestamp_factory: Callable[[], str] | None = None,
     ) -> None:
-        now = timestamp_factory or (lambda: datetime.now(timezone.utc).isoformat())
+        now = timestamp_factory or (lambda: datetime.now(UTC).isoformat())
         input_batch: dict[str, dict[str, float | int] | None] = {"pending": None}
         connection_id = hex(id(websocket))
         attached = self._session_service.attach_session(

@@ -29,9 +29,7 @@ export function usePlanEditorState(
     }
   }, [taskGeneratedAt]);
 
-  const [activeTab, setActiveTab] = useState<string>(() =>
-    isAwaitingKickoff ? "plan" : "thread",
-  );
+  const [activeTab, setActiveTab] = useState<string>(() => (isAwaitingKickoff ? "plan" : "thread"));
 
   useEffect(() => {
     if (isAwaitingKickoff) {
@@ -39,10 +37,7 @@ export function usePlanEditorState(
     }
   }, [isAwaitingKickoff]);
 
-  const activePlan = useMemo(
-    () => localPlan ?? taskExecutionPlan,
-    [localPlan, taskExecutionPlan],
-  );
+  const activePlan = useMemo(() => localPlan ?? taskExecutionPlan, [localPlan, taskExecutionPlan]);
 
   const isDirty = localPlan !== undefined;
 

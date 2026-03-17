@@ -10,7 +10,7 @@ import sqlite3
 import time
 import typing
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from mc.memory.policy import is_memory_markdown_file, iter_memory_markdown_files
@@ -260,7 +260,7 @@ class MemoryIndex:
         except ValueError:
             return time.time()
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt.timestamp()
 
     def _prune_untracked_files(self, allowed_paths: set[str]) -> None:

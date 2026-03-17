@@ -34,6 +34,7 @@ Always respond with a JSON object containing:
 Respond only with valid JSON.
 """
 
+
 class AuthoringMode(str, Enum):
     """Authoring session mode."""
 
@@ -173,4 +174,3 @@ async def build_agent_authoring_response(
     except Exception:
         logger.exception("Error calling LLM for agent authoring")
         return _make_fallback_response(AuthoringMode.AGENT, current_phase)
-

@@ -12,9 +12,7 @@ import { HIDDEN_AGENT_NAMES } from "@/lib/constants";
  * - role !== 'remote-terminal'
  * - if boardEnabledAgents is provided and non-empty, only those agents
  */
-export function useSelectableAgents(
-  boardEnabledAgents?: string[]
-): Doc<"agents">[] | undefined {
+export function useSelectableAgents(boardEnabledAgents?: string[]): Doc<"agents">[] | undefined {
   const agents = useQuery(api.agents.list);
   if (!agents) return undefined;
 

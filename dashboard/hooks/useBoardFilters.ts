@@ -48,6 +48,6 @@ export function useBoardFilters(externalSearch?: ParsedSearch): BoardFilters {
       hasAttributeFilters,
       setSearch: setInternalSearch,
     }),
-    [search, isSearchActive, hasFreeText, hasTagFilters, hasAttributeFilters]
+    [search, isSearchActive, hasFreeText, hasTagFilters, hasAttributeFilters],
   );
 }

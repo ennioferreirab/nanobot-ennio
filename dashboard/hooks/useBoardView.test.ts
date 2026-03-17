@@ -19,10 +19,7 @@ vi.mock("../convex/_generated/api", () => ({
 }));
 
 vi.mock("convex/react", () => ({
-  useQuery: (
-    queryRef: { name?: string },
-    args?: unknown
-  ) => mockUseQuery(queryRef, args),
+  useQuery: (queryRef: { name?: string }, args?: unknown) => mockUseQuery(queryRef, args),
   useMutation: () => mockClearAllDone,
 }));
 
@@ -82,12 +79,10 @@ describe("useBoardView", () => {
   beforeEach(() => {
     setDefaultQueryValues();
     mockUseQuery.mockReset();
-    mockUseQuery.mockImplementation(
-      (queryRef: { name?: string }, args?: unknown) => {
-        if (args === "skip") return undefined;
-        return mockQueryValues[queryRef?.name ?? ""];
-      }
-    );
+    mockUseQuery.mockImplementation((queryRef: { name?: string }, args?: unknown) => {
+      if (args === "skip") return undefined;
+      return mockQueryValues[queryRef?.name ?? ""];
+    });
     mockClearAllDone.mockReset();
   });
 

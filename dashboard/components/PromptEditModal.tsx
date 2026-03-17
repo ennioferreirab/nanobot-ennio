@@ -136,9 +136,7 @@ export function PromptEditModal({
   }, []);
 
   const handleValueChange = useCallback((name: string, value: string) => {
-    setLocalVariables((prev) =>
-      prev.map((v) => (v.name === name ? { ...v, value } : v)),
-    );
+    setLocalVariables((prev) => prev.map((v) => (v.name === name ? { ...v, value } : v)));
   }, []);
 
   const handleSave = useCallback(() => {
@@ -155,10 +153,7 @@ export function PromptEditModal({
         </DialogHeader>
 
         <div className="flex-1 px-6 pb-4 space-y-4 overflow-y-auto">
-          <HighlightedPromptTextarea
-            value={localPrompt}
-            onChange={handlePromptChange}
-          />
+          <HighlightedPromptTextarea value={localPrompt} onChange={handlePromptChange} />
 
           {showVariables ? (
             <div className="space-y-2">
@@ -202,7 +197,10 @@ export function PromptEditModal({
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={2} className="px-3 py-3 text-center text-xs text-muted-foreground">
+                        <td
+                          colSpan={2}
+                          className="px-3 py-3 text-center text-xs text-muted-foreground"
+                        >
                           {"Type {{name}} in the prompt to create variables"}
                         </td>
                       </tr>

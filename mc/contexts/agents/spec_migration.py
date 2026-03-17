@@ -81,7 +81,7 @@ def build_spec_payload_from_yaml(config_path: Path) -> dict[str, Any] | None:
 
 def migrate_agent(
     config_path: Path,
-    bridge: "ConvexBridge",
+    bridge: ConvexBridge,
     dry_run: bool = False,
     *,
     _prebuilt_payload: dict[str, Any] | None = None,
@@ -160,7 +160,7 @@ def migrate_agent(
 
 def migrate_all(
     agents_dir: Path,
-    bridge: "ConvexBridge",
+    bridge: ConvexBridge,
     dry_run: bool = False,
 ) -> MigrationResult:
     """Migrate all agents in a directory into Agent Spec V2 records.

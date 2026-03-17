@@ -1,22 +1,22 @@
 """Tests for mc.hooks.dispatcher — event routing to handlers."""
+
 from __future__ import annotations
 
 import json
 from io import StringIO
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from mc.hooks.config import HookConfig
-from mc.hooks.context import HookContext
 from mc.hooks.dispatcher import _dispatch, main
 from mc.hooks.handler import BaseHandler
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def dispatch_env(tmp_path: Path):
@@ -49,6 +49,7 @@ def dispatch_env(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # _dispatch tests
 # ---------------------------------------------------------------------------
+
 
 class TestDispatch:
     """Test the _dispatch() function."""
@@ -256,6 +257,7 @@ class TestDispatch:
 # ---------------------------------------------------------------------------
 # main() tests (stdin/stdout integration)
 # ---------------------------------------------------------------------------
+
 
 class TestMain:
     def test_main_with_valid_payload(self, dispatch_env):

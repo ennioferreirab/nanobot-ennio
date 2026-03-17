@@ -32,7 +32,7 @@ class NanobotInteractiveSessionConfig:
     memory_workspace: Path | None = None
 
     @classmethod
-    def from_env(cls, env: dict[str, str] | None = None) -> "NanobotInteractiveSessionConfig":
+    def from_env(cls, env: dict[str, str] | None = None) -> NanobotInteractiveSessionConfig:
         source = env or os.environ
         session_id = _require_env(source, "MC_INTERACTIVE_SESSION_ID")
         task_id = _require_env(source, "MC_INTERACTIVE_TASK_ID")

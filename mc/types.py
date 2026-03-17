@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -258,7 +258,7 @@ class ExecutionPlan:
 
     def __post_init__(self) -> None:
         if not self.generated_at:
-            self.generated_at = datetime.now(timezone.utc).isoformat()
+            self.generated_at = datetime.now(UTC).isoformat()
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a dict with snake_case keys; bridge converts to camelCase for Convex."""

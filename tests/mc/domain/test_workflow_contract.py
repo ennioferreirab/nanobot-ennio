@@ -42,7 +42,7 @@ class TestSpecLoading:
         spec_path = (
             Path(__file__).resolve().parents[3] / "shared" / "workflow" / "workflow_spec.json"
         )
-        with open(spec_path, "r") as f:
+        with open(spec_path) as f:
             raw = json.load(f)
         assert SPEC == raw
 

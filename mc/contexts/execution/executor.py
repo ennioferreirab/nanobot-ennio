@@ -62,7 +62,7 @@ from mc.contexts.execution.output_artifacts import (  # noqa: F401
     _relocate_invalid_memory_files,
     _snapshot_output_dir,
 )
-from mc.contexts.execution.provider_errors import (  # noqa: F401
+from mc.contexts.execution.provider_errors import (
     PROVIDER_ERRORS,
 )
 from mc.contexts.execution.provider_errors import (
@@ -336,7 +336,7 @@ class TaskExecutor(CCExecutorMixin):
         """
         return _load_agent_config_impl(agent_name)
 
-    def _load_agent_data(self, agent_name: str) -> "AgentData | None":
+    def _load_agent_data(self, agent_name: str) -> AgentData | None:
         """Load full AgentData from an agent's YAML config file.
 
         Returns the validated AgentData (including backend field) or None when

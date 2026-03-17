@@ -29,9 +29,7 @@ describe("isTransitionAllowed", () => {
   });
 
   it("returns true for a universal target", () => {
-    expect(
-      isTransitionAllowed("done", "deleted", transitions, ["deleted"])
-    ).toBe(true);
+    expect(isTransitionAllowed("done", "deleted", transitions, ["deleted"])).toBe(true);
   });
 
   it("returns false when current status has no entry in the transition map", () => {
@@ -39,9 +37,7 @@ describe("isTransitionAllowed", () => {
   });
 
   it("returns false for universal targets when not in the universal list", () => {
-    expect(
-      isTransitionAllowed("inbox", "deleted", transitions, [])
-    ).toBe(false);
+    expect(isTransitionAllowed("inbox", "deleted", transitions, [])).toBe(false);
   });
 });
 
@@ -56,26 +52,24 @@ describe("assertValidTransition", () => {
   };
 
   it("does not throw for a valid transition", () => {
-    expect(() =>
-      assertValidTransition("inbox", "assigned", transitions)
-    ).not.toThrow();
+    expect(() => assertValidTransition("inbox", "assigned", transitions)).not.toThrow();
   });
 
   it("throws an Error for an invalid transition", () => {
-    expect(() =>
-      assertValidTransition("assigned", "inbox", transitions)
-    ).toThrow(/Cannot transition/);
+    expect(() => assertValidTransition("assigned", "inbox", transitions)).toThrow(
+      /Cannot transition/,
+    );
   });
 
   it("includes the entity label in the error message", () => {
-    expect(() =>
-      assertValidTransition("assigned", "inbox", transitions, [], "Task")
-    ).toThrow(/Cannot transition Task/);
+    expect(() => assertValidTransition("assigned", "inbox", transitions, [], "Task")).toThrow(
+      /Cannot transition Task/,
+    );
   });
 
   it("allows universal targets", () => {
     expect(() =>
-      assertValidTransition("assigned", "crashed", transitions, ["crashed"])
+      assertValidTransition("assigned", "crashed", transitions, ["crashed"]),
     ).not.toThrow();
   });
 });
@@ -120,7 +114,7 @@ describe("logActivity", () => {
       expect.objectContaining({
         eventType: "bulk_clear_done",
         timestamp: expect.any(String),
-      })
+      }),
     );
   });
 
@@ -160,9 +154,9 @@ describe("requireEntity", () => {
   it("throws when entity is not found", async () => {
     const ctx = { db: { get: vi.fn(async () => null) } };
 
-    await expect(
-      requireEntity(ctx, "task-missing" as any, "Task")
-    ).rejects.toThrow(/Task not found/);
+    await expect(requireEntity(ctx, "task-missing" as any, "Task")).rejects.toThrow(
+      /Task not found/,
+    );
   });
 });
 

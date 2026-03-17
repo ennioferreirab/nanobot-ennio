@@ -1,12 +1,4 @@
-const DAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function formatHour(h: number): string {
   if (h === 0) return "12 AM";
@@ -15,9 +7,7 @@ function formatHour(h: number): string {
   return `${h - 12} PM`;
 }
 
-function parseMinutesField(
-  field: string
-): string | null {
+function parseMinutesField(field: string): string | null {
   if (field === "*") return "Every min";
 
   // */N
@@ -138,7 +128,7 @@ function parseDowField(field: string): string | null {
 }
 
 export function parseCronToTable(
-  expr: string
+  expr: string,
 ): { days: string; hours: string; minutes: string } | null {
   const fields = expr.trim().split(/\s+/);
   if (fields.length !== 5) return null;

@@ -216,7 +216,17 @@ describe("useTaskDetailView", () => {
     const planTask = {
       ...baseTask,
       executionPlan: {
-        steps: [{ tempId: "s1", title: "Step 1", description: "Do it", assignedAgent: "a", blockedBy: [], parallelGroup: 0, order: 1 }],
+        steps: [
+          {
+            tempId: "s1",
+            title: "Step 1",
+            description: "Do it",
+            assignedAgent: "a",
+            blockedBy: [],
+            parallelGroup: 0,
+            order: 1,
+          },
+        ],
         generatedAt: "2026-01-01T00:00:00Z",
         generatedBy: "lead-agent",
       },

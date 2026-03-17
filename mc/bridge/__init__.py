@@ -18,12 +18,12 @@ from __future__ import annotations
 import logging
 import os  # noqa: F401 -- re-exported for patch compatibility
 import re  # noqa: F401 -- re-exported for patch compatibility
-import time  # noqa: F401 -- re-exported for patch compatibility
-from datetime import datetime, timezone  # noqa: F401
+import time
+from datetime import UTC, datetime, timezone  # noqa: F401
 from pathlib import Path  # noqa: F401
 from typing import Any
 
-from convex import ConvexClient  # noqa: F401 -- re-exported for patch compatibility
+from convex import ConvexClient
 
 from mc.bridge.adapter import _BridgeClientAdapter
 from mc.bridge.facade_mixins import BridgeRepositoryFacadeMixin
@@ -41,7 +41,7 @@ from mc.bridge.repositories.messages import MessageRepository
 from mc.bridge.repositories.specs import SpecsRepository
 from mc.bridge.repositories.steps import StepRepository
 from mc.bridge.repositories.tasks import TaskRepository
-from mc.bridge.retry import (  # noqa: F401
+from mc.bridge.retry import (
     BACKOFF_BASE_SECONDS,
     MAX_RETRIES,
 )
@@ -137,7 +137,7 @@ class ConvexBridge(BridgeRepositoryFacadeMixin):
 
     def _write_error_activity(self, mutation_name: str, error_message: str) -> None:
         try:
-            timestamp = datetime.now(timezone.utc).isoformat()
+            timestamp = datetime.now(UTC).isoformat()
             self._client.mutation(
                 "activities:create",
                 {
@@ -153,7 +153,7 @@ class ConvexBridge(BridgeRepositoryFacadeMixin):
             logger.error("Failed to write error activity event (best-effort): %s", e)
 
     def _log_state_transition(self, entity_type: str, description: str) -> None:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         logger.info("[MC] %s %s: %s", timestamp, entity_type, description)
 
     def close(self) -> None:

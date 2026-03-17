@@ -1,4 +1,5 @@
 """Tests for mc.hooks.handler — BaseHandler subclassing and method dispatch."""
+
 from __future__ import annotations
 
 import pytest
@@ -29,6 +30,7 @@ class TestBaseHandlerMatching:
 
     def test_wildcard_matcher(self):
         """When matcher_value is None, any tool name should match."""
+
         class H(BaseHandler):
             events = [("TaskCompleted", None)]
 

@@ -1,4 +1,5 @@
 """Skill tracker — captures which skill was invoked."""
+
 from __future__ import annotations
 
 from ..handler import BaseHandler
