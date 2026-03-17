@@ -623,11 +623,13 @@ export const manualMoveStep = mutation({
             _id: taskStep._id,
             status: args.newStatus as StepStatus,
             blockedBy: taskStep.blockedBy,
+            workflowStepType: taskStep.workflowStepType,
           }
         : {
             _id: taskStep._id,
             status: taskStep.status as StepStatus,
             blockedBy: taskStep.blockedBy,
+            workflowStepType: taskStep.workflowStepType,
           },
     );
 
@@ -1069,6 +1071,11 @@ export const deleteStep = mutation({
     });
     await ctx.db.patch(args.stepId, {
       deletedAt: timestamp,
+    });
+    await reconcileParentTaskForStepTransition(ctx, {
+      step: step as Parameters<typeof applyStepTransition>[1],
+      nextStepStatus: "deleted",
+      timestamp,
     });
   },
 });
