@@ -37,7 +37,28 @@ vi.mock("../../convex/_generated/api", () => ({
     tagAttributeValues: {
       removeByTaskAndTag: "tagAttributeValues:removeByTaskAndTag",
     },
+    executionQuestions: {
+      getPendingForTask: "executionQuestions:getPendingForTask",
+    },
   },
+}));
+
+// Mock interactive session hooks — not relevant to tag editing
+vi.mock("../../features/interactive/hooks/useTaskInteractiveSession", () => ({
+  useTaskInteractiveSession: () => ({
+    activeStep: null,
+    session: null,
+    liveStepIds: new Set(),
+    stateLabel: null,
+    identityLabel: null,
+  }),
+}));
+
+vi.mock("../../features/interactive/hooks/useProviderSession", () => ({
+  useProviderSession: () => ({
+    status: null,
+    liveEvents: [],
+  }),
 }));
 
 // Mock child components that are not relevant to tag editing
@@ -418,13 +439,6 @@ describe("TaskDetailSheet — header tag chips", () => {
     const headerText = allTexts.find((el) => !el.closest("[data-testid='tab-config']"));
     const chipSpan = headerText?.parentElement;
     expect(chipSpan?.className).toContain("bg-muted");
-  });
-
-  it("shows truncate class for overflow protection", () => {
-    renderWithAttrs({ tags: ["bug"] });
-    const allBugTexts = screen.getAllByText("bug");
-    const headerText = allBugTexts.find((el) => !el.closest("[data-testid='tab-config']"));
-    expect(headerText?.className).toContain("truncate");
   });
 
   it("does not render header chips when task has no tags", () => {

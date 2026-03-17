@@ -46,6 +46,8 @@ docstring-code-format = true
 
 [tool.pyright]
 pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
 typeCheckingMode = "basic"
 exclude = ["vendor/nanobot", "**/__pycache__"]
 reportMissingImports = true
