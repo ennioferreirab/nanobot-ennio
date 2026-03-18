@@ -211,21 +211,18 @@ function getProviderEventBody(
     return normalizeText(raw.summary ?? raw.error ?? title);
   }
 
+  // System events with rawJson: show the full JSON content (e.g. hook_response)
+  if (category === "system" && raw.rawJson) {
+    return raw.rawJson;
+  }
+
   // Prefer rawText when canonical metadata is available (Story 2.1)
   const primary = normalizeText(raw.rawText ?? raw.summary ?? raw.error);
   if (primary) {
     return primary;
   }
 
-  if (category === "tool" || category === "skill") {
-    return "";
-  }
-
-  if (category === "system") {
-    // For system_event with rawJson (e.g. hook_response), show the JSON content
-    if (raw.rawJson) {
-      return raw.rawJson;
-    }
+  if (category === "tool" || category === "skill" || category === "system") {
     return "";
   }
 
