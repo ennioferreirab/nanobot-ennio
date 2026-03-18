@@ -14,7 +14,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import { Bot, Pencil, X } from "lucide-react";
+import { Bot, ChevronDown, Pencil, X } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useSquadDetailData } from "@/features/agents/hooks/useSquadDetailData";
 import { useUpdatePublishedSquad } from "@/features/agents/hooks/useUpdatePublishedSquad";
 import { AgentConfigSheet } from "@/features/agents/components/AgentConfigSheet";
@@ -321,24 +326,54 @@ export function SquadDetailSheet({
                         className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
                       >
                         {loadedAgents.map((agent) => (
-                          <button
+                          <div
                             key={agent._id}
-                            type="button"
-                            onClick={() => openAgentOverlay(agent.name)}
-                            className="rounded-xl border bg-muted/10 p-4 text-left hover:bg-muted/30 transition-colors"
+                            className="rounded-xl border bg-muted/10 text-left transition-colors"
                           >
-                            <div className="flex items-center gap-3">
-                              <div className="rounded-full bg-blue-500/10 p-2 text-blue-600">
-                                <Bot className="h-4 w-4" />
+                            <button
+                              type="button"
+                              onClick={() => openAgentOverlay(agent.name)}
+                              className="w-full p-4 text-left hover:bg-muted/30 transition-colors rounded-t-xl"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="rounded-full bg-blue-500/10 p-2 text-blue-600">
+                                  <Bot className="h-4 w-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium truncate">
+                                    {agent.displayName}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {agent.role}
+                                  </p>
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium truncate">{agent.displayName}</p>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {agent.role}
-                                </p>
-                              </div>
-                            </div>
-                          </button>
+                            </button>
+                            {agent.skills.length > 0 && (
+                              <Collapsible>
+                                <CollapsibleTrigger className="flex w-full items-center gap-1.5 border-t px-4 py-2 text-xs text-muted-foreground hover:bg-muted/30 transition-colors rounded-b-xl group">
+                                  <ChevronDown className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" />
+                                  <span>
+                                    {agent.skills.length} skill
+                                    {agent.skills.length !== 1 && "s"}
+                                  </span>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="border-t px-4 py-2">
+                                  <div className="flex flex-wrap gap-1">
+                                    {agent.skills.map((skill) => (
+                                      <Badge
+                                        key={skill}
+                                        variant="secondary"
+                                        className="text-[10px] font-normal"
+                                      >
+                                        {skill}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </CollapsibleContent>
+                              </Collapsible>
+                            )}
+                          </div>
                         ))}
                       </div>
                     )}
