@@ -233,7 +233,7 @@ describe("sessionActivityLog.append", () => {
     expect((inserts[0].value.rawText as string).length).toBe(4000);
   });
 
-  it("truncates rawJson to 16000 chars", async () => {
+  it("stores rawJson without truncation to preserve valid JSON", async () => {
     const handler = getAppendHandler();
     const { ctx, inserts } = makeAppendCtx(null);
     const longRawJson = "j".repeat(20000);
@@ -245,7 +245,7 @@ describe("sessionActivityLog.append", () => {
       rawJson: longRawJson,
     });
 
-    expect((inserts[0].value.rawJson as string).length).toBe(16000);
+    expect((inserts[0].value.rawJson as string).length).toBe(20000);
   });
 
   it("omits canonical fields when not provided (backward compat)", async () => {
