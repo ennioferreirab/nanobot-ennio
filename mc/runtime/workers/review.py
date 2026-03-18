@@ -232,7 +232,31 @@ class ReviewWorker:
                 task_id,
             )
             for index, reviewer_name in enumerate(reviewers):
-                review_result = await self._run_reviewer_agent(task_id, task, reviewer_name)
+                try:
+                    review_result = await self._run_reviewer_agent(task_id, task, reviewer_name)
+                except Exception as exc:
+                    error_message = (
+                        f"Review by {reviewer_name} failed: {exc}. "
+                        "Task remains in review."
+                    )
+                    logger.exception(
+                        "[review] Reviewer '%s' failed while reviewing task %s",
+                        reviewer_name,
+                        task_id,
+                    )
+                    await asyncio.to_thread(
+                        self._bridge.post_system_error,
+                        task_id,
+                        error_message,
+                    )
+                    await asyncio.to_thread(
+                        self._bridge.create_activity,
+                        ActivityEventType.SYSTEM_ERROR,
+                        error_message,
+                        task_id,
+                        reviewer_name,
+                    )
+                    return
                 if review_result.verdict == "rejected":
                     await self.handle_review_feedback(
                         task_id,
