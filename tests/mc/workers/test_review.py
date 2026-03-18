@@ -298,6 +298,42 @@ class TestHandleReviewTransition:
         bridge.update_task_status.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_reviewer_execution_error_is_reported_without_crashing(self) -> None:
+        bridge = _make_bridge()
+        worker = ReviewWorker(_make_ctx(bridge))
+        worker._run_reviewer_agent = AsyncMock(  # type: ignore[attr-defined]
+            side_effect=RuntimeError("review model exploded")
+        )
+
+        task = {
+            "id": "task-1",
+            "title": "Review Task",
+            "trust_level": TrustLevel.AUTONOMOUS,
+            "reviewers": ["reviewer-bot"],
+            "assigned_agent": "writer-bot",
+            "awaiting_kickoff": None,
+            "review_phase": ReviewPhase.FINAL_APPROVAL,
+            "state_version": 4,
+            "status": TaskStatus.REVIEW,
+        }
+
+        with patch("mc.runtime.workers.review.asyncio.to_thread", new=_sync_to_thread):
+            await worker.handle_review_transition("task-1", task)
+
+        worker._run_reviewer_agent.assert_awaited_once_with("task-1", task, "reviewer-bot")  # type: ignore[attr-defined]
+        bridge.post_system_error.assert_called_once()
+        error_args = bridge.post_system_error.call_args[0]
+        assert error_args[0] == "task-1"
+        assert "reviewer-bot" in error_args[1]
+        assert "review model exploded" in error_args[1]
+        system_errors = [
+            call for call in bridge.create_activity.call_args_list if call.args[0] == ActivityEventType.SYSTEM_ERROR
+        ]
+        assert len(system_errors) == 1
+        bridge.transition_task_from_snapshot.assert_not_called()
+        bridge.update_task_status.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_human_approved_no_reviewers_requests_hitl(self) -> None:
         bridge = _make_bridge()
         worker = ReviewWorker(_make_ctx(bridge))
