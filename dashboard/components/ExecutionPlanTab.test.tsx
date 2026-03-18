@@ -436,6 +436,44 @@ describe("ExecutionPlanTab", () => {
     expect(screen.queryByText("Merge task A with B")).not.toBeInTheDocument();
   });
 
+  it("keeps overlaying live running statuses during execution_pause reviews", () => {
+    const pausedPlan = {
+      steps: [
+        makeStep({
+          stepId: "step_1",
+          tempId: "step_1",
+          title: "Draft copy",
+          description: "Snapshot",
+          status: "planned",
+          order: 1,
+        }),
+      ],
+      generatedAt: "2026-03-11T04:26:15Z",
+      createdAt: "2026-03-11",
+    };
+
+    render(
+      <ExecutionPlanTab
+        executionPlan={pausedPlan}
+        taskStatus="review"
+        isPaused
+        liveSteps={[
+          {
+            _id: "live-1",
+            title: "Draft copy",
+            description: "Live",
+            assignedAgent: "writer",
+            status: "running",
+            parallelGroup: 0,
+            order: 1,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId("flow-node-step_1")).toHaveAttribute("data-status", "running");
+  });
+
   it("preserves distinct assigned agents for parallel live steps sharing the same order", () => {
     const plan = {
       steps: [

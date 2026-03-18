@@ -121,6 +121,7 @@ vi.mock("@/features/tasks/components/ExecutionPlanTab", () => ({
   ExecutionPlanTab: ({
     executionPlan,
     isEditMode,
+    isPaused,
     readOnly,
     taskId,
     onLocalPlanChange,
@@ -134,6 +135,7 @@ vi.mock("@/features/tasks/components/ExecutionPlanTab", () => ({
     executionPlan?: unknown;
     liveSteps?: unknown;
     isEditMode?: boolean;
+    isPaused?: boolean;
     readOnly?: boolean;
     taskId?: string;
     onLocalPlanChange?: (plan: unknown) => void;
@@ -147,6 +149,7 @@ vi.mock("@/features/tasks/components/ExecutionPlanTab", () => ({
     <div
       data-testid="execution-plan-tab"
       data-edit-mode={isEditMode ? "true" : "false"}
+      data-is-paused={isPaused ? "true" : "false"}
       data-read-only={readOnly ? "true" : "false"}
       data-task-id={taskId}
       data-view-mode={viewMode ?? "both"}
@@ -2366,6 +2369,38 @@ describe("TaskDetailSheet", () => {
     const planTab = screen.getByTestId("execution-plan-tab");
     expect(planTab).toBeInTheDocument();
     expect(planTab.getAttribute("data-edit-mode")).toBe("true");
+  });
+
+  it("passes paused execution state to ExecutionPlanTab when review keeps live steps running", async () => {
+    const user = userEvent.setup();
+    const pausedTask = {
+      ...baseTask,
+      status: "review" as const,
+      awaitingKickoff: false,
+      reviewPhase: "execution_pause" as const,
+    };
+    const runningStep: StepDoc = {
+      _id: "step-running" as never,
+      _creationTime: 1,
+      taskId: "task1" as never,
+      title: "Keep working",
+      description: "Already started before pause",
+      assignedAgent: "agent-alpha",
+      status: "running",
+      parallelGroup: 1,
+      order: 1,
+      createdAt: "2026-03-13T09:00:00.000Z",
+      startedAt: "2026-03-13T09:02:00.000Z",
+    };
+    oneRenderPass(pausedTask, [], [runningStep], null, { isWorkflowTask: true });
+
+    render(<TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />);
+
+    await user.click(screen.getByRole("tab", { name: "Execution Plan" }));
+
+    const planTab = screen.getByTestId("execution-plan-tab");
+    expect(planTab).toBeInTheDocument();
+    expect(planTab.getAttribute("data-is-paused")).toBe("true");
   });
 
   it("defaults the execution plan view to both canvas and lead agent conversation", async () => {

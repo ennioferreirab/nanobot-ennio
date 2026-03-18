@@ -71,6 +71,7 @@ interface ExecutionPlanTabProps {
     | undefined;
   liveSteps?: LiveStep[];
   isEditMode?: boolean;
+  isPaused?: boolean;
   taskId?: string;
   taskStatus?: string;
   boardId?: Id<"boards">;
@@ -285,6 +286,7 @@ export function ExecutionPlanTab({
   executionPlan,
   liveSteps,
   isEditMode = false,
+  isPaused = false,
   taskId,
   taskStatus,
   boardId,
@@ -310,7 +312,10 @@ export function ExecutionPlanTab({
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editStepError, setEditStepError] = useState<string | null>(null);
   const editFormRef = useRef<HTMLDivElement>(null);
-  const shouldOverlayLiveSteps = taskStatus !== "review" && taskStatus !== "inbox" && !isEditMode;
+  const shouldOverlayLiveSteps =
+    taskStatus !== "inbox" &&
+    (taskStatus !== "review" || isPaused) &&
+    (!isEditMode || isPaused);
 
   const liveStepIdSet = useMemo(() => new Set(liveStepIds ?? []), [liveStepIds]);
 
