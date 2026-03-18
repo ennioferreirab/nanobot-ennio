@@ -184,9 +184,9 @@ export function ProviderLiveChatPanel({
                       <ProviderLiveEventRow key={event.id} event={event} />
                     ))}
                 </div>
-              ) : (
+              ) : node.events[0] ? (
                 <ProviderLiveEventRow key={node.id} event={node.events[0]} />
-              ),
+              ) : null,
             )}
           </div>
         ) : (

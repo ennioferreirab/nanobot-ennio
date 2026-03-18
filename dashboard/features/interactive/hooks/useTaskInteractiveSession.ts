@@ -141,18 +141,25 @@ export function buildLiveChoices(
       continue;
 
     const stepId = session.stepId;
-    if (typeof stepId === "string" && !seenStepIds.has(stepId)) {
-      seenStepIds.add(stepId);
-      const step = steps?.find((s) => s._id === stepId);
+    if (typeof stepId === "string") {
       const isActive = ATTACHABLE_STATUSES.has(session.status);
-      choices.push({
-        id: stepId,
-        label: step?.title ?? `Step ${stepId.slice(-6)}`,
-        isActive,
-        status: session.status,
-        stepId,
-        isTaskLevel: false,
-      });
+      const existingIdx = choices.findIndex((c) => c.stepId === stepId);
+      if (existingIdx === -1) {
+        seenStepIds.add(stepId);
+        const step = steps?.find((s) => s._id === stepId);
+        choices.push({
+          id: stepId,
+          label: step?.title ?? `Step ${stepId.slice(-6)}`,
+          isActive,
+          status: session.status,
+          stepId,
+          isTaskLevel: false,
+        });
+      } else if (isActive && !choices[existingIdx].isActive) {
+        // Prefer attachable session over historical for the same step
+        choices[existingIdx].isActive = true;
+        choices[existingIdx].status = session.status;
+      }
     }
 
     // Task-level sessions (no stepId)
