@@ -4,6 +4,7 @@ import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 
 import { applyRequiredTaskTransition } from "./taskTransitions";
+import { applyStepTransition, getStepStateVersion } from "./stepTransitions";
 import { logActivity } from "./workflowHelpers";
 
 async function resumeFromDone(
@@ -74,6 +75,32 @@ export async function pauseTaskExecution(
     suppressActivityLog: true,
   });
 
+  // Kill running steps — use distinct message so resume can distinguish
+  // pause-stopped steps from manually-stopped ones
+  const steps = await ctx.db
+    .query("steps")
+    .withIndex("by_taskId", (q) => q.eq("taskId", taskId))
+    .collect();
+
+  for (const step of steps) {
+    if (step.status === "running") {
+      const result = await applyStepTransition(ctx, step, {
+        stepId: step._id,
+        fromStatus: "running",
+        expectedStateVersion: getStepStateVersion(step),
+        toStatus: "crashed",
+        errorMessage: "Task paused",
+        reason: "Task paused by user",
+        idempotencyKey: `pause-stop:${String(step._id)}:${getStepStateVersion(step)}`,
+      });
+      if (result.kind === "conflict") {
+        throw new ConvexError(
+          `Failed to stop step ${String(step._id)} during pause: ${result.reason} (current: ${result.currentStatus})`,
+        );
+      }
+    }
+  }
+
   await logActivity(ctx, {
     taskId,
     eventType: "review_requested",
@@ -108,10 +135,12 @@ export async function resumeTaskExecution(
     );
   }
 
+  // Transition to assigned (not in_progress) so the Python TaskExecutor
+  // picks it up via its assigned-task subscription and re-dispatches steps.
   await applyRequiredTaskTransition(ctx, task, {
     taskId,
     fromStatus: "review",
-    toStatus: "in_progress",
+    toStatus: "assigned",
     reviewPhase: undefined,
     awaitingKickoff: false,
     reason: "User resumed task execution",
@@ -126,6 +155,30 @@ export async function resumeTaskExecution(
   if (Object.keys(patch).length > 0) {
     patch.updatedAt = new Date().toISOString();
     await ctx.db.patch(taskId, patch);
+  }
+
+  // Restore only steps that were stopped by pause (not manually stopped ones)
+  const steps = await ctx.db
+    .query("steps")
+    .withIndex("by_taskId", (q) => q.eq("taskId", taskId))
+    .collect();
+
+  for (const step of steps) {
+    if (step.status === "crashed" && step.errorMessage === "Task paused") {
+      const result = await applyStepTransition(ctx, step, {
+        stepId: step._id,
+        fromStatus: "crashed",
+        expectedStateVersion: getStepStateVersion(step),
+        toStatus: "assigned",
+        reason: "Resumed after pause",
+        idempotencyKey: `resume-unstop:${String(step._id)}:${getStepStateVersion(step)}`,
+      });
+      if (result.kind === "conflict") {
+        throw new ConvexError(
+          `Failed to restore step ${String(step._id)} during resume: ${result.reason} (current: ${result.currentStatus})`,
+        );
+      }
+    }
   }
 
   await logActivity(ctx, {

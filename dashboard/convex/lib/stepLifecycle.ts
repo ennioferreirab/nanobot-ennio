@@ -34,9 +34,9 @@ export type StepStatus = (typeof STEP_STATUSES)[number];
 export const STEP_TRANSITIONS: Record<StepStatus, StepStatus[]> = {
   planned: ["assigned", "blocked", "deleted"],
   assigned: ["running", "review", "completed", "crashed", "blocked", "waiting_human", "deleted"],
-  running: ["assigned", "review", "completed", "crashed", "waiting_human", "deleted"],
+  running: ["assigned", "blocked", "review", "completed", "crashed", "waiting_human", "deleted"],
   review: ["assigned", "running", "completed", "crashed", "waiting_human", "deleted"],
-  completed: [],
+  completed: ["assigned"],
   crashed: ["assigned", "deleted"],
   blocked: ["assigned", "crashed", "deleted"],
   waiting_human: ["running", "completed", "crashed", "deleted"],

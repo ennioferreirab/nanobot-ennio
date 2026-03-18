@@ -111,25 +111,62 @@ def build_review_feedback_context(messages: list[dict[str, Any]], step_id: str) 
     return "\n".join(lines)
 
 
-def build_review_output_contract_context(step: dict[str, Any]) -> str:
+def build_review_output_contract_context(
+    step: dict[str, Any],
+    all_task_steps: list[dict[str, Any]] | None = None,
+) -> str:
     """Build the explicit JSON-only output contract for workflow review steps."""
     if str(step.get("workflow_step_type") or "").lower() != "review":
         return ""
 
     review_spec_id = step.get("review_spec_id") or step.get("reviewSpecId")
     on_reject_step_id = step.get("on_reject_step_id") or step.get("onRejectStepId")
-    recommended_return = on_reject_step_id or "null"
-    if on_reject_step_id:
+
+    # Build step catalog for the reviewer (preceding steps only)
+    current_step_id = str(step.get("id") or "")
+    preceding_steps: list[dict[str, Any]] = []
+    if all_task_steps:
+        for s in all_task_steps:
+            sid = str(s.get("id", ""))
+            if sid and sid != current_step_id:
+                preceding_steps.append(s)
+
+    # Build recommendedReturnStep guidance with step key:title format
+    if on_reject_step_id and preceding_steps:
+        # Find the matching step to show key:title
+        for s in preceding_steps:
+            if s.get("workflow_step_id") == on_reject_step_id:
+                recommended_return = f'"{on_reject_step_id}:{s.get("title", on_reject_step_id)}" | null'
+                break
+        else:
+            recommended_return = f'"{on_reject_step_id}" | null'
+    elif on_reject_step_id:
         recommended_return = f'"{on_reject_step_id}" | null'
+    else:
+        recommended_return = "null"
 
     lines = [
-        "[Review Output Contract]",
+        "[Review Output Contract — STRICT]",
         "This is a workflow review step.",
         "Evaluate the deliverable against the review criteria available in the task context.",
-        "Return ONLY a single JSON object in your final response.",
-        "Do not wrap the JSON in markdown fences.",
-        "Do not write a separate review file unless the task explicitly requires it.",
+        "",
+        "CRITICAL OUTPUT RULE:",
+        "Your ENTIRE final response must be a single raw JSON object — nothing else.",
+        "No explanation, no commentary, no markdown fences, no text before or after the JSON.",
+        "Do not write files. Do not use tools. Just output the JSON.",
+        "",
     ]
+
+    # List available steps for rejection routing
+    if preceding_steps:
+        lines.append("Available steps for rejection routing (use step_key:Title format):")
+        for s in preceding_steps:
+            key = s.get("workflow_step_id", "?")
+            title = s.get("title", key)
+            status = s.get("status", "?")
+            lines.append(f"  - {key}:{title} (status: {status})")
+        lines.append("")
+
     if review_spec_id:
         lines.append(f"reviewSpecId: {review_spec_id}")
     lines.extend(
@@ -143,8 +180,11 @@ def build_review_output_contract_context(step: dict[str, Any]) -> str:
             '  "vetoesTriggered": ["..."],',
             f'  "recommendedReturnStep": {recommended_return}',
             "}",
+            "",
             "If the work passes, set verdict to approved and recommendedReturnStep to null.",
-            "If the work fails, set verdict to rejected and include concrete issues.",
+            'If rejected, set recommendedReturnStep using "step_key:Step Title" format from the list above.',
+            "",
+            "REMINDER: Output ONLY the JSON object. Any text outside the JSON will cause a system error.",
         ]
     )
     return "\n".join(lines)
@@ -609,7 +649,10 @@ class ContextBuilder:
         )
 
         review_feedback_context = build_review_feedback_context(thread_messages, step_id)
-        review_output_contract_context = build_review_output_contract_context(step)
+        all_task_steps = await asyncio.to_thread(self._bridge.get_steps_by_task, task_id)
+        review_output_contract_context = build_review_output_contract_context(
+            step, all_task_steps=all_task_steps
+        )
 
         # Assemble the execution description
         execution_description = file_context

@@ -541,6 +541,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
               isResuming={isResuming}
               liveSessionLabel={liveSession.stateLabel}
               liveSessionIdentity={liveSession.identityLabel}
+              liveSessionActiveIdentities={liveSession.activeIdentities}
               isEditingTitle={isEditingTitle}
               editTitleValue={editTitleValue}
               isEditingDescription={isEditingDescription}
@@ -643,10 +644,6 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                       onViewModeChange={setPlanViewMode}
                       onClearPlan={canClearPlan ? handleClearPlan : undefined}
                       isClearingPlan={isClearingPlan}
-                      onOpenParentTask={(stepId) => {
-                        setFilterStepIds(new Set([stepId]));
-                        setActiveTab("thread");
-                      }}
                       onOpenLive={liveSession.liveStepIds.length > 0 ? handleOpenLive : undefined}
                       liveStepIds={liveSession.liveStepIds}
                     />

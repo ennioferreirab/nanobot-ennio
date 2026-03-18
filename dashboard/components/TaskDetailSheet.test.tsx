@@ -523,14 +523,13 @@ describe("TaskDetailSheet", () => {
 
     render(<TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />);
 
-    expect(screen.getByTestId("live-session-badge")).toHaveTextContent("Live • Running");
     expect(screen.getByTestId("live-session-identity")).toHaveTextContent(
       "@agent-alpha · claude-code",
     );
-    expect(screen.getByTestId("live-button")).toBeInTheDocument();
+    expect(screen.getByTestId("live-link")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Live" })).toBeInTheDocument();
 
-    await user.click(screen.getByTestId("live-button"));
+    await user.click(screen.getByTestId("live-link"));
 
     expect(screen.getAllByText(/@agent-alpha/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText("WebSearch").length).toBeGreaterThan(0);
@@ -625,7 +624,9 @@ describe("TaskDetailSheet", () => {
     render(<TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />);
 
     expect(screen.getByRole("tab", { name: "Live" })).toBeInTheDocument();
-    expect(screen.getByTestId("live-session-badge")).toHaveTextContent("Live • Running");
+    expect(screen.getByTestId("live-session-identity")).toHaveTextContent(
+      "@agent-alpha · claude-code",
+    );
 
     await user.click(screen.getByRole("tab", { name: "Live" }));
 
@@ -755,7 +756,9 @@ describe("TaskDetailSheet", () => {
     render(<TaskDetailSheet taskId={"task1" as never} onClose={() => {}} />);
 
     expect(screen.getByRole("tab", { name: "Live" })).toBeInTheDocument();
-    expect(screen.getByTestId("live-session-badge")).toHaveTextContent("Live • Completed");
+    expect(screen.getByTestId("live-session-identity")).toHaveTextContent(
+      "@agent-alpha · claude-code",
+    );
   });
 
   it("opens historical live output for a completed step from the execution plan", async () => {
@@ -881,7 +884,9 @@ describe("TaskDetailSheet", () => {
     expect(screen.getAllByText("WebSearch").length).toBeGreaterThan(0);
     expect(screen.getByText(/best landing page copy/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Completed historical result/i).length).toBeGreaterThan(0);
-    expect(screen.getByTestId("live-session-badge")).toHaveTextContent("Live • Completed");
+    expect(screen.getByTestId("live-session-identity")).toHaveTextContent(
+      "@agent-alpha · claude-code",
+    );
   });
 
   it("jumps to the bottom when returning to the thread tab", async () => {
