@@ -5,7 +5,8 @@ const TOOL_INPUT_MAX = 2000;
 const SUMMARY_MAX = 1000;
 const ERROR_MAX = 2000;
 const RAW_TEXT_MAX = 4000;
-const RAW_JSON_MAX = 16000;
+// No truncation for rawJson — store complete JSON to preserve validity.
+// Convex strings support up to 1MB; typical events are 1-15KB.
 
 export const append = internalMutation({
   args: {
@@ -59,7 +60,7 @@ export const append = internalMutation({
       sourceSubtype: args.sourceSubtype,
       groupKey: args.groupKey,
       rawText: args.rawText !== undefined ? args.rawText.slice(0, RAW_TEXT_MAX) : undefined,
-      rawJson: args.rawJson !== undefined ? args.rawJson.slice(0, RAW_JSON_MAX) : undefined,
+      rawJson: args.rawJson,
     });
   },
 });
