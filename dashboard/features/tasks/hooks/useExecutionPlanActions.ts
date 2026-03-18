@@ -29,6 +29,7 @@ export interface UpdateExecutionStepArgs {
 export interface ExecutionPlanActions {
   acceptHumanStep: (stepId: Id<"steps">) => Promise<void>;
   retryStep: (stepId: Id<"steps">) => Promise<void>;
+  stopStep: (stepId: Id<"steps">) => Promise<void>;
   manualMoveStep: (stepId: Id<"steps">, newStatus: StepStatus) => Promise<void>;
   addStep: (args: AddExecutionStepArgs) => Promise<void>;
   updateStep: (args: UpdateExecutionStepArgs) => Promise<void>;
@@ -38,6 +39,7 @@ export interface ExecutionPlanActions {
 export function useExecutionPlanActions(): ExecutionPlanActions {
   const acceptHumanStepMutation = useMutation(api.steps.acceptHumanStep);
   const retryStepMutation = useMutation(api.steps.retryStep);
+  const stopStepMutation = useMutation(api.steps.stopStep);
   const manualMoveStepMutation = useMutation(api.steps.manualMoveStep);
   const addStepMutation = useMutation(api.steps.addStep);
   const updateStepMutation = useMutation(api.steps.updateStep);
@@ -49,6 +51,9 @@ export function useExecutionPlanActions(): ExecutionPlanActions {
     },
     retryStep: async (stepId) => {
       await retryStepMutation({ stepId });
+    },
+    stopStep: async (stepId) => {
+      await stopStepMutation({ stepId });
     },
     manualMoveStep: async (stepId, newStatus) => {
       await manualMoveStepMutation({ stepId, newStatus });

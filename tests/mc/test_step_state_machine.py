@@ -79,7 +79,7 @@ class TestIsValidStepTransitionInvalid:
         assert is_valid_step_transition(StepStatus.COMPLETED, StepStatus.RUNNING) is False
 
     def test_completed_to_assigned(self) -> None:
-        assert is_valid_step_transition(StepStatus.COMPLETED, StepStatus.ASSIGNED) is False
+        assert is_valid_step_transition(StepStatus.COMPLETED, StepStatus.ASSIGNED) is True
 
     def test_completed_to_crashed(self) -> None:
         assert is_valid_step_transition(StepStatus.COMPLETED, StepStatus.CRASHED) is False
@@ -88,10 +88,10 @@ class TestIsValidStepTransitionInvalid:
         assert is_valid_step_transition(StepStatus.RUNNING, StepStatus.PLANNED) is False
 
     def test_running_to_blocked(self) -> None:
-        assert is_valid_step_transition(StepStatus.RUNNING, StepStatus.BLOCKED) is False
+        assert is_valid_step_transition(StepStatus.RUNNING, StepStatus.BLOCKED) is True
 
     def test_running_to_assigned(self) -> None:
-        assert is_valid_step_transition(StepStatus.RUNNING, StepStatus.ASSIGNED) is False
+        assert is_valid_step_transition(StepStatus.RUNNING, StepStatus.ASSIGNED) is True
 
     def test_crashed_to_running(self) -> None:
         assert is_valid_step_transition(StepStatus.CRASHED, StepStatus.RUNNING) is False
@@ -248,9 +248,9 @@ def test_step_valid_transitions_match_convex_spec() -> None:
     expected: dict[str, list[str]] = {
         "planned": ["assigned", "blocked"],
         "assigned": ["running", "review", "completed", "crashed", "blocked", "waiting_human"],
-        "running": ["review", "completed", "crashed"],
+        "running": ["assigned", "blocked", "review", "completed", "crashed"],
         "review": ["running", "completed", "crashed"],
-        "completed": [],
+        "completed": ["assigned"],
         "crashed": ["assigned"],
         "blocked": ["assigned", "crashed"],
         "waiting_human": ["running", "completed", "crashed"],

@@ -12,6 +12,7 @@ import {
   Loader2,
   Lock,
   RefreshCw,
+  Square,
   Trash2,
   User,
   XCircle,
@@ -143,19 +144,22 @@ export type FlowStepNodeData = {
   isVisualOnly?: boolean;
   hasParallelSiblings?: boolean;
   isLeafStep?: boolean;
+  isPaused?: boolean;
+  stepErrorMessage?: string;
   onAddSequential?: (tempId: string) => void;
   onAddParallel?: (tempId: string) => void;
   onMergePaths?: (tempId: string) => void;
   onDeleteStep?: (tempId: string) => void;
   onAccept?: (stepId: string) => void;
   onRetry?: (stepId: string) => void;
+  onStop?: (stepId: string) => void;
+  isStopping?: boolean;
+  stopError?: string;
   isAccepting?: boolean;
   acceptError?: string;
   onStepClick?: (stepId: string) => void;
   isRetrying?: boolean;
   retryError?: string;
-  parentTaskId?: string;
-  onOpenParentTask?: (taskId: string) => void;
   onOpenLive?: (stepId: string) => void;
   isLiveStep?: boolean;
 };
@@ -185,11 +189,14 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
     onStepClick,
     isRetrying,
     retryError,
+    onStop,
+    isStopping,
+    stopError,
     isVisualOnly,
-    parentTaskId,
-    onOpenParentTask,
     onOpenLive,
     isLiveStep,
+    isPaused,
+    stepErrorMessage,
   } = data;
   const resolvedStatus = status ?? "planned";
   const meta = isVisualOnly
@@ -272,22 +279,6 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           </div>
         )}
 
-        {parentTaskId && onOpenParentTask && (
-          <div className="mt-1">
-            <button
-              type="button"
-              className="text-[10px] text-cyan-700 underline underline-offset-2"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenParentTask(parentTaskId);
-              }}
-              aria-label="Task Parent link"
-            >
-              Task Parent link
-            </button>
-          </div>
-        )}
-
         {/* Accept button for waiting_human / Mark Done for running human steps */}
         {(isWaitingHuman || isRunningHuman) && !isEditMode && onAccept && (
           <div className="mt-1.5">
@@ -316,7 +307,34 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           </div>
         )}
 
-        {(normalizedStatus === "crashed" || normalizedStatus === "running" || normalizedStatus === "assigned") && !isEditMode && onRetry && (
+        {normalizedStatus === "running" && !isRunningHuman && !isEditMode && onStop && (
+          <div className="mt-1.5">
+            <button
+              type="button"
+              data-testid={`stop-step-${step.tempId}`}
+              disabled={isStopping}
+              onClick={(e) => {
+                e.stopPropagation();
+                onStop(step.tempId);
+              }}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium",
+                "bg-red-600 text-white hover:bg-red-700 transition-colors",
+                "disabled:opacity-60 disabled:cursor-not-allowed",
+              )}
+            >
+              {isStopping ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Square className="h-3 w-3" />
+              )}
+              Stop
+            </button>
+            {stopError && <p className="mt-0.5 text-[10px] text-red-600">{stopError}</p>}
+          </div>
+        )}
+
+        {normalizedStatus === "crashed" && !isEditMode && onRetry && (stepErrorMessage === "Stopped by user" || stepErrorMessage === "Task paused" || isPaused) && (
           <div className="mt-1.5">
             <button
               type="button"

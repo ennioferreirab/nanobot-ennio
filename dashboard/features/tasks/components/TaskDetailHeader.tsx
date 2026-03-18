@@ -57,8 +57,10 @@ interface TaskDetailHeaderProps {
   isStartingInbox: boolean;
   isPausing: boolean;
   isResuming: boolean;
-  liveSessionLabel: string | null;
+  /** @deprecated No longer rendered — kept for caller compatibility. */
+  liveSessionLabel?: string | null;
   liveSessionIdentity: string | null;
+  liveSessionActiveIdentities?: string[];
   isEditingTitle: boolean;
   editTitleValue: string;
   isEditingDescription: boolean;
@@ -133,8 +135,8 @@ export function TaskDetailHeader({
   isStartingInbox,
   isPausing,
   isResuming,
-  liveSessionLabel,
   liveSessionIdentity,
+  liveSessionActiveIdentities,
   isEditingTitle,
   editTitleValue,
   isEditingDescription,
@@ -268,36 +270,6 @@ export function TaskDetailHeader({
               >
                 Retry from Beginning
               </Button>
-            )}
-            {liveSessionLabel && (
-              <>
-                <Badge
-                  variant="outline"
-                  className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200"
-                  data-testid="live-session-badge"
-                >
-                  {liveSessionLabel}
-                </Badge>
-                {liveSessionIdentity && (
-                  <span
-                    className="text-xs text-muted-foreground"
-                    data-testid="live-session-identity"
-                  >
-                    {liveSessionIdentity}
-                  </span>
-                )}
-                {onOpenLive && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-7 px-2"
-                    onClick={() => void onOpenLive()}
-                    data-testid="live-button"
-                  >
-                    Live
-                  </Button>
-                )}
-              </>
             )}
             {task.status === "in_progress" && (
               <Button
@@ -480,6 +452,37 @@ export function TaskDetailHeader({
               </button>
             )}
           </div>
+          {(() => {
+            const identities = liveSessionActiveIdentities?.length
+              ? liveSessionActiveIdentities
+              : liveSessionIdentity
+                ? [liveSessionIdentity]
+                : [];
+            if (identities.length === 0) return null;
+            return (
+              <div
+                className="flex flex-wrap items-center gap-2"
+                data-testid="live-session-identity"
+              >
+                {identities.map((identity) => (
+                  <span key={identity} className="text-xs text-muted-foreground">
+                    {identity}
+                  </span>
+                ))}
+                {onOpenLive && (
+                  <button
+                    type="button"
+                    className="text-xs text-emerald-600 font-medium flex items-center gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    onClick={() => void onOpenLive()}
+                    data-testid="live-link"
+                  >
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Live
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           {executionProvenance && (
             <div className="flex flex-wrap items-center gap-2">
               {executionProvenance.agentName && (

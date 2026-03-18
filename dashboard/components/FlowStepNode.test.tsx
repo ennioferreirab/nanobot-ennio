@@ -11,7 +11,6 @@ vi.mock("@xyflow/react", () => ({
 
 function renderNode(overrides: Partial<FlowStepNodeType["data"]> = {}) {
   const onRetry = vi.fn();
-  const onOpenParentTask = vi.fn();
   const onStepClick = vi.fn();
   const props = {
     id: "step-1",
@@ -35,10 +34,9 @@ function renderNode(overrides: Partial<FlowStepNodeType["data"]> = {}) {
         order: 1,
       },
       status: "crashed",
+      stepErrorMessage: "Stopped by user",
       isEditMode: false,
       onRetry,
-      parentTaskId: "task-123",
-      onOpenParentTask,
       onStepClick,
       ...overrides,
     } as FlowStepNodeType["data"],
@@ -46,14 +44,32 @@ function renderNode(overrides: Partial<FlowStepNodeType["data"]> = {}) {
   } as any as ComponentProps<typeof FlowStepNode>;
 
   render(<FlowStepNode {...props} />);
-  return { onRetry, onOpenParentTask, onStepClick };
+  return { onRetry, onStepClick };
 }
 
 describe("FlowStepNode", () => {
-  it("shows Retry step for crashed nodes in read-only mode", () => {
+  it("shows Retry step for crashed nodes stopped by user", () => {
     renderNode();
 
     expect(screen.getByRole("button", { name: "Retry step" })).toBeInTheDocument();
+  });
+
+  it("shows Retry step for crashed nodes stopped by pause", () => {
+    renderNode({ stepErrorMessage: "Task paused" });
+
+    expect(screen.getByRole("button", { name: "Retry step" })).toBeInTheDocument();
+  });
+
+  it("shows Retry step for crashed nodes when task is paused", () => {
+    renderNode({ stepErrorMessage: "Some other error", isPaused: true });
+
+    expect(screen.getByRole("button", { name: "Retry step" })).toBeInTheDocument();
+  });
+
+  it("does not show Retry step for crashed nodes without stop/pause", () => {
+    renderNode({ stepErrorMessage: "Some other error" });
+
+    expect(screen.queryByRole("button", { name: "Retry step" })).not.toBeInTheDocument();
   });
 
   it("does not show Retry step in edit mode", () => {
@@ -74,14 +90,6 @@ describe("FlowStepNode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry step" }));
 
     expect(onRetry).toHaveBeenCalledWith("step-1");
-  });
-
-  it("shows a task parent link and switches to step tab when clicked", () => {
-    const { onOpenParentTask } = renderNode();
-
-    fireEvent.click(screen.getByRole("button", { name: "Task Parent link" }));
-
-    expect(onOpenParentTask).toHaveBeenCalledWith("task-123");
   });
 
   it("calls onStepClick when the step card is clicked", () => {

@@ -344,7 +344,7 @@ describe("STEP_TRANSITIONS consistency", () => {
     }
   });
 
-  it("completed has no valid transitions", () => {
-    expect(STEP_TRANSITIONS.completed).toEqual([]);
+  it("completed can only transition to assigned (review rejection rework)", () => {
+    expect(STEP_TRANSITIONS.completed).toEqual(["assigned"]);
   });
 });

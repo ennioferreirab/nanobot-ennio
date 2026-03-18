@@ -507,7 +507,11 @@ class StepDispatcher:
             raise
 
     async def _kill_step_process(self, task_id: str, step_id: str) -> None:
-        """Best-effort kill of the provider-cli subprocess for a step."""
+        """Best-effort kill of the provider-cli subprocess for a step.
+
+        After stopping the process, cleans up registry and parser so the
+        session ID can be re-used on retry.
+        """
         if self._provider_cli_control_plane is None:
             return
         mc_session_id = f"{task_id}-{step_id}"
@@ -520,6 +524,10 @@ class StepDispatcher:
                 mc_session_id,
                 exc_info=True,
             )
+        # Clean up registry so the session ID can be re-registered on retry
+        self._provider_cli_control_plane.unregister_parser(mc_session_id)
+        if self._provider_cli_registry is not None:
+            self._provider_cli_registry.remove(mc_session_id)
 
     async def _execute_step(self, task_id: str, step: dict[str, Any]) -> list[str]:
         """Execute one assigned step and return any newly unblocked step IDs."""

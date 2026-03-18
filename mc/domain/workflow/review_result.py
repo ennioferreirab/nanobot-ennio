@@ -30,14 +30,41 @@ def _strip_code_fences(payload: str) -> str:
     return text
 
 
+def _extract_json_object(text: str) -> str:
+    """Extract the first top-level JSON object from text that may contain prose.
+
+    Uses a try-parse approach: finds the first ``{``, then tries ``json.loads``
+    on substrings ending at each ``}`` from the end of the text backwards.
+    This correctly handles braces inside JSON string values.
+    """
+    start = text.find("{")
+    if start == -1:
+        return text
+    # Try progressively shorter substrings from the last } backwards
+    for end in range(len(text) - 1, start, -1):
+        if text[end] == "}":
+            candidate = text[start : end + 1]
+            try:
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                continue
+    return text[start:]
+
+
 def parse_review_result(payload: str | dict[str, Any]) -> ReviewResult:
     """Parse the structured result emitted by a workflow reviewer step."""
     if isinstance(payload, str):
         raw_payload = _strip_code_fences(payload)
         try:
             data = json.loads(raw_payload)
-        except json.JSONDecodeError as exc:
-            raise ValueError("Review result must be a valid JSON object") from exc
+        except json.JSONDecodeError:
+            # Agent may have added prose around the JSON — extract it
+            extracted = _extract_json_object(raw_payload)
+            try:
+                data = json.loads(extracted)
+            except json.JSONDecodeError as exc:
+                raise ValueError("Review result must be a valid JSON object") from exc
     else:
         data = payload
 

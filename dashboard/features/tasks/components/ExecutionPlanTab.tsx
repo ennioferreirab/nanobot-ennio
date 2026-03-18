@@ -78,7 +78,6 @@ interface ExecutionPlanTabProps {
   onLocalPlanChange?: (plan: ExecutionPlan) => void;
   readOnly?: boolean;
   mergeAlias?: MergeAliasDisplay;
-  onOpenParentTask?: (taskId: string) => void;
   viewMode?: ExecutionPlanViewMode;
   onViewModeChange?: (mode: ExecutionPlanViewMode) => void;
   onClearPlan?: () => void;
@@ -293,7 +292,6 @@ export function ExecutionPlanTab({
   onLocalPlanChange,
   readOnly = false,
   mergeAlias,
-  onOpenParentTask,
   viewMode = "both",
   onViewModeChange,
   onClearPlan,
@@ -301,12 +299,14 @@ export function ExecutionPlanTab({
   onOpenLive,
   liveStepIds,
 }: ExecutionPlanTabProps) {
-  const { acceptHumanStep, retryStep, manualMoveStep, addStep, updateStep, deleteStep } =
+  const { acceptHumanStep, retryStep, stopStep, manualMoveStep, addStep, updateStep, deleteStep } =
     useExecutionPlanActions();
   const [acceptingStepId, setAcceptingStepId] = useState<string | null>(null);
   const [acceptErrors, setAcceptErrors] = useState<Record<string, string>>({});
   const [retryingStepId, setRetryingStepId] = useState<string | null>(null);
   const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
+  const [stoppingStepId, setStoppingStepId] = useState<string | null>(null);
+  const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [addStepError, setAddStepError] = useState<string | null>(null);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
@@ -348,6 +348,24 @@ export function ExecutionPlanTab({
       }
     },
     [retryStep, steps],
+  );
+
+  const handleStop = useCallback(
+    async (stepId: string) => {
+      const foundStep = steps.find((step) => step.stepId === stepId);
+      const realStepId = foundStep?.liveId ?? stepId;
+      setStoppingStepId(stepId);
+      setStopErrors((prev) => ({ ...prev, [stepId]: "" }));
+      try {
+        await stopStep(realStepId as Id<"steps">);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to stop step";
+        setStopErrors((prev) => ({ ...prev, [stepId]: message }));
+      } finally {
+        setStoppingStepId(null);
+      }
+    },
+    [stopStep, steps],
   );
 
   const handleAccept = useCallback(
@@ -556,6 +574,7 @@ export function ExecutionPlanTab({
 
     // Inject status + handlers into node data (skip START/END terminal nodes)
     const statusMap = new Map(displaySteps.map((step) => [step.stepId, step.status]));
+    const errorMessageMap = new Map(displaySteps.map((step) => [step.stepId, step.errorMessage]));
     const nodesWithStatus = rawNodes.map((n) => {
       if (n.id === "__start__" || n.id === "__end__") return n;
       // Compute hasParallelSiblings for merge button visibility
@@ -571,6 +590,8 @@ export function ExecutionPlanTab({
         data: {
           ...(n.data as FlowStepNodeData),
           status: statusMap.get(n.id) ?? "planned",
+          isPaused,
+          stepErrorMessage: errorMessageMap.get(n.id),
           isEditMode: canEditCanvas,
           hasParallelSiblings,
           isLeafStep: leafStepIds.has(n.id),
@@ -580,14 +601,15 @@ export function ExecutionPlanTab({
           onDeleteStep: canEditCanvas && !isVisualOnly ? handleDeleteStep : undefined,
           onAccept: readOnly || isVisualOnly ? undefined : handleAccept,
           onRetry: readOnly || isVisualOnly ? undefined : handleRetry,
+          onStop: readOnly || isVisualOnly ? undefined : handleStop,
+          isStopping: stoppingStepId === n.id,
+          stopError: stopErrors[n.id],
           isAccepting: acceptingStepId === n.id,
           acceptError: acceptErrors[n.id],
           onStepClick: canAddOrEdit && !isVisualOnly ? handleStepClick : undefined,
           isRetrying: retryingStepId === n.id,
           retryError: retryErrors[n.id],
           isVisualOnly,
-          parentTaskId: matchedDisplayStep?.liveId ?? n.id,
-          onOpenParentTask,
           onOpenLive: isVisualOnly ? undefined : onOpenLive,
           isLiveStep: Boolean(
             liveStepIdSet.has(n.id) ||
@@ -603,6 +625,7 @@ export function ExecutionPlanTab({
     displaySteps,
     editablePlanSteps,
     leafStepIds,
+    isPaused,
     canEditCanvas,
     readOnly,
     handleAddSequential,
@@ -611,13 +634,15 @@ export function ExecutionPlanTab({
     handleDeleteStep,
     handleAccept,
     handleRetry,
+    handleStop,
+    stoppingStepId,
+    stopErrors,
     acceptingStepId,
     acceptErrors,
     retryingStepId,
     retryErrors,
     canAddOrEdit,
     handleStepClick,
-    onOpenParentTask,
     onOpenLive,
     liveStepIdSet,
   ]);

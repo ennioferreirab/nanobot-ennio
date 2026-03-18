@@ -310,9 +310,10 @@ describe("isValidStepTransition", () => {
     expect(isValidStepTransition("nonexistent", "assigned")).toBe(false);
   });
 
-  it("completed has no transitions", () => {
+  it("completed can only transition to assigned (review rejection rework)", () => {
+    expect(isValidStepTransition("completed", "assigned")).toBe(true);
     for (const s of STEP_STATUSES) {
-      if (s === "completed") continue;
+      if (s === "completed" || s === "assigned") continue;
       expect(isValidStepTransition("completed", s)).toBe(false);
     }
   });
@@ -327,8 +328,8 @@ describe("getStepAllowedTransitions", () => {
     expect(new Set(getStepAllowedTransitions("planned"))).toEqual(new Set(["assigned", "blocked"]));
   });
 
-  it("returns empty for completed", () => {
-    expect(getStepAllowedTransitions("completed")).toEqual([]);
+  it("returns assigned for completed (review rejection rework)", () => {
+    expect(getStepAllowedTransitions("completed")).toEqual(["assigned"]);
   });
 
   it("returns empty for deleted", () => {

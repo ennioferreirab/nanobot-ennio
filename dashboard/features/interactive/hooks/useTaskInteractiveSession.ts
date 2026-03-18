@@ -280,6 +280,12 @@ export function useTaskInteractiveSession(
     return `@${session.agentName} · ${session.provider}`;
   }, [session]);
 
+  // All unique agent identities with active (non-completed) sessions for this task
+  const activeIdentities = useMemo(
+    () => collectActiveTaskIdentities(sessions, taskId),
+    [sessions, taskId],
+  );
+
   return {
     activeStep: focusedStep,
     session,
@@ -287,7 +293,28 @@ export function useTaskInteractiveSession(
     liveChoices,
     stateLabel,
     identityLabel,
+    activeIdentities,
   };
+}
+
+export function collectActiveTaskIdentities(
+  sessions: InteractiveSessionDoc[] | null | undefined,
+  taskId: Id<"tasks"> | string | null,
+): string[] {
+  if (!taskId || !sessions?.length) return [];
+
+  const seen = new Set<string>();
+  const identities: string[] = [];
+  for (const session of sessions) {
+    if (session.taskId !== taskId) continue;
+    if (!ATTACHABLE_STATUSES.has(session.status)) continue;
+    const key = `@${session.agentName} · ${session.provider}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      identities.push(key);
+    }
+  }
+  return identities;
 }
 
 function compareInteractiveSessions(

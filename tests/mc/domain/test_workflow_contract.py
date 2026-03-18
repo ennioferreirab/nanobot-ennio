@@ -294,9 +294,10 @@ class TestIsValidStepTransition:
     def test_running_to_planned_invalid(self) -> None:
         assert is_valid_step_transition("running", "planned") is False
 
-    def test_completed_has_no_transitions(self) -> None:
+    def test_completed_only_transitions_to_assigned(self) -> None:
+        assert is_valid_step_transition("completed", "assigned") is True
         for status in STEP_STATUSES:
-            if status == "completed":
+            if status in ("completed", "assigned"):
                 continue
             assert is_valid_step_transition("completed", status) is False
 
@@ -316,9 +317,9 @@ class TestGetStepAllowedTransitions:
         allowed = get_step_allowed_transitions("planned")
         assert set(allowed) == {"assigned", "blocked"}
 
-    def test_completed_allowed_empty(self) -> None:
+    def test_completed_allowed_assigned(self) -> None:
         allowed = get_step_allowed_transitions("completed")
-        assert allowed == []
+        assert allowed == ["assigned"]
 
     def test_deleted_allowed_empty(self) -> None:
         allowed = get_step_allowed_transitions("deleted")
@@ -513,9 +514,9 @@ class TestParityWithConvex:
         convex_step_transitions: dict[str, list[str]] = {
             "planned": ["assigned", "blocked"],
             "assigned": ["running", "review", "completed", "crashed", "blocked", "waiting_human"],
-            "running": ["review", "completed", "crashed"],
+            "running": ["assigned", "blocked", "review", "completed", "crashed"],
             "review": ["running", "completed", "crashed"],
-            "completed": [],
+            "completed": ["assigned"],
             "crashed": ["assigned"],
             "blocked": ["assigned", "crashed"],
             "waiting_human": ["running", "completed", "crashed"],

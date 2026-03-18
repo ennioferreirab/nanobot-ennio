@@ -675,7 +675,11 @@ export const stopStep = mutation({
   },
 });
 
-/** Original retry path for crashed steps on crashed tasks. */
+/** Retry path for crashed steps on crashed tasks.
+ *
+ * Transitions step → assigned, task → assigned so the TaskExecutor
+ * picks the task up and the StepDispatcher re-dispatches the step.
+ */
 async function _retryCrashedStep(
   ctx: MutationCtx,
   stepId: Id<"steps">,
@@ -692,28 +696,18 @@ async function _retryCrashedStep(
     idempotencyKey: `retry:${String(stepId)}:${getStepStateVersion(step)}`,
   });
 
-  const retryingResult = await applyTaskTransition(
+  await applyTaskTransition(
     ctx,
     task as Parameters<typeof applyTaskTransition>[1],
     {
       taskId: step.taskId,
       fromStatus: task.status,
       expectedStateVersion: getTaskStateVersion(task),
-      toStatus: "retrying",
+      toStatus: "assigned",
       reason: `Retrying step ${String(stepId)}`,
-      idempotencyKey: `retry-task:${String(step.taskId)}:${getTaskStateVersion(task)}:${task.status}:retrying`,
-      suppressActivityLog: true,
+      idempotencyKey: `retry-task:${String(step.taskId)}:${getTaskStateVersion(task)}:${task.status}:assigned`,
     },
   );
-
-  const retryingTaskSnapshot = {
-    ...task,
-    status: "retrying",
-    stateVersion:
-      retryingResult.kind === "conflict"
-        ? getTaskStateVersion(task)
-        : retryingResult.stateVersion,
-  };
 
   await ctx.db.patch(step.taskId, {
     stalledAt: undefined,
@@ -736,25 +730,6 @@ async function _retryCrashedStep(
     content: `Manual retry initiated for step "${step.title}".`,
     messageType: "system_event",
     timestamp,
-  });
-
-  await applyTaskTransition(
-    ctx,
-    retryingTaskSnapshot as Parameters<typeof applyTaskTransition>[1],
-    {
-      taskId: step.taskId,
-      fromStatus: retryingTaskSnapshot.status,
-      expectedStateVersion: getTaskStateVersion(retryingTaskSnapshot),
-      toStatus: "in_progress",
-      reason: `Retry resumed for step ${String(stepId)}`,
-      idempotencyKey: `retry-task:${String(step.taskId)}:${getTaskStateVersion(retryingTaskSnapshot)}:${retryingTaskSnapshot.status}:in_progress`,
-      suppressActivityLog: true,
-    },
-  );
-
-  await ctx.db.patch(step.taskId, {
-    stalledAt: undefined,
-    updatedAt: timestamp,
   });
 
   return step.taskId;
