@@ -578,7 +578,7 @@ When the provider CLI strategy persists activity events to `sessionActivityLog`,
 |---------------------|-------------|-------------|
 | `source_type` | `sourceType` | Canonical event classification: `system`, `assistant`, `tool_use`, `result`, `error` |
 | `source_subtype` | `sourceSubtype` | Finer classification (e.g. `init`, `text`, tool name, `success`, `error`) |
-| `turn_id` / `provider_session_id` | `groupKey` | Groups related events from the same provider turn |
+| `turn_id` | `groupKey` | Groups related events from the same provider turn. Only set when the parser provides explicit turn boundaries; absent for Claude Code sessions until turn-boundary parsing is added. |
 | `event.text` | `rawText` | Original text content from the parsed event |
 | `metadata.tool_input` | `rawJson` | Raw JSON payload (tool input or structured data) |
 

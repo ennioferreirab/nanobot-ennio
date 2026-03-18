@@ -484,8 +484,10 @@ class ProviderCliRunnerStrategy:
         if source_subtype is not None:
             payload["source_subtype"] = source_subtype
 
-        # Group key: use turnId from metadata if available for grouping related events
-        turn_id = metadata.get("turn_id") or event.provider_session_id
+        # Group key: only set when the parser provides an explicit turn boundary.
+        # Do NOT fall back to provider_session_id — that is identical for all events
+        # in a session and would collapse everything into one group.
+        turn_id = metadata.get("turn_id")
         if turn_id is not None:
             payload["group_key"] = turn_id
 
@@ -497,9 +499,7 @@ class ProviderCliRunnerStrategy:
             if isinstance(raw_json_data, str):
                 payload["raw_json"] = raw_json_data
             else:
-                import json as _json
-
-                payload["raw_json"] = _json.dumps(raw_json_data, ensure_ascii=True)
+                payload["raw_json"] = json.dumps(raw_json_data, ensure_ascii=True)
 
         self._bridge.mutation("sessionActivityLog:append", payload)
 

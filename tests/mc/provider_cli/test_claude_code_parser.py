@@ -472,3 +472,121 @@ async def test_start_session_includes_bootstrap_prompt_in_command() -> None:
     assert "--prompt" in launched_command
     prompt_idx = launched_command.index("--prompt")
     assert launched_command[prompt_idx + 1] == bootstrap_prompt
+
+
+# ---------------------------------------------------------------------------
+# Canonical Live metadata (Story 2.1)
+# ---------------------------------------------------------------------------
+
+
+def test_system_init_emits_canonical_metadata() -> None:
+    parser = ClaudeCodeCLIParser()
+    line = json.dumps({"type": "system", "subtype": "init", "session_id": "sid-001"}).encode()
+    events = parser.parse_output(line)
+    sid_events = [e for e in events if e.kind == "session_id"]
+    assert sid_events
+    meta = sid_events[0].metadata or {}
+    assert meta["source_type"] == "system"
+    assert meta["source_subtype"] == "init"
+
+
+def test_assistant_text_emits_canonical_metadata() -> None:
+    parser = ClaudeCodeCLIParser()
+    line = json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "Hello"}],
+                "role": "assistant",
+            },
+        }
+    ).encode()
+    events = parser.parse_output(line)
+    text_events = [e for e in events if e.kind == "text"]
+    assert text_events
+    meta = text_events[0].metadata or {}
+    assert meta["source_type"] == "assistant"
+    assert meta["source_subtype"] == "text"
+
+
+def test_tool_use_emits_canonical_metadata() -> None:
+    parser = ClaudeCodeCLIParser()
+    line = json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tu_001",
+                        "name": "Read",
+                        "input": {"path": "/tmp/file.txt"},
+                    }
+                ],
+                "role": "assistant",
+            },
+        }
+    ).encode()
+    events = parser.parse_output(line)
+    tool_events = [e for e in events if e.kind == "tool_use"]
+    assert tool_events
+    meta = tool_events[0].metadata or {}
+    assert meta["source_type"] == "tool_use"
+    assert meta["source_subtype"] == "Read"
+
+
+def test_result_success_emits_canonical_metadata() -> None:
+    parser = ClaudeCodeCLIParser()
+    line = json.dumps({"type": "result", "subtype": "success", "result": "Done"}).encode()
+    events = parser.parse_output(line)
+    result_events = [e for e in events if e.kind == "result"]
+    assert result_events
+    meta = result_events[0].metadata or {}
+    assert meta["source_type"] == "result"
+    assert meta["source_subtype"] == "success"
+
+
+def test_result_error_emits_canonical_metadata() -> None:
+    parser = ClaudeCodeCLIParser()
+    line = json.dumps({"type": "result", "subtype": "error_max_turns"}).encode()
+    events = parser.parse_output(line)
+    error_events = [e for e in events if e.kind == "error"]
+    assert error_events
+    meta = error_events[0].metadata or {}
+    assert meta["source_type"] == "result"
+    assert meta["source_subtype"] == "error"
+
+
+def test_ask_user_emits_canonical_metadata() -> None:
+    parser = ClaudeCodeCLIParser()
+    line = json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tu_ask",
+                        "name": "mcp__mc__ask_user",
+                        "input": {"question": "Proceed?"},
+                    }
+                ],
+                "role": "assistant",
+            },
+        }
+    ).encode()
+    events = parser.parse_output(line)
+    ask_events = [e for e in events if e.kind == "ask_user_requested"]
+    assert ask_events
+    meta = ask_events[0].metadata or {}
+    assert meta["source_type"] == "tool_use"
+    assert meta["source_subtype"] == "ask_user"
+
+
+def test_unknown_type_emits_source_type_in_metadata() -> None:
+    parser = ClaudeCodeCLIParser()
+    line = json.dumps({"type": "future_type", "data": "something"}).encode()
+    events = parser.parse_output(line)
+    assert events
+    meta = events[0].metadata or {}
+    assert meta["source_type"] == "future_type"
