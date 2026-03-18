@@ -604,6 +604,77 @@ export const retryStep = mutation({
   },
 });
 
+export const stopStep = mutation({
+  args: {
+    stepId: v.id("steps"),
+  },
+  handler: async (ctx, args) => {
+    const step = await ctx.db.get(args.stepId);
+    if (!step) {
+      throw new ConvexError("Step not found");
+    }
+    if (step.status !== "running") {
+      throw new ConvexError(`Step is not in running status (current: ${step.status})`);
+    }
+
+    const timestamp = new Date().toISOString();
+
+    const stepTransition = await applyStepTransition(ctx, step as Parameters<typeof applyStepTransition>[1], {
+      stepId: args.stepId,
+      fromStatus: step.status,
+      expectedStateVersion: getStepStateVersion(step),
+      toStatus: "crashed",
+      errorMessage: "Stopped by user",
+      reason: "User stopped running step",
+      idempotencyKey: `stop:${String(args.stepId)}:${getStepStateVersion(step)}`,
+    });
+
+    if (stepTransition.kind === "conflict") {
+      throw new ConvexError("Step status changed concurrently — please retry");
+    }
+
+    const task = await ctx.db.get(step.taskId);
+    if (!task) {
+      throw new ConvexError("Parent task not found");
+    }
+
+    if (task.status === "in_progress") {
+      await applyTaskTransition(
+        ctx,
+        task as Parameters<typeof applyTaskTransition>[1],
+        {
+          taskId: step.taskId,
+          fromStatus: task.status,
+          expectedStateVersion: getTaskStateVersion(task),
+          toStatus: "crashed",
+          reason: "Step stopped by user",
+          idempotencyKey: `stop-task:${String(step.taskId)}:${getTaskStateVersion(task)}`,
+        },
+      );
+    }
+
+    await ctx.db.insert("activities", {
+      taskId: step.taskId,
+      agentName: step.assignedAgent,
+      eventType: "step_status_changed",
+      description: `Step stopped by user: "${step.title}"`,
+      timestamp,
+    });
+
+    await ctx.db.insert("messages", {
+      taskId: step.taskId,
+      stepId: args.stepId,
+      authorName: "System",
+      authorType: "system",
+      content: `Step "${step.title}" was stopped by user.`,
+      messageType: "system_event",
+      timestamp,
+    });
+
+    return step.taskId;
+  },
+});
+
 /** Original retry path for crashed steps on crashed tasks. */
 async function _retryCrashedStep(
   ctx: MutationCtx,
@@ -990,6 +1061,22 @@ export const deleteStep = mutation({
     await ctx.db.patch(args.stepId, {
       deletedAt: timestamp,
     });
+  },
+});
+
+export const incrementRejectionCount = internalMutation({
+  args: {
+    stepId: v.id("steps"),
+  },
+  handler: async (ctx, args) => {
+    const step = await ctx.db.get(args.stepId);
+    if (!step) {
+      throw new ConvexError("Step not found");
+    }
+    const current = step.rejectionCount ?? 0;
+    const next = current + 1;
+    await ctx.db.patch(args.stepId, { rejectionCount: next });
+    return next;
   },
 });
 

@@ -88,6 +88,8 @@ def _make_stateful_bridge(
     bridge.send_message.return_value = None
     bridge.post_step_completion.return_value = None
     bridge.sync_task_output_files.return_value = None
+    bridge.increment_rejection_count.return_value = 1
+    bridge.get_review_loop_limit.return_value = 5
 
     return bridge, state
 
@@ -1393,3 +1395,196 @@ class TestTaskLevelFileSummaryInDelegationContext:
         # No routing advisory noise when there are no files (AC #3)
         assert "Consider file types" not in desc
         assert "Files available at:" not in desc
+
+
+class TestReviewLoopLimit:
+    """Tests for the review loop limit enforcement (prevent infinite rejection cycles)."""
+
+    @pytest.mark.asyncio
+    async def test_rejection_under_limit_reroutes_normally(self) -> None:
+        """When rejection count is below the limit, reroute as usual."""
+        bridge, state = _make_stateful_bridge(
+            [
+                _step("step-write-1", "Write draft", status=StepStatus.COMPLETED, order=1),
+                _step(
+                    "step-review-1",
+                    "Review draft",
+                    order=2,
+                    workflow_step_type="review",
+                    review_spec_id="review-spec-1",
+                    on_reject_step_id="step-write-1",
+                ),
+            ]
+        )
+        bridge.increment_rejection_count.return_value = 1  # 1 < 5 (default)
+        bridge.get_review_loop_limit.return_value = 5
+        dispatcher = StepDispatcher(bridge)
+
+        snap_patch, collect_patch = _patch_executor_helpers()
+        with (
+            patch("mc.contexts.execution.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
+            _patch_context_builder(),
+            patch(
+                "mc.contexts.execution.step_dispatcher._run_step_agent",
+                new=AsyncMock(
+                    return_value=(
+                        '{"verdict":"rejected","issues":["Fix alignment"],'
+                        '"strengths":[],"scores":{"overall":0.4},'
+                        '"vetoesTriggered":[],'
+                        '"recommendedReturnStep":"step-write-1"}'
+                    )
+                ),
+            ),
+            snap_patch,
+            collect_patch,
+        ):
+            await dispatcher.dispatch_steps("task-1", ["step-review-1"])
+
+        # Should reroute: review step blocked, target step assigned
+        assert state["step-review-1"]["status"] == StepStatus.BLOCKED
+        bridge.update_step_status.assert_any_call("step-write-1", StepStatus.ASSIGNED)
+        bridge.increment_rejection_count.assert_called_once_with("step-review-1")
+
+    @pytest.mark.asyncio
+    async def test_rejection_at_limit_crashes_step(self) -> None:
+        """When rejection count reaches the limit, crash instead of rerouting."""
+        bridge, state = _make_stateful_bridge(
+            [
+                _step("step-write-1", "Write draft", status=StepStatus.COMPLETED, order=1),
+                _step(
+                    "step-review-1",
+                    "Review draft",
+                    order=2,
+                    workflow_step_type="review",
+                    review_spec_id="review-spec-1",
+                    on_reject_step_id="step-write-1",
+                ),
+            ]
+        )
+        bridge.increment_rejection_count.return_value = 3  # equals limit
+        bridge.get_review_loop_limit.return_value = 3
+        dispatcher = StepDispatcher(bridge)
+
+        snap_patch, collect_patch = _patch_executor_helpers()
+        with (
+            patch("mc.contexts.execution.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
+            _patch_context_builder(),
+            patch(
+                "mc.contexts.execution.step_dispatcher._run_step_agent",
+                new=AsyncMock(
+                    return_value=(
+                        '{"verdict":"rejected","issues":["Still wrong"],'
+                        '"strengths":[],"scores":{},"vetoesTriggered":[],'
+                        '"recommendedReturnStep":"step-write-1"}'
+                    )
+                ),
+            ),
+            snap_patch,
+            collect_patch,
+        ):
+            await dispatcher.dispatch_steps("task-1", ["step-review-1"])
+
+        # Step should be crashed, NOT blocked
+        assert state["step-review-1"]["status"] == StepStatus.CRASHED
+        # Target step should NOT have been reassigned
+        assert state["step-write-1"]["status"] == StepStatus.COMPLETED
+        # System message about limit should have been posted
+        limit_messages = [
+            call
+            for call in bridge.send_message.call_args_list
+            if "Review limit reached" in str(call)
+        ]
+        assert len(limit_messages) >= 1, "Expected a system message about review limit"
+
+    @pytest.mark.asyncio
+    async def test_unlimited_mode_never_crashes(self) -> None:
+        """When limit is 0 (unlimited), reroute no matter how high the count."""
+        bridge, state = _make_stateful_bridge(
+            [
+                _step("step-write-1", "Write draft", status=StepStatus.COMPLETED, order=1),
+                _step(
+                    "step-review-1",
+                    "Review draft",
+                    order=2,
+                    workflow_step_type="review",
+                    review_spec_id="review-spec-1",
+                    on_reject_step_id="step-write-1",
+                ),
+            ]
+        )
+        bridge.increment_rejection_count.return_value = 999  # very high
+        bridge.get_review_loop_limit.return_value = 0  # unlimited
+        dispatcher = StepDispatcher(bridge)
+
+        snap_patch, collect_patch = _patch_executor_helpers()
+        with (
+            patch("mc.contexts.execution.step_dispatcher.asyncio.to_thread", new=_sync_to_thread),
+            _patch_context_builder(),
+            patch(
+                "mc.contexts.execution.step_dispatcher._run_step_agent",
+                new=AsyncMock(
+                    return_value=(
+                        '{"verdict":"rejected","issues":["Nope"],'
+                        '"strengths":[],"scores":{},"vetoesTriggered":[],'
+                        '"recommendedReturnStep":"step-write-1"}'
+                    )
+                ),
+            ),
+            snap_patch,
+            collect_patch,
+        ):
+            await dispatcher.dispatch_steps("task-1", ["step-review-1"])
+
+        # Should reroute normally despite 999 rejections
+        assert state["step-review-1"]["status"] == StepStatus.BLOCKED
+        bridge.update_step_status.assert_any_call("step-write-1", StepStatus.ASSIGNED)
+
+    @pytest.mark.asyncio
+    async def test_resolve_review_loop_limit_uses_workflow_spec_override(self) -> None:
+        """Workflow spec maxRetries takes precedence over global setting."""
+        bridge, _state = _make_stateful_bridge([])
+        bridge.get_review_loop_limit.return_value = 5
+        # Simulate workflow spec with maxRetries=2
+        bridge.query.side_effect = lambda fn, args: {
+            "tasks:getById": {
+                "title": "Task",
+                "status": "in_progress",
+                "workflow_spec_id": "spec-1",
+            },
+            "workflowSpecs:getById": {
+                "on_reject": {"return_to_step": "write", "max_retries": 2},
+            },
+        }.get(fn, None)
+
+        dispatcher = StepDispatcher(bridge)
+        limit = await dispatcher._resolve_review_loop_limit(
+            "task-1",
+            {"workflow_spec_id": "spec-1", "status": "in_progress"},
+        )
+        assert limit == 2
+
+    @pytest.mark.asyncio
+    async def test_resolve_review_loop_limit_falls_back_to_global_setting(self) -> None:
+        """Without workflow spec override, use global setting."""
+        bridge, _state = _make_stateful_bridge([])
+        bridge.get_review_loop_limit.return_value = 10
+        # Task has no workflowSpecId
+        bridge.query.return_value = {"title": "Task", "status": "in_progress"}
+
+        dispatcher = StepDispatcher(bridge)
+        limit = await dispatcher._resolve_review_loop_limit(
+            "task-1",
+            {"status": "in_progress"},  # no workflow_spec_id
+        )
+        assert limit == 10
+
+    @pytest.mark.asyncio
+    async def test_resolve_review_loop_limit_defaults_to_five(self) -> None:
+        """When both tiers fail, use hardcoded default of 5."""
+        bridge, _state = _make_stateful_bridge([])
+        bridge.query.side_effect = Exception("Convex down")
+        bridge.get_review_loop_limit.side_effect = Exception("Convex down")
+
+        dispatcher = StepDispatcher(bridge)
+        limit = await dispatcher._resolve_review_loop_limit("task-1", None)
+        assert limit == 5

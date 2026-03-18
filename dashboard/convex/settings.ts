@@ -87,6 +87,21 @@ export const getGatewaySleepControl = query({
   },
 });
 
+export const getReviewLoopLimit = query({
+  args: {},
+  handler: async (ctx) => {
+    const setting = await ctx.db
+      .query("settings")
+      .withIndex("by_key", (q) => q.eq("key", "review_loop_limit"))
+      .first();
+    if (!setting?.value) {
+      return 5;
+    }
+    const parsed = parseInt(setting.value, 10);
+    return Number.isNaN(parsed) ? 5 : parsed;
+  },
+});
+
 export const set = mutation({
   args: {
     key: v.string(),
