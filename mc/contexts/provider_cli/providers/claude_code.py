@@ -30,6 +30,7 @@ class ClaudeCodeCLIParser:
     def __init__(self, *, supervisor: Any | None = None) -> None:
         self._supervisor = supervisor
         self._discovered_session_id: str | None = None
+        self._line_buffer: str = ""
 
     @property
     def discovered_session_id(self) -> str | None:
@@ -62,13 +63,34 @@ class ClaudeCodeCLIParser:
         """Parse raw output from Claude Code into structured events.
 
         Claude Code emits JSONL when run with ``--output-format stream-json``.
-        Each line is either a JSON object with a ``type`` field or plain text.
+        Each line is a complete JSON object terminated by ``\\n``.
+
+        TCP chunks (typically 8 KB) can split a single JSONL line across
+        multiple ``parse_output`` calls. The line buffer accumulates partial
+        content until a newline arrives, then parses the complete line.
         """
         if not chunk:
             return []
 
         text: str = chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else chunk
+        # Prepend any buffered content from the previous chunk
+        if self._line_buffer:
+            text = self._line_buffer + text
+            self._line_buffer = ""
+
         events: list[ParsedCliEvent] = []
+
+        # If the text does not end with a newline, the last segment is a
+        # partial JSONL line split by a TCP chunk boundary.
+        if not text.endswith("\n"):
+            last_nl = text.rfind("\n")
+            if last_nl == -1:
+                # No newline at all — buffer everything for next chunk
+                self._line_buffer = text
+                return events
+            # Buffer the trailing partial, process complete lines above it
+            self._line_buffer = text[last_nl + 1 :]
+            text = text[: last_nl + 1]
 
         for line in text.splitlines():
             stripped = line.strip()
