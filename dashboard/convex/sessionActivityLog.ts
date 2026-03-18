@@ -5,7 +5,7 @@ const TOOL_INPUT_MAX = 2000;
 const SUMMARY_MAX = 1000;
 const ERROR_MAX = 2000;
 const RAW_TEXT_MAX = 4000;
-const RAW_JSON_MAX = 8000;
+const RAW_JSON_MAX = 16000;
 
 export const append = internalMutation({
   args: {
