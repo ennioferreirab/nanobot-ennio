@@ -113,6 +113,15 @@ export const listBySquadInternal = internalQuery({
   },
 });
 
+export const getById = internalQuery({
+  args: {
+    specId: v.id("workflowSpecs"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.specId);
+  },
+});
+
 export const listBySquad = query({
   args: {
     squadSpecId: v.id("squadSpecs"),

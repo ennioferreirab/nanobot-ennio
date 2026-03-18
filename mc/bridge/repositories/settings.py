@@ -22,3 +22,17 @@ class SettingsRepository:
 
     def __init__(self, client: BridgeClientProtocol):
         self._client = client
+
+    def get_review_loop_limit(self) -> int:
+        """Fetch the global review loop limit from settings.
+
+        Returns:
+            The configured limit (default 5). 0 means unlimited.
+        """
+        result = self._client.query("settings:getReviewLoopLimit", {})
+        if result is None:
+            return 5
+        try:
+            return int(result)
+        except (TypeError, ValueError):
+            return 5

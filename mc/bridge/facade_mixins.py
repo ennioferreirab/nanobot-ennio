@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from mc.bridge.repositories.boards import BoardRepository
     from mc.bridge.repositories.chats import ChatRepository
     from mc.bridge.repositories.messages import MessageRepository
+    from mc.bridge.repositories.settings import SettingsRepository
     from mc.bridge.repositories.specs import SpecsRepository
     from mc.bridge.repositories.steps import StepRepository
     from mc.bridge.repositories.tasks import TaskRepository
@@ -31,6 +32,7 @@ class BridgeRepositoryFacadeMixin:
     _agents: AgentRepository
     _boards: BoardRepository
     _chats: ChatRepository
+    _settings: SettingsRepository
     _specs: SpecsRepository
     _subscriptions: SubscriptionManager
 
@@ -212,6 +214,14 @@ class BridgeRepositoryFacadeMixin:
     def check_and_unblock_dependents(self, step_id: str) -> list[str]:
         self._ensure_repos()
         return self._steps.check_and_unblock_dependents(step_id)
+
+    def increment_rejection_count(self, step_id: str) -> int:
+        self._ensure_repos()
+        return self._steps.increment_rejection_count(step_id)
+
+    def get_review_loop_limit(self) -> int:
+        self._ensure_repos()
+        return self._settings.get_review_loop_limit()
 
     def get_task_messages(self, task_id: str) -> list[dict[str, Any]]:
         self._ensure_repos()

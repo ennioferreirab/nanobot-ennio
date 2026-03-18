@@ -273,6 +273,7 @@ export default defineSchema({
     agentId: v.optional(v.id("agents")),
     reviewSpecId: v.optional(v.id("reviewSpecs")),
     onRejectStepId: v.optional(v.string()),
+    rejectionCount: v.optional(v.number()),
   })
     .index("by_taskId", ["taskId"])
     .index("by_status", ["status"]),

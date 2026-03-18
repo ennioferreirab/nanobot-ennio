@@ -9,6 +9,7 @@ step lifecycle transitions.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -212,6 +213,72 @@ class StepDispatcher:
             provider_cli_control_plane=self._provider_cli_control_plane,
         )
 
+    async def _resolve_review_loop_limit(
+        self, task_id: str, task_data: dict[str, Any] | None = None
+    ) -> int:
+        """Resolve the review loop limit with 3-tier precedence.
+
+        1. Workflow spec ``onReject.maxRetries`` (per-workflow)
+        2. Global setting ``review_loop_limit`` (settings table)
+        3. Hardcoded default: 5
+
+        Returns 0 for unlimited.
+        """
+        # 1. Try workflow-spec override
+        try:
+            effective_task_data = task_data
+            if not isinstance(effective_task_data, dict):
+                effective_task_data = await asyncio.to_thread(
+                    self._bridge.query, "tasks:getById", {"task_id": task_id}
+                )
+            if isinstance(effective_task_data, dict):
+                workflow_spec_id = effective_task_data.get(
+                    "workflow_spec_id"
+                ) or effective_task_data.get("workflowSpecId")
+                if workflow_spec_id:
+                    spec = await asyncio.to_thread(
+                        self._bridge.query,
+                        "workflowSpecs:getById",
+                        {"spec_id": str(workflow_spec_id)},
+                    )
+                    if isinstance(spec, dict):
+                        on_reject = spec.get("on_reject") or spec.get("onReject")
+                        if isinstance(on_reject, dict):
+                            max_retries = on_reject.get("max_retries") or on_reject.get(
+                                "maxRetries"
+                            )
+                            if max_retries is not None:
+                                try:
+                                    return int(max_retries)
+                                except (TypeError, ValueError):
+                                    pass
+        except Exception:
+            logger.debug(
+                "[dispatcher] Could not read workflow spec for task %s; falling back",
+                task_id,
+                exc_info=True,
+            )
+
+        # 2. Global setting
+        try:
+            global_limit = await asyncio.to_thread(
+                self._bridge.get_review_loop_limit
+            )
+            return global_limit
+        except Exception:
+            logger.debug(
+                "[dispatcher] Could not read global review_loop_limit; using default",
+                exc_info=True,
+            )
+
+        # 3. Hardcoded default
+        logger.warning(
+            "[dispatcher] Using hardcoded review loop limit (5) for task %s — "
+            "both workflow spec and global settings were unavailable",
+            task_id,
+        )
+        return 5
+
     async def dispatch_steps(self, task_id: str, step_ids: list[str]) -> None:
         """Dispatch assigned steps for a task until no runnable work remains."""
         logger.info(
@@ -253,6 +320,18 @@ class StepDispatcher:
                     break
 
                 steps = await asyncio.to_thread(self._bridge.get_steps_by_task, task_id)
+
+                # Allow re-dispatch of steps that returned to assigned
+                # (e.g. review rejection rerouting or dependency unblocking).
+                for s in steps:
+                    sid = str(s.get("id", ""))
+                    if s.get("status") == StepStatus.ASSIGNED and sid in dispatched_step_ids:
+                        logger.info(
+                            "[dispatcher] Step '%s' returned to assigned; allowing re-dispatch",
+                            s.get("title", sid),
+                        )
+                        dispatched_step_ids.discard(sid)
+
                 assigned_steps = [
                     step
                     for step in steps
@@ -367,18 +446,80 @@ class StepDispatcher:
 
     async def _dispatch_parallel_group(self, task_id: str, steps: list[dict[str, Any]]) -> None:
         """Execute all steps in a parallel group concurrently."""
-        results = await asyncio.gather(
-            *[self._execute_step(task_id, step) for step in steps],
-            return_exceptions=True,
+        step_tasks: dict[str, asyncio.Task[Any]] = {}
+        for step in steps:
+            step_id = str(step.get("id", ""))
+            step_tasks[step_id] = asyncio.create_task(
+                self._execute_step(task_id, step), name=f"step-{step_id}"
+            )
+
+        monitor = asyncio.create_task(
+            self._monitor_step_cancellation(task_id, step_tasks)
         )
+        try:
+            results = await asyncio.gather(*step_tasks.values(), return_exceptions=True)
+        finally:
+            monitor.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await monitor
 
         for step, result in zip(steps, results, strict=False):
-            if isinstance(result, Exception):
+            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
                 logger.error(
                     "[dispatcher] Step '%s' failed in parallel group: %s",
                     step.get("title", step.get("id", "<unknown-step>")),
                     result,
                 )
+
+    async def _monitor_step_cancellation(
+        self, task_id: str, step_tasks: dict[str, asyncio.Task[Any]]
+    ) -> None:
+        """Watch for externally-crashed steps and cancel their asyncio Tasks.
+
+        Uses the existing async_subscribe infrastructure (same pattern as
+        TaskExecutor and orchestrator loops) instead of a manual polling loop.
+        """
+        active = dict(step_tasks)  # shallow copy — we mutate this
+        queue = self._bridge.async_subscribe(
+            "steps:getByTask",
+            {"task_id": task_id},
+            poll_interval=2.0,
+        )
+        try:
+            while active:
+                steps_snapshot = await queue.get()
+                if not isinstance(steps_snapshot, list):
+                    continue
+                for step_data in steps_snapshot:
+                    step_id = str(step_data.get("id", ""))
+                    if step_id not in active:
+                        continue
+                    task = active[step_id]
+                    if step_data.get("status") == StepStatus.CRASHED and not task.done():
+                        logger.info(
+                            "[dispatcher] Step %s externally crashed — cancelling task",
+                            step_id,
+                        )
+                        await self._kill_step_process(task_id, step_id)
+                        task.cancel()
+                        del active[step_id]
+        except asyncio.CancelledError:
+            raise
+
+    async def _kill_step_process(self, task_id: str, step_id: str) -> None:
+        """Best-effort kill of the provider-cli subprocess for a step."""
+        if self._provider_cli_control_plane is None:
+            return
+        mc_session_id = f"{task_id}-{step_id}"
+        try:
+            result = await self._provider_cli_control_plane.stop(mc_session_id)
+            logger.info("[dispatcher] Kill result for %s: %s", mc_session_id, result)
+        except Exception:
+            logger.warning(
+                "[dispatcher] Failed to kill process for session %s",
+                mc_session_id,
+                exc_info=True,
+            )
 
     async def _execute_step(self, task_id: str, step: dict[str, Any]) -> list[str]:
         """Execute one assigned step and return any newly unblocked step IDs."""
@@ -551,12 +692,71 @@ class StepDispatcher:
             )
 
             if review_result is not None and review_result.verdict == "rejected":
-                reject_target_id = (
+                # ── Review loop limit enforcement ────────────────────────
+                # Increment rejection count on the review step.
+                rejection_count = await asyncio.to_thread(
+                    self._bridge.increment_rejection_count, step_id
+                )
+
+                # Resolve the limit: workflow spec → global setting → hardcoded 5
+                review_loop_limit = await self._resolve_review_loop_limit(
+                    task_id, task_data
+                )
+
+                if review_loop_limit != 0 and rejection_count >= review_loop_limit:
+                    error_msg = (
+                        f"Review limit reached ({rejection_count}/{review_loop_limit}). "
+                        f"Requires human intervention."
+                    )
+                    logger.warning(
+                        "[dispatcher] %s for review step '%s' on task %s",
+                        error_msg,
+                        step_title,
+                        task_id,
+                    )
+                    await asyncio.to_thread(
+                        self._bridge.send_message,
+                        task_id,
+                        "System",
+                        AuthorType.SYSTEM,
+                        f'Review step "{step_title}" exceeded the maximum rejection limit. '
+                        f"{error_msg}",
+                        MessageType.SYSTEM_EVENT,
+                    )
+                    raise RuntimeError(error_msg)
+
+                raw_reject_target = (
                     step.get("on_reject_step_id") or review_result.recommended_return_step
                 )
-                if not reject_target_id:
+                if not raw_reject_target:
                     raise ValueError(
                         f"Review step '{step_title}' rejected without an onReject target"
+                    )
+
+                # Parse "key:Title" format — extract just the key part
+                reject_target_key = raw_reject_target.split(":")[0].strip()
+
+                # Resolve step key → Convex step ID.  on_reject_step_id stores
+                # the workflow step key (e.g. "write"), not the real Convex _id.
+                all_steps = await asyncio.to_thread(
+                    self._bridge.get_steps_by_task, task_id
+                )
+                resolved_target_id: str | None = None
+                target_step_title = reject_target_key
+                for s in all_steps:
+                    if s.get("workflow_step_id") == reject_target_key:
+                        resolved_target_id = str(s.get("id"))
+                        target_step_title = s.get("title", reject_target_key)
+                        break
+                    # Also accept a raw Convex ID (defensive)
+                    if str(s.get("id")) == reject_target_key:
+                        resolved_target_id = reject_target_key
+                        target_step_title = s.get("title", reject_target_key)
+                        break
+                if not resolved_target_id:
+                    raise ValueError(
+                        f"Review step '{step_title}' onReject target "
+                        f"'{reject_target_key}' not found in task steps"
                     )
 
                 await asyncio.to_thread(
@@ -566,15 +766,39 @@ class StepDispatcher:
                 )
                 await asyncio.to_thread(
                     self._bridge.update_step_status,
-                    str(reject_target_id),
+                    resolved_target_id,
                     StepStatus.ASSIGNED,
                 )
+
+                # Post rejection feedback to task thread for visibility
+                issues_summary = "; ".join(review_result.issues[:3]) if review_result.issues else "see feedback"
+                await asyncio.to_thread(
+                    self._bridge.send_message,
+                    task_id,
+                    agent_name,
+                    AuthorType.AGENT,
+                    f"Review rejected step \"{target_step_title}\". Issues: {issues_summary}. "
+                    f"Returning to \"{target_step_title}\" for revision. "
+                    f"(rejection {rejection_count}/{review_loop_limit if review_loop_limit else '∞'})",
+                    MessageType.REVIEW_FEEDBACK,
+                )
+
                 await asyncio.to_thread(
                     self._bridge.create_activity,
                     ActivityEventType.REVIEW_FEEDBACK,
-                    f"Review step '{step_title}' rejected; rerouting to {reject_target_id}",
+                    f"Review step '{step_title}' rejected; rerouting to '{target_step_title}'"
+                    f" (rejection {rejection_count}/{review_loop_limit if review_loop_limit else '∞'})",
                     task_id,
                     agent_name,
+                )
+
+                logger.info(
+                    "[dispatcher] Review rejection: '%s' → blocked, '%s' → assigned for revision"
+                    " (rejection %d/%s)",
+                    step_title,
+                    target_step_title,
+                    rejection_count,
+                    review_loop_limit if review_loop_limit else "∞",
                 )
                 return []
 
@@ -605,6 +829,9 @@ class StepDispatcher:
             if not isinstance(unblocked_ids, list):
                 return []
             return [str(unblocked_id) for unblocked_id in unblocked_ids]
+        except asyncio.CancelledError:
+            logger.info("[dispatcher] Step '%s' cancelled (user stop)", step_title)
+            raise  # propagate to gather
         except Exception as exc:
             error_message = f"{type(exc).__name__}: {exc}"
 

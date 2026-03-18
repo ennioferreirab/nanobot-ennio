@@ -38,6 +38,7 @@ from mc.bridge.repositories.agents import AgentRepository
 from mc.bridge.repositories.boards import BoardRepository
 from mc.bridge.repositories.chats import ChatRepository
 from mc.bridge.repositories.messages import MessageRepository
+from mc.bridge.repositories.settings import SettingsRepository
 from mc.bridge.repositories.specs import SpecsRepository
 from mc.bridge.repositories.steps import StepRepository
 from mc.bridge.repositories.tasks import TaskRepository
@@ -76,6 +77,7 @@ class ConvexBridge(BridgeRepositoryFacadeMixin):
         self._agents = AgentRepository(adapter)
         self._boards = BoardRepository(adapter)
         self._chats = ChatRepository(adapter)
+        self._settings = SettingsRepository(adapter)
         self._specs = SpecsRepository(adapter)
         self._subscriptions = SubscriptionManager(adapter)
 

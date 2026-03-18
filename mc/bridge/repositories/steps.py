@@ -186,6 +186,21 @@ class StepRepository:
             return []
         return [str(unblocked_id) for unblocked_id in result]
 
+    def increment_rejection_count(self, step_id: str) -> int:
+        """Atomically increment the rejectionCount on a step.
+
+        Returns:
+            The new rejection count after incrementing.
+        """
+        result = self._client.mutation(
+            "steps:incrementRejectionCount",
+            {"step_id": step_id},
+        )
+        try:
+            return int(result)
+        except (TypeError, ValueError):
+            return 1
+
     @staticmethod
     def _log_state_transition(entity_type: str, description: str) -> None:
         """Log a state transition to local stdout via logging."""
