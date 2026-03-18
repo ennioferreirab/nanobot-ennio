@@ -604,6 +604,34 @@ def test_ask_user_emits_canonical_metadata() -> None:
     assert meta["source_subtype"] == "ask_user"
 
 
+def test_truncate_large_values_preserves_structure() -> None:
+    """Large string values in raw_json are truncated per-key, keeping JSON valid."""
+    from mc.contexts.provider_cli.providers.claude_code import _truncate_large_values
+
+    data = {
+        "type": "system",
+        "short": "ok",
+        "huge": "x" * 20000,
+        "nested": {"also_huge": "y" * 20000, "small": "fine"},
+        "list": ["z" * 20000, "short"],
+    }
+    result = _truncate_large_values(data, max_len=100)
+
+    assert result["type"] == "system"
+    assert result["short"] == "ok"
+    assert len(result["huge"]) < 200
+    assert "truncated" in result["huge"]
+    assert "20000 chars" in result["huge"]
+    assert len(result["nested"]["also_huge"]) < 200
+    assert result["nested"]["small"] == "fine"
+    assert len(result["list"][0]) < 200
+    assert result["list"][1] == "short"
+
+    # Result must be valid JSON
+    serialized = json.dumps(result)
+    json.loads(serialized)
+
+
 def test_unknown_type_emits_source_type_in_metadata() -> None:
     parser = ClaudeCodeCLIParser()
     line = json.dumps({"type": "future_type", "data": "something"})

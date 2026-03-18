@@ -12,6 +12,22 @@ from mc.contexts.provider_cli.types import (
     ProviderSessionSnapshot,
 )
 
+RAW_JSON_VALUE_MAX = 16_000
+
+
+def _truncate_large_values(obj: Any, max_len: int = RAW_JSON_VALUE_MAX) -> Any:
+    """Recursively truncate string values exceeding max_len in a dict/list.
+
+    Keeps the JSON structure valid — only individual string values are cut.
+    """
+    if isinstance(obj, dict):
+        return {k: _truncate_large_values(v, max_len) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_truncate_large_values(item, max_len) for item in obj]
+    if isinstance(obj, str) and len(obj) > max_len:
+        return obj[:max_len] + f"... [truncated, {len(obj)} chars total]"
+    return obj
+
 
 class ClaudeCodeCLIParser:
     """Implements the ProviderCLIParser protocol for Claude Code CLI sessions.
@@ -179,7 +195,7 @@ class ClaudeCodeCLIParser:
             events.append(
                 ParsedCliEvent(
                     kind="text",
-                    text=json.dumps(data),
+                    text=json.dumps(_truncate_large_values(data)),
                     metadata={"raw_type": msg_type, "source_type": msg_type},
                 )
             )
@@ -220,7 +236,7 @@ class ClaudeCodeCLIParser:
                         "source_type": "system",
                         "source_subtype": subtype,
                         "hook_name": hook_name,
-                        "raw_json": json.dumps(data),
+                        "raw_json": json.dumps(_truncate_large_values(data)),
                     },
                 )
             )
