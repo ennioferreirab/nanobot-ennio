@@ -632,6 +632,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                         executionPlan={planForDisplay}
                         liveSteps={liveSteps ?? undefined}
                         isEditMode={task!.status === "review"}
+                        isPaused={isPaused}
                         taskId={task!._id}
                         taskStatus={taskStatus}
                         boardId={task?.boardId}
