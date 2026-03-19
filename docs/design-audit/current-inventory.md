@@ -617,6 +617,60 @@ All screenshots are in `docs/design-audit/screenshots/`. Each image documents th
 | `50-task-cards-inbox-light.png` | Inbox cards close-up | Multiple task cards in Inbox column. Cards show: title (2-line clamp), tag chips, status badge, star/agent/expand icons. Some cards have description paragraphs visible. Cards have violet left border for inbox status. |
 | `50-task-cards-done-light.png` | Done cards close-up | Done column cards with: green left border, title, step progress indicator (img + "X/X steps" text), "done" green badge, file count with paperclip icon, agent name. Cards more compact than inbox cards. |
 
+### Live Tab (Provider Interaction Panel)
+
+> **No screenshot available** — the Live tab only appears when a task has an active provider session (task in execution). No tasks were running during capture. Visual spec documented from code analysis.
+
+**Container**: `ProviderLiveChatPanel.tsx` — always uses dark terminal theme regardless of app theme.
+- Background: `bg-zinc-950` (`#09090b`)
+- Text: `text-zinc-100`
+- Full height: `flex h-full min-h-0 flex-col`
+
+**Header bar** (`border-b border-zinc-800 px-3 py-2`):
+- "Live" label: `text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-400`
+- Agent name: `text-xs text-zinc-500` (e.g., "@marketing-copy")
+- Provider pill: `rounded-full bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400` (e.g., "claude-code")
+- Status badge (conditional color):
+  - Streaming: `bg-emerald-500/10 text-emerald-300`
+  - Completed: `bg-blue-500/10 text-blue-300`
+  - Error: `bg-red-500/10 text-red-300`
+  - Idle/Loading: `bg-zinc-800 text-zinc-300`
+- Session ID: `rounded-full bg-zinc-900 px-2 py-0.5 text-zinc-500` (first 16 chars)
+
+**Category filter bar** (`border-b border-zinc-800 px-3 py-2`):
+- Filter pills: `rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize`
+  - Active: `border-zinc-500 bg-zinc-100 text-zinc-900` (inverted — white on dark)
+  - Inactive: `border-zinc-700 bg-zinc-900 text-zinc-300`
+- "All" button resets filters
+- Categories: tool, skill, result, action, error, system, text
+
+**Event rows** (`ProviderLiveEventRow.tsx`):
+- Container: `rounded-lg border px-3 py-2`
+  - Normal: `border-zinc-800 bg-zinc-950/80`
+  - Error: `border-red-500/30 bg-red-500/10`
+- Category pill: `rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase`
+  - tool: `border-sky-500/20 bg-sky-500/5 text-sky-200`
+  - skill: `border-violet-500/20 bg-violet-500/5 text-violet-200`
+  - result: `border-emerald-500/20 bg-emerald-500/5 text-emerald-200`
+  - action: `border-amber-500/20 bg-amber-500/5 text-amber-200`
+  - error: `border-red-500/20 bg-red-500/5 text-red-200`
+  - system: `border-zinc-700 bg-zinc-900 text-zinc-300`
+  - text (default): `border-zinc-700 bg-zinc-900/70 text-zinc-200`
+- Title: `text-xs font-medium text-zinc-100`
+- "Action required" badge: `rounded-full border-amber-500/30 bg-amber-500/10 text-[10px] text-amber-200`
+- "Truncated" badge: `rounded-full border-orange-500/30 bg-orange-500/10 text-[10px] text-orange-300`
+- Timestamp: `text-[10px] text-zinc-500` (e.g., "07:40 PM")
+- Tool input (JSON): `rounded-md border-zinc-800 bg-zinc-900 font-mono text-xs text-zinc-300 whitespace-pre-wrap`
+- Body (JSON): `max-h-64 overflow-y-auto rounded-md border-zinc-800 bg-zinc-900 font-mono text-xs text-zinc-300`
+- Body (markdown): `text-sm text-zinc-200` rendered via MarkdownRenderer
+
+**Session selector** (when multiple sessions exist):
+- Dropdown combobox showing step name + status
+- Status indicators: active/paused/completed
+
+**Grouped events**: Related events (same tool call) wrapped in:
+- `rounded-lg border border-zinc-800 bg-zinc-950/60 p-1 flex flex-col gap-1`
+
 ### Component Characteristics Summary
 
 | Component | Light Mode BG | Dark Mode BG | Border | Border Radius | Padding | Shadow |
