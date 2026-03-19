@@ -61,6 +61,8 @@ function getDisplayFileKey(file: { name: string; subfolder: string; sourceTaskId
   return `${file.sourceTaskId ?? "local"}:${file.subfolder}:${file.name}`;
 }
 
+const noop = () => {};
+
 interface TaskDetailSheetProps {
   taskId: Id<"tasks"> | null;
   onClose: () => void;
@@ -196,9 +198,6 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
   const [selectedMergeTaskId, setSelectedMergeTaskId] = useState<Id<"tasks"> | "">("");
   const [isMergedSourceGroupCollapsed, setIsMergedSourceGroupCollapsed] = useState(false);
   const attachInputRef = useRef<HTMLInputElement>(null);
-  const threadEndRef = useRef<HTMLDivElement>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
-  const messageCount = messages?.length ?? 0;
   const isMergeLockedSource = Boolean(task?.mergedIntoTaskId);
   const mergeAlias = task?.isMergeTask ? buildMergeAliasDisplay(directMergeSources) : undefined;
   const planForDisplay = activePlan ?? taskExecutionPlan ?? null;
@@ -221,45 +220,6 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
       setActiveTab("thread");
     }
   }, [activeTab, liveSession.session, setActiveTab]);
-
-  // Track if user is at bottom via IntersectionObserver
-  useEffect(() => {
-    const sentinel = threadEndRef.current;
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(([entry]) => setIsAtBottom(entry.isIntersecting), {
-      threshold: 0.1,
-    });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, []);
-
-  const jumpToBottom = useCallback(() => {
-    const scrollTarget = threadEndRef.current;
-    if (typeof scrollTarget?.scrollIntoView === "function") {
-      scrollTarget.scrollIntoView();
-    }
-  }, []);
-
-  // Auto-scroll only when at bottom and new messages arrive
-  const scrollToBottom = useCallback(() => {
-    threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
-
-  useEffect(() => {
-    const scrollTarget = threadEndRef.current;
-    if (isAtBottom && messageCount > 0 && typeof scrollTarget?.scrollIntoView === "function") {
-      scrollTarget.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messageCount, isAtBottom]);
-
-  useEffect(() => {
-    if (activeTab === "thread" && messageCount > 0) {
-      const frameId = requestAnimationFrame(() => {
-        jumpToBottom();
-      });
-      return () => cancelAnimationFrame(frameId);
-    }
-  }, [activeTab, jumpToBottom, messageCount]);
 
   // Reset inline-edit state whenever a different task opens
   useEffect(() => {
@@ -612,11 +572,11 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                 }
                 handleOpenArtifact={handleOpenArtifact}
                 liveSteps={liveSteps}
-                threadEndRef={threadEndRef}
+                isActive={activeTab === "thread"}
                 shouldReduceMotion={shouldReduceMotion}
                 task={task}
                 isMergeLockedSource={isMergeLockedSource}
-                onMessageSent={scrollToBottom}
+                onMessageSent={noop}
                 filterStepIds={filterStepIds}
                 onFilterStepIdsChange={setFilterStepIds}
               />
