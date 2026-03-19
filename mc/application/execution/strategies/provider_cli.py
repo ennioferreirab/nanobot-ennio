@@ -161,6 +161,8 @@ class ProviderCliRunnerStrategy:
                 if cc_opts.allowed_tools:
                     for tool in cc_opts.allowed_tools:
                         command.extend(["--allowedTools", tool])
+                else:
+                    command.extend(["--allowedTools", "*"])
                 # Always allow the nanobot MCP tool namespace
                 command.extend(["--allowedTools", "mcp__mc__*"])
 
@@ -170,6 +172,10 @@ class ProviderCliRunnerStrategy:
 
                 if cc_opts.effort_level:
                     command.extend(["--effort", cc_opts.effort_level])
+            else:
+                # No cc_opts at all — allow everything by default
+                command.extend(["--allowedTools", "*"])
+                command.extend(["--allowedTools", "mcp__mc__*"])
 
         return command
 

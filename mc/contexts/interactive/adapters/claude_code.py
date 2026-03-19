@@ -133,6 +133,10 @@ class ClaudeCodeInteractiveAdapter:
         cmd.extend(["--permission-mode", permission_mode])
 
         allowed_tools = list((cc and cc.allowed_tools) or [])
+        # When no explicit allowed_tools are configured, default to "*" so
+        # that all built-in and MCP tools are auto-approved in MC sessions.
+        if not allowed_tools:
+            allowed_tools.append("*")
         allowed_tools.append("mcp__mc__*")
         for tool in allowed_tools:
             cmd.extend(["--allowedTools", tool])
