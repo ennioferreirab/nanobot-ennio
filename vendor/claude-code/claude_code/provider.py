@@ -175,10 +175,12 @@ class ClaudeCodeProvider:
         # When no explicit allowed_tools are configured, default to "*" so
         # that all built-in and MCP tools are auto-approved.  Agents running
         # in MC are autonomous; restrict via explicit allowed_tools if needed.
+        # See also: provider_cli.py, claude_code.py (interactive adapter)
         if cc and cc.allowed_tools:
             for tool in cc.allowed_tools:
                 cmd.extend(["--allowedTools", tool])
         else:
+            logger.info("No allowed_tools configured — defaulting to '*'")
             cmd.extend(["--allowedTools", "*"])
         # Always allow the nanobot MCP tool namespace
         cmd.extend(["--allowedTools", "mcp__mc__*"])

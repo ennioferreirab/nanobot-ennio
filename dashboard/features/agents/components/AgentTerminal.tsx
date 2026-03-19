@@ -33,7 +33,7 @@ export function AgentTerminal({
     const terminal = new Terminal({
       cursorBlink: true,
       fontFamily: '"SFMono-Regular", "Menlo", "Monaco", monospace',
-      fontSize: 12,
+      fontSize: 15,
       lineHeight: 1.25,
       theme: {
         background: "#09090b",

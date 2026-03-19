@@ -124,6 +124,13 @@ class ClaudeCodeRunnerStrategy:
             agent_data.model = request.model
         elif request.agent_model:
             agent_data.model = request.agent_model
+
+        logger.info(
+            "[cc-strategy] Agent '%s' built: skills=%s, model=%s",
+            agent_data.name,
+            agent_data.skills,
+            agent_data.model,
+        )
         return agent_data
 
     async def execute(self, request: ExecutionRequest) -> ExecutionResult:
@@ -174,7 +181,10 @@ class ClaudeCodeRunnerStrategy:
             ask_user_registry=self._ask_user_registry,
         )
         agent_data = self._build_agent_data(request)
-        await adapter.sync_agent(request.agent_name, agent_data)
+        # NOTE: The context_builder already synced prompt, model, variables, and
+        # skills from Convex.  The old executor had a redundant _sync_cc_convex_agent
+        # call here that could silently override skills with stale Convex data.
+        # Removed to keep a single source of truth (context_builder).
 
         if request.reasoning_level:
             effort_map = {

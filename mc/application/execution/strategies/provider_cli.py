@@ -163,6 +163,8 @@ class ProviderCliRunnerStrategy:
                     for tool in cc_opts.allowed_tools:
                         command.extend(["--allowedTools", tool])
                 else:
+                    # See also: claude_code.py, vendor/claude-code/provider.py
+                    logger.info("No allowed_tools configured — defaulting to '*'")
                     command.extend(["--allowedTools", "*"])
                 # Always allow the nanobot MCP tool namespace
                 command.extend(["--allowedTools", "mcp__mc__*"])
@@ -175,6 +177,8 @@ class ProviderCliRunnerStrategy:
                     command.extend(["--effort", cc_opts.effort_level])
             else:
                 # No cc_opts at all — allow everything by default
+                # See also: claude_code.py, vendor/claude-code/provider.py
+                logger.info("No cc_opts configured — defaulting allowedTools to '*'")
                 command.extend(["--allowedTools", "*"])
                 command.extend(["--allowedTools", "mcp__mc__*"])
 

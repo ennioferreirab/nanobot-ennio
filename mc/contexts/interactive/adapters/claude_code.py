@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -17,6 +18,8 @@ from mc.contexts.interactive.errors import (
 from mc.contexts.interactive.identity import InteractiveSessionIdentity
 from mc.contexts.interactive.types import InteractiveLaunchSpec, InteractiveSupervisionSink
 from mc.types import AgentData
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeCodeInteractiveAdapter:
@@ -135,7 +138,9 @@ class ClaudeCodeInteractiveAdapter:
         allowed_tools = list((cc and cc.allowed_tools) or [])
         # When no explicit allowed_tools are configured, default to "*" so
         # that all built-in and MCP tools are auto-approved in MC sessions.
+        # See also: provider_cli.py, vendor/claude-code/provider.py
         if not allowed_tools:
+            logger.info("No allowed_tools configured — defaulting to '*'")
             allowed_tools.append("*")
         allowed_tools.append("mcp__mc__*")
         for tool in allowed_tools:

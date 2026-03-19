@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ProviderLiveEventRow } from "@/features/interactive/components/ProviderLiveEventRow";
 import {
@@ -66,6 +66,29 @@ export function ProviderLiveChatPanel({
       return node.events.some((e) => !hiddenCategories.has(e.category));
     });
   }, [groupedTimeline, hiddenCategories]);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const userScrolledRef = useRef(false);
+  const isAtBottomRef = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    userScrolledRef.current = true;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+  }, []);
+
+  // Track both count and last event id so we scroll when events are added to
+  // an existing group (count unchanged) or when filters produce different results.
+  const eventCount = filteredNodes?.length ?? filteredEvents.length;
+  const lastEventId = filteredEvents[filteredEvents.length - 1]?.id ?? null;
+  useEffect(() => {
+    if (eventCount === 0) return;
+    if (!userScrolledRef.current || isAtBottomRef.current) {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+  }, [eventCount, lastEventId]);
 
   const toggleCategory = (category: ProviderLiveCategory) => {
     setHiddenCategories((current) => {
@@ -161,7 +184,7 @@ export function ProviderLiveChatPanel({
       )}
 
       {/* Content area */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+      <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
         {isLoading ? (
           <p className="text-xs text-zinc-500">Connecting to provider session…</p>
         ) : events.length === 0 ? (

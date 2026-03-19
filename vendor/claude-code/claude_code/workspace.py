@@ -524,6 +524,12 @@ class CCWorkspaceManager:
           2. self._root/workspace/skills/<skill_name>
           3. vendor builtin: vendor/nanobot/nanobot/skills/<skill_name>
         """
+        logger.info(
+            "[skills] Mapping %d skill(s) for workspace %s: %s",
+            len(skills),
+            workspace,
+            skills,
+        )
         skills_dir = workspace / ".claude" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
 
@@ -579,7 +585,7 @@ class CCWorkspaceManager:
                 continue
 
             link_path.symlink_to(target)
-            logger.debug("Mapped skill '%s' → %s", skill_name, target)
+            logger.info("[skills] Mapped '%s' → %s", skill_name, target)
 
     def _find_skill(self, workspace: Path, skill_name: str) -> Path | None:
         """Return the first existing skill directory for *skill_name*, or None."""

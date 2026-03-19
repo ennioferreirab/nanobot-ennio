@@ -1,6 +1,6 @@
 "use client";
 
-import { type RefObject, useMemo, useState, useRef, useEffect, useCallback } from "react";
+import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import * as motion from "motion/react-client";
 import { X, ChevronDown } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -24,7 +24,7 @@ interface TaskDetailThreadTabProps {
   onToggleMergedSourceGroup: () => void;
   handleOpenArtifact: (artifactPath: string, sourceTaskId?: Id<"tasks">) => void;
   liveSteps: TaskDetailViewData["liveSteps"];
-  threadEndRef: RefObject<HTMLDivElement | null>;
+  isActive?: boolean;
   shouldReduceMotion: boolean | null;
   task: TaskDetailTask | null;
   isMergeLockedSource: boolean;
@@ -41,7 +41,7 @@ export function TaskDetailThreadTab({
   onToggleMergedSourceGroup,
   handleOpenArtifact,
   liveSteps,
-  threadEndRef,
+  isActive,
   shouldReduceMotion,
   task,
   isMergeLockedSource,
@@ -74,6 +74,52 @@ export function TaskDetailThreadTab({
     },
     [filterStepIds, onFilterStepIdsChange],
   );
+
+  // --- Auto-scroll management ---
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const userScrolledRef = useRef(false);
+  const isAtBottomRef = useRef(true);
+
+  useEffect(() => {
+    const root = scrollAreaRef.current;
+    if (!root) return;
+    // Radix ScrollArea renders scrollable content inside a viewport child.
+    // Fall back to root if the internal attribute changes in a future version.
+    const viewport =
+      (root.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null) ?? root;
+    const onScroll = () => {
+      userScrolledRef.current = true;
+      isAtBottomRef.current =
+        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 50;
+    };
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    return () => viewport.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const messageCount = filteredMessages?.length ?? 0;
+  useEffect(() => {
+    if (messageCount === 0) return;
+    if (!userScrolledRef.current || isAtBottomRef.current) {
+      endRef.current?.scrollIntoView({ behavior: userScrolledRef.current ? "smooth" : "auto" });
+    }
+  }, [messageCount]);
+
+  // Start false so the first activation always triggers a jump-to-bottom,
+  // including the case where the thread tab is already active on mount.
+  const wasActiveRef = useRef(false);
+  useEffect(() => {
+    if (isActive && !wasActiveRef.current && messageCount > 0) {
+      requestAnimationFrame(() => endRef.current?.scrollIntoView());
+    }
+    wasActiveRef.current = !!isActive;
+  }, [isActive, messageCount]);
+
+  const handleMessageSent = useCallback(() => {
+    isAtBottomRef.current = true;
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    onMessageSent();
+  }, [onMessageSent]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -148,7 +194,7 @@ export function TaskDetailThreadTab({
           )}
         </div>
       )}
-      <ScrollArea className="flex-1">
+      <ScrollArea ref={scrollAreaRef} className="flex-1">
         {filteredMessages === undefined ? (
           <p className="px-6 py-8 text-center text-sm text-muted-foreground">Loading messages...</p>
         ) : filteredMessages.length === 0 && !hasSourceThreads ? (
@@ -238,12 +284,12 @@ export function TaskDetailThreadTab({
                   />
                 </motion.div>
               ))}
-              <div ref={threadEndRef} />
+              <div ref={endRef} />
             </div>
           </>
         )}
       </ScrollArea>
-      {task && !isMergeLockedSource && <ThreadInput task={task} onMessageSent={onMessageSent} />}
+      {task && !isMergeLockedSource && <ThreadInput task={task} onMessageSent={handleMessageSent} />}
     </TabsContent>
   );
 }
