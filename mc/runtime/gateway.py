@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 from mc.application.execution.interactive_mode import INTERACTIVE_MODE_ENV
 
 # Re-export AgentGateway from crash_handler for backward compatibility
-from mc.contexts.execution.crash_recovery import MAX_AUTO_RETRIES, AgentGateway  # noqa: F401
+from mc.contexts.execution.crash_recovery import AgentGateway  # noqa: F401
 from mc.infrastructure.agent_bootstrap import (  # noqa: F401
     _NANOBOT_AGENT_CONFIG,
     NANOBOT_AGENT_NAME,

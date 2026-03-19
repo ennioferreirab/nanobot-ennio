@@ -37,7 +37,6 @@ def _make_bridge() -> MagicMock:
 def _make_executor(bridge: MagicMock | None = None) -> TaskExecutor:
     bridge = bridge or _make_bridge()
     executor = TaskExecutor(bridge, on_task_completed=None)
-    executor._agent_gateway.clear_retry_count = MagicMock()
     return executor
 
 
@@ -322,29 +321,3 @@ class TestEffortLevel:
         assert cmd[effort_idx + 1] == "high"
 
 
-class TestClearRetryCount:
-    @pytest.mark.asyncio
-    async def test_clear_retry_count_on_success(self):
-        """Retry count should be cleared when CC task completes successfully."""
-        bridge = _make_bridge()
-        executor = _make_executor(bridge)
-
-        with (
-            patch(_PATCH_WS_MGR) as MockWS,
-            patch(_PATCH_IPC_SRV) as MockIPC,
-            patch(_PATCH_PROVIDER) as MockProv,
-            patch("mc.infrastructure.orientation.load_orientation", return_value=None),
-            patch("mc.contexts.execution.executor._snapshot_output_dir", return_value={}),
-            patch("mc.contexts.execution.executor._collect_output_artifacts", return_value=[]),
-        ):
-            MockWS.return_value.prepare.return_value = _mock_ws_ctx()
-            MockIPC.return_value.start = AsyncMock()
-            MockIPC.return_value.stop = AsyncMock()
-            MockProv.return_value.execute_task = AsyncMock(return_value=_mock_result())
-
-            agent_data = AgentData(
-                name="test", display_name="Test", role="agent", backend="claude-code"
-            )
-            await executor._execute_cc_task("t1", "Title", "desc", "test", agent_data)
-
-        executor._agent_gateway.clear_retry_count.assert_called_with("t1")

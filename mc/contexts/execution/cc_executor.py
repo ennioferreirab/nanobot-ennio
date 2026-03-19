@@ -578,7 +578,6 @@ class CCExecutorMixin:
                 "[executor] CC: Failed to write HEARTBEAT.md for task '%s': %s", title, hb_exc
             )
 
-        self._agent_gateway.clear_retry_count(task_id)
         logger.info("[executor] CC task '%s' done (cost=$%.4f)", title, result.cost_usd)
 
     async def _crash_task(
