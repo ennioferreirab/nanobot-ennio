@@ -190,6 +190,8 @@ class TestBuildCommand:
         # Find --allowedTools values
         allowed = [cmd[i + 1] for i, t in enumerate(cmd) if t == "--allowedTools"]
         assert "mcp__mc__*" in allowed
+        # When no explicit allowed_tools, wildcard "*" is added
+        assert "*" in allowed
 
     def test_disallowed_tools(self, tmp_path):
         """Disallowed tools are forwarded with --disallowedTools."""
