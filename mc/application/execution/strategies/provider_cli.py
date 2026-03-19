@@ -28,6 +28,7 @@ from mc.application.execution.request import (
     ExecutionResult,
 )
 from mc.contexts.interactive.activity_service import SessionActivityService
+from mc.contexts.provider_cli.activity_filter import should_suppress_activity_event
 from mc.contexts.provider_cli.registry import ProviderSessionRegistry
 from mc.contexts.provider_cli.types import ParsedCliEvent, SessionStatus
 
@@ -427,6 +428,8 @@ class ProviderCliRunnerStrategy:
         provider: str,
     ) -> None:
         """Persist provider-cli activity events for dashboard Live surfaces."""
+        if should_suppress_activity_event(event):
+            return
         self._activity.append_parsed_cli_event(
             session_id,
             event_kind=event.kind,
