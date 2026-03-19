@@ -67,6 +67,11 @@ export function TaskInput() {
       const placeholderTitle =
         trimmedDesc.length > 80 ? trimmedDesc.substring(0, 80) + "..." : trimmedDesc;
 
+      if (!activeBoardId) {
+        setError("No active board selected — cannot create task");
+        return;
+      }
+
       const args: {
         title: string;
         description?: string;
@@ -76,7 +81,7 @@ export function TaskInput() {
         trustLevel?: string;
         reviewers?: string[];
         isManual?: boolean;
-        boardId?: Id<"boards">;
+        boardId: Id<"boards">;
         files?: Array<{
           name: string;
           type: string;
@@ -89,7 +94,7 @@ export function TaskInput() {
         description: trimmedDesc,
         autoTitle: true,
         tags: selectedTags.length > 0 ? selectedTags : undefined,
-        boardId: activeBoardId ?? undefined,
+        boardId: activeBoardId,
       };
       if (isManual) {
         args.isManual = true;
@@ -161,6 +166,11 @@ export function TaskInput() {
       }
       setError("");
 
+      if (!activeBoardId) {
+        setError("No active board selected — cannot create task");
+        return;
+      }
+
       const args: {
         title: string;
         description?: string;
@@ -169,7 +179,7 @@ export function TaskInput() {
         trustLevel?: string;
         reviewers?: string[];
         isManual?: boolean;
-        boardId?: Id<"boards">;
+        boardId: Id<"boards">;
         files?: Array<{
           name: string;
           type: string;
@@ -181,7 +191,7 @@ export function TaskInput() {
         title: trimmed,
         description: description.trim() || undefined,
         tags: selectedTags.length > 0 ? selectedTags : undefined,
-        boardId: activeBoardId ?? undefined,
+        boardId: activeBoardId,
       };
       if (isManual) {
         args.isManual = true;
@@ -434,12 +444,12 @@ export function TaskInput() {
 
             {/* Row 2: Agent selector */}
             {!isManual && (
-              <div className="flex gap-1 items-center">
+              <div className="flex gap-1 items-center w-full">
                 <Select
                   value={selectedAgent || "auto"}
                   onValueChange={(v) => setSelectedAgent(v === "auto" ? "" : v)}
                 >
-                  <SelectTrigger className="h-9 w-36 text-sm">
+                  <SelectTrigger className="h-9 w-full text-sm">
                     <SelectValue placeholder="Auto (Lead Agent)" />
                   </SelectTrigger>
                   <SelectContent>
