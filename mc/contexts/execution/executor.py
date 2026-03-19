@@ -689,9 +689,6 @@ class TaskExecutor(CCExecutorMixin):
                 )
                 return
 
-            # Clear retry count on success
-            self._agent_gateway.clear_retry_count(task_id)
-
             logger.info(
                 "[executor] Task '%s' completed by '%s' → %s",
                 title,

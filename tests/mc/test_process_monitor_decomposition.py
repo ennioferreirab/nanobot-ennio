@@ -125,10 +125,10 @@ class TestCrashHandlerAccessible:
 
         assert AgentGateway is not None
 
-    def test_max_auto_retries_importable(self) -> None:
-        from mc.contexts.execution.crash_recovery import MAX_AUTO_RETRIES
+    def test_crash_recovery_service_importable(self) -> None:
+        from mc.contexts.execution.crash_recovery import CrashRecoveryService
 
-        assert MAX_AUTO_RETRIES == 1
+        assert CrashRecoveryService is not None
 
 
 class TestGatewayReExports:
@@ -189,10 +189,9 @@ class TestGatewayReExports:
         assert callable(_fetch_bot_identity)
 
     def test_gateway_reexports_crash_handler(self) -> None:
-        from mc.runtime.gateway import MAX_AUTO_RETRIES, AgentGateway
+        from mc.runtime.gateway import AgentGateway
 
         assert AgentGateway is not None
-        assert MAX_AUTO_RETRIES == 1
 
 
 class TestDeadCodeRemoved:
