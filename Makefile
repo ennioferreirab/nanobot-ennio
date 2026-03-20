@@ -1,4 +1,4 @@
-# ─── Mission Control ──────────────────────────────────────────────
+# ─── Open Control ────────────────────────────────────────────────
 #
 # make start       Start attached — logs stream to terminal (Ctrl+C to stop)
 # make up          Start detached — runs in background, logs → /tmp/mc.log
@@ -9,15 +9,23 @@
 # make validate    Lint + typecheck + unit tests (worktree-safe)
 # make takeover    Stop any running stack, start from current tree
 #
+# make docker-build      Build the Docker image
+# make docker-up         Start the containerized stack
+# make docker-down       Stop the containerized stack
+# make docker-test       Spin up isolated test instance (auto-detects ports)
+# make docker-test-down  Stop the test instance
+#
 # make lint        Ruff + ESLint
 # make typecheck   Pyright + tsc
 # make format      Format all code
 # ──────────────────────────────────────────────────────────────────
 
 .PHONY: start up down status test validate takeover lint typecheck format \
-        test-py test-ts lint-py lint-ts typecheck-py typecheck-ts format-py format-ts
+        test-py test-ts lint-py lint-ts typecheck-py typecheck-ts format-py format-ts \
+        docker-build docker-up docker-down docker-test docker-test-down
 
 MC_CMD := uv run nanobot mc start
+PUBLIC_MC_CMD := uv run open-control mc start
 
 # ─── Stack lifecycle ──────────────────────────────────────────────
 
@@ -25,7 +33,7 @@ start:
 	@$(MC_CMD)
 
 up:
-	@nohup $(MC_CMD) > /tmp/mc.log 2>&1 & echo "Mission Control started in background. Logs: /tmp/mc.log"
+	@nohup $(MC_CMD) > /tmp/mc.log 2>&1 & echo "Open Control started in background. Logs: /tmp/mc.log"
 
 down:
 	@uv run nanobot mc down
@@ -40,6 +48,10 @@ takeover: down
 	@sleep 2
 	@find mc/ -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@$(MC_CMD)
+
+# Public CLI note:
+# The preferred branded command is `$(PUBLIC_MC_CMD)`.
+# The current Make targets still execute `$(MC_CMD)` for runtime compatibility.
 
 # ─── Testing ──────────────────────────────────────────────────────
 # Unit tests are fully mocked — no Convex needed.
@@ -88,3 +100,22 @@ format-py:
 
 format-ts:
 	cd dashboard && npm run format
+
+# ─── Docker ──────────────────────────────────────────────────────
+
+docker-build:
+	docker build -t mc-test:latest .
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
+
+# Spin up an isolated test instance with auto-detected ports.
+# Safe to run from any worktree — each gets its own container + Convex.
+docker-test:
+	@bash scripts/docker-test.sh
+
+docker-test-down:
+	@bash scripts/docker-test.sh down
