@@ -78,7 +78,7 @@
     "js-yaml": "^4.1.1",
     "jsdom": "^28.1.0",
     "postcss": "^8",
-    "prettier": "3.6.2",
+    "prettier": "3.8.1",
     "tailwindcss": "^3.4.1",
     "typescript": "^5",
     "vitest": "^4.0.18"
