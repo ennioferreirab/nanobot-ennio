@@ -71,13 +71,15 @@ All features follow the **BMAD method** (v6.0.1). Use `/bmad-help` to see next s
 1. Create an implementation plan
 2. Create stories → `/@_bmad/bmm/workflows/4-implementation/create-story`
 3. Create a wave plan grouping stories for parallel execution
-4. Delegate story execution to **Sonnet** (Claude) or **GPT-5.4 Medium** (Codex)
+4. **Delegate story execution to Sonnet subagents** — NEVER implement stories in the orchestrating session. Always spawn Sonnet (Claude) or GPT-5.4 Medium (Codex) agents via `dev-story`. Each agent receives the story file and implements independently.
 5. Dev agent executes → `/@_bmad/bmm/workflows/4-implementation/dev-story`
-6. Code review → `/@_bmad/bmm/workflows/4-implementation/code-review`
+6. **Code review with Opus** → `/@_bmad/bmm/workflows/4-implementation/code-review` — Always use Opus for code review. Reviews must find 3–10 issues.
 7. Run full test suite (`make validate`)
 8. Integration test — simulate real service interaction using backend functions
 9. `make takeover PORT=300x` on any available port (e.g. `PORT=3001`, `PORT=3002`) to avoid conflicting with the default port 3000
 10. Share the port URL with the human for manual testing
+
+**MANDATORY AGENT DELEGATION:** The orchestrating agent (Opus) creates stories and reviews code. Implementation is ALWAYS delegated to Sonnet/GPT subagents. This is non-negotiable — it ensures separation of concerns and prevents context pollution.
 
 **Workflow rules:**
 - **Step-file discipline.** Load one step at a time, follow exactly, never skip ahead.
@@ -87,9 +89,19 @@ All features follow the **BMAD method** (v6.0.1). Use `/bmad-help` to see next s
 
 **Artifacts:** `_bmad-output/planning-artifacts/` (PRD, architecture), `_bmad-output/implementation-artifacts/` (stories, sprint status), `_bmad-output/project-context.md` (LLM-optimized rules for workflows).
 
-### Worktree Lifecycle
+### Feature Implementation — Always Use Worktrees
 
-All features go in isolated git worktrees. After merge, **delete immediately**: `git worktree remove .claude/worktrees/<name>`.
+**All feature work — BMAD or not — MUST be implemented in an isolated git worktree.** Never implement features directly on `main`. This applies to:
+- BMAD stories (full or quick flow)
+- Ad-hoc features, optimizations, refactors
+- Any change that spans multiple files or requires a plan
+
+**Workflow:**
+1. Create a worktree branch (e.g. `git worktree add .claude/worktrees/<feature-name> -b feat/<feature-name>`)
+2. Implement in the worktree
+3. Validate (`make validate`)
+4. Merge to `main` when approved
+5. **Delete immediately** after merge: `git worktree remove .claude/worktrees/<feature-name>`
 
 ### Testing
 

@@ -96,7 +96,7 @@ def tasks_list(
     bridge = _cli._get_bridge()
     try:
         tasks = (
-            bridge.query("tasks:listByStatus", {"status": status})
+            bridge.query("tasks:listByStatusLite", {"status": status})
             if status
             else bridge.query("tasks:list")
         )

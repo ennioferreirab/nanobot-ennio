@@ -92,14 +92,14 @@ class TimeoutChecker:
 
         # Check in_progress tasks for stalling
         in_progress_tasks = await asyncio.to_thread(
-            self._bridge.query, "tasks:listByStatus", {"status": "in_progress"}
+            self._bridge.query, "tasks:listByStatusLite", {"status": "in_progress"}
         )
         for task in in_progress_tasks or []:
             found_work = await self._check_task_stall(task, now, task_timeout_minutes) or found_work
 
         # Check review tasks for inter-agent timeout
         review_tasks = await asyncio.to_thread(
-            self._bridge.query, "tasks:listByStatus", {"status": "review"}
+            self._bridge.query, "tasks:listByStatusLite", {"status": "review"}
         )
         for task in review_tasks or []:
             found_work = (

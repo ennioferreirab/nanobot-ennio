@@ -198,7 +198,7 @@ class TaskOrchestrator:
         """Subscribe to review tasks and route to ReviewWorker."""
         logger.info("[orchestrator] Starting review routing loop")
         queue = self._bridge.async_subscribe(
-            "tasks:listByStatus",
+            "tasks:listByStatusLite",
             {"status": "review"},
             poll_interval=5.0,
             sleep_controller=self._sleep_controller,
