@@ -270,32 +270,35 @@ Task and step records include a `stateVersion` field. The full round-trip:
 
 ### 2.5 Subscription Patterns
 
+> **Rule: Use real Convex subscriptions, never polling.** The Convex Python SDK (`ConvexClient.subscribe()`) returns a `QuerySubscription` that supports native async iteration over a WebSocket — zero queries when data hasn't changed. **Do not use polling strategies** (`asyncio.sleep` + `client.query` loops). The legacy `_poll_loop` in `subscriptions.py` is preserved only as a fallback; all new code must use `_subscribe_loop`.
+
 The Python side uses two modes, both in `mc/bridge/subscriptions.py`:
 
 **Mode A: Blocking iterator** (`subscribe()`) — uses native Convex SDK WebSocket subscription. Rarely used at runtime.
 
-**Mode B: Async polling** (`async_subscribe()`) — the primary mode:
+**Mode B: Async reactive subscription** (`async_subscribe()`) — the primary mode:
 
-- Returns an `asyncio.Queue`. Starts a `_poll_loop` task that calls `asyncio.to_thread(client.query, ...)` each cycle.
+- Returns an `asyncio.Queue`. Starts a `_subscribe_loop` task that uses `raw_client.subscribe()` for native WebSocket push.
+- **Zero cost when idle:** no queries are made while data hasn't changed — the subscription blocks on `__anext__()` until the server pushes an update.
 - **Change detection:** only pushes to queues when `result != last_result`.
-- **Fan-out dedup:** keyed on `(function_name, frozen_args)`. Multiple subscribers to the same query share one poll loop — each gets their own queue.
-- **Sleep integration:** uses `sleep_controller.wait_for_next_cycle(poll_interval)`.
-- **Error limit:** after 10 consecutive query failures, pushes `{"_error": True}` to all consumer queues and exits.
+- **Fan-out dedup:** keyed on `(function_name, frozen_args)`. Multiple subscribers to the same query share one subscription loop — each gets their own queue.
+- **Sleep integration:** calls `sleep_controller.record_work_found()` / `record_idle()` on each update. Unlike polling, subscriptions cannot be paused — they remain connected but cost nothing when idle.
+- **Error recovery:** exponential backoff reconnection on failure (2^n seconds, max 30s). After 10 consecutive failures, pushes `{"_error": True}` to all consumer queues and exits.
 
 **Active subscriptions:**
 
-| Consumer | Query | Poll Interval | Status |
-|----------|-------|---------------|--------|
-| InboxWorker | `tasks:listByStatus` | 3s | `inbox` |
-| PlanningWorker | `tasks:listByStatus` | 5s | `planning` |
-| ReviewWorker | `tasks:listByStatus` | 5s | `review` |
-| KickoffResumeWorker | `tasks:listByStatus` | 5s | `in_progress` |
-| TaskExecutor | `tasks:listByStatus` | 2s | `assigned` |
-| PlanNegotiationSupervisor | `tasks:listByStatus` | 5s | `review` (shared loop) |
-| PlanNegotiationSupervisor | `tasks:listByStatus` | 5s | `in_progress` (shared loop) |
-| PlanNegotiation (per-task) | `messages:listByTask` | 2s | per `task_id` |
+| Consumer | Query | Status |
+|----------|-------|--------|
+| InboxWorker | `tasks:listByStatus` | `inbox` |
+| PlanningWorker | `tasks:listByStatus` | `planning` |
+| ReviewWorker | `tasks:listByStatusLite` | `review` |
+| KickoffResumeWorker | `tasks:listByStatus` | `in_progress` |
+| TaskExecutor | `tasks:listByStatusLite` | `assigned` |
+| PlanNegotiationSupervisor | `tasks:listByStatus` | `review` (shared loop) |
+| PlanNegotiationSupervisor | `tasks:listByStatus` | `in_progress` (shared loop) |
+| PlanNegotiation (per-task) | `messages:listByTask` | per `task_id` |
 
-The `review` and `in_progress` loops each serve two consumers via fan-out.
+The `review` and `in_progress` loops each serve two consumers via fan-out. Consumers that don't need heavy fields (`executionPlan`, `routingDecision`, `files`, merge fields) use `tasks:listByStatusLite`.
 
 ### 2.6 All Convex Functions Called from Python
 
@@ -313,7 +316,7 @@ The `review` and `in_progress` loops each serve two consumers via fan-out.
 | `sync_task_output_files(...)` | `tasks:updateTaskOutputFiles` | internalMutation |
 | `sync_output_files_to_parent(...)` | `tasks:getById` + `tasks:updateTaskOutputFiles` + `activities:create` | query + internalMutation |
 
-Polling queries: `tasks:listByStatus` with each status filter.
+Subscription queries: `tasks:listByStatus` (inbox, needs full doc) and `tasks:listByStatusLite` (all other consumers).
 
 #### Steps
 
@@ -611,9 +614,9 @@ All runners inject environment variables into their subprocess. The base set:
 
 ---
 
-## 5. Polling & Event Architecture
+## 5. Subscription & Event Architecture
 
-The MC Gateway uses **polling** against Convex queries — there are no WebSocket push subscriptions from Convex to Python.
+The MC Gateway uses **native Convex WebSocket subscriptions** for real-time updates from Convex to Python. This replaced the previous polling strategy — do not reintroduce polling.
 
 ### 5.1 Gateway Async Tasks
 
@@ -635,41 +638,44 @@ The MC Gateway uses **polling** against Convex queries — there are no WebSocke
 
 All tasks are independent. No `gather()` or `TaskGroup`. Each has its own error handling — one task crashing does not affect others. Shutdown: explicit `.cancel()` on each task followed by `await`, suppressing `CancelledError`.
 
-### 5.2 All Polling Loops
+### 5.2 All Subscription & Polling Loops
 
-| Component | Query | Poll Interval | Sleep Aware |
-|-----------|-------|---------------|-------------|
-| InboxWorker | `tasks:listByStatus {inbox}` | 3s | Yes |
-| PlanningWorker | `tasks:listByStatus {planning}` | 5s | Yes |
-| ReviewWorker | `tasks:listByStatus {review}` | 5s | Yes |
-| KickoffResumeWorker | `tasks:listByStatus {in_progress}` | 5s | Yes |
-| TaskExecutor | `tasks:listByStatus {assigned}` | 2s | Yes |
-| PlanNegotiationSupervisor | `tasks:listByStatus {review}` | 5s (shared) | Yes |
-| PlanNegotiationSupervisor | `tasks:listByStatus {in_progress}` | 5s (shared) | Yes |
-| PlanNegotiation (per-task) | `messages:listByTask {task_id}` | 2s | Yes |
-| ChatHandler | `chats:listPending` | 5s active / 60s sleep | Yes |
-| MentionWatcher | `messages:listRecentUserMessages` | 10s | Yes |
-| AskUserReplyWatcher | `messages:listByTask` (per active ask) | 1.5s | Yes |
-| TimeoutChecker | `tasks:listByStatus` (2 queries) | 60s | Yes |
-| SleepController | `settings:getGatewaySleepControl` | 1s | N/A (is the controller) |
+> **Subscription (preferred):** Uses `async_subscribe()` → `_subscribe_loop` with native Convex WebSocket. Zero queries when idle.
+> **Polling (legacy/specific use):** Uses `asyncio.sleep` + `client.query` loops. Only acceptable for components that cannot use subscriptions (e.g. `TimeoutChecker` which runs periodic one-shot queries, `SleepController` which polls a control setting).
+
+| Component | Query | Mode | Sleep Aware |
+|-----------|-------|------|-------------|
+| InboxWorker | `tasks:listByStatus {inbox}` | Subscription | Yes |
+| PlanningWorker | `tasks:listByStatus {planning}` | Subscription | Yes |
+| ReviewWorker | `tasks:listByStatusLite {review}` | Subscription | Yes |
+| KickoffResumeWorker | `tasks:listByStatus {in_progress}` | Subscription | Yes |
+| TaskExecutor | `tasks:listByStatusLite {assigned}` | Subscription | Yes |
+| PlanNegotiationSupervisor | `tasks:listByStatus {review}` | Subscription (shared) | Yes |
+| PlanNegotiationSupervisor | `tasks:listByStatus {in_progress}` | Subscription (shared) | Yes |
+| PlanNegotiation (per-task) | `messages:listByTask {task_id}` | Subscription | Yes |
+| ChatHandler | `chats:listPending` | Subscription | Yes |
+| MentionWatcher | `messages:listRecentUserMessages` | Subscription | Yes |
+| AskUserReplyWatcher | `messages:listByTask` (per active ask) | Subscription | Yes |
+| TimeoutChecker | `tasks:listByStatusLite` (2 queries) | Polling (one-shot) | Yes |
+| SleepController | `settings:getGatewaySleepControl` | Polling (1s control) | N/A |
 
 ### 5.3 Sleep Controller
 
 **File:** `mc/runtime/sleep_controller.py`
 
-Two modes: `active` and `sleep`. Controls gateway-wide poll intervals.
+Two modes: `active` and `sleep`. With real subscriptions, the sleep controller no longer throttles query frequency — subscriptions are zero-cost when idle. The controller now tracks work/idle state for auto-sleep transitions and waking.
 
 | Property | Value |
 |----------|-------|
-| Active interval | 5s (default) |
-| Sleep interval | 300s (default) |
-| Auto-sleep timeout | 300s of idle |
+| Auto-sleep timeout | 120s of idle |
 | Control poll | 1s |
 
 **Transitions:**
 - `record_work_found()` → `active` (resets idle timer)
 - `record_idle()` → `sleep` (only if idle ≥ `auto_sleep_after_seconds`)
 - `apply_manual_mode(mode)` → manual override from Convex `settings:getGatewaySleepControl`
+
+**Subscription behavior during sleep:** Unlike the old polling loops, WebSocket subscriptions cannot be paused. During sleep mode, subscriptions remain connected (zero cost) and `record_work_found()` / `record_idle()` are called normally. If data arrives during sleep, it immediately wakes the controller.
 
 **Notification:** Uses `asyncio.Event`. On mode transition, the old event is `.set()` and replaced. All pollers waiting on `wait_for_next_cycle()` wake immediately.
 
