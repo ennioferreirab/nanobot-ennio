@@ -2637,10 +2637,7 @@ describe("TaskDetailSheet — Live session selector", () => {
     mockDocumentViewerModal.mockReset();
   });
 
-  function buildDetailViewWithSteps(
-    task: Doc<"tasks">,
-    steps: Doc<"steps">[] = [],
-  ) {
+  function buildDetailViewWithSteps(task: Doc<"tasks">, steps: Doc<"steps">[] = []) {
     return {
       task,
       board: null,
