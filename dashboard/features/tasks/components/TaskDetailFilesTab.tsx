@@ -55,140 +55,190 @@ function FileIcon({ name }: { name: string }) {
   return <File className="h-4 w-4 flex-shrink-0 text-muted-foreground" aria-label="Generic file" />;
 }
 
-/** Get display name (last segment of the path). */
-function displayName(name: string) {
-  const idx = name.lastIndexOf("/");
-  return idx >= 0 ? name.slice(idx + 1) : name;
-}
+// --- Tree building ---
 
-/**
- * Group files into a folder tree (up to 2 levels deep).
- * Returns { rootFiles, folders } where folders is a map of
- * folderName -> { files, subfolders: Map<subName, files[]> }.
- */
-function buildOutputTree(files: DetailFileRef[]) {
-  const rootFiles: DetailFileRef[] = [];
-  const folders = new Map<
-    string,
-    { files: DetailFileRef[]; subfolders: Map<string, DetailFileRef[]> }
-  >();
+type FileTreeNode = {
+  name: string;
+  file?: DetailFileRef;
+  children: Map<string, FileTreeNode>;
+};
 
+function buildFileTree(files: DetailFileRef[]): FileTreeNode {
+  const root: FileTreeNode = { name: "", children: new Map() };
   for (const file of files) {
     const parts = file.name.split("/");
-    if (parts.length === 1) {
-      rootFiles.push(file);
-    } else if (parts.length === 2) {
-      const folder = parts[0]!;
-      if (!folders.has(folder)) {
-        folders.set(folder, { files: [], subfolders: new Map() });
+    let current = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const segment = parts[i];
+      if (!current.children.has(segment)) {
+        current.children.set(segment, { name: segment, children: new Map() });
       }
-      folders.get(folder)!.files.push(file);
+      current = current.children.get(segment)!;
+    }
+    const leafName = parts[parts.length - 1];
+    current.children.set(file.name, { name: leafName, file, children: new Map() });
+  }
+  return root;
+}
+
+// --- Source task grouping ---
+
+function groupBySource(files: DetailFileRef[]) {
+  const local: DetailFileRef[] = [];
+  const bySource = new Map<string, { title: string; label: string; files: DetailFileRef[] }>();
+
+  for (const file of files) {
+    if (!file.sourceTaskId) {
+      local.push(file);
     } else {
-      // 3+ segments — group under first two levels
-      const folder = parts[0]!;
-      const subfolder = parts[1]!;
-      if (!folders.has(folder)) {
-        folders.set(folder, { files: [], subfolders: new Map() });
+      const key = file.sourceTaskId;
+      if (!bySource.has(key)) {
+        bySource.set(key, {
+          title: file.sourceTaskTitle ?? "Unknown task",
+          label: file.sourceLabel ?? "",
+          files: [],
+        });
       }
-      const entry = folders.get(folder)!;
-      if (!entry.subfolders.has(subfolder)) {
-        entry.subfolders.set(subfolder, []);
-      }
-      entry.subfolders.get(subfolder)!.push(file);
+      bySource.get(key)!.files.push(file);
     }
   }
-
-  return { rootFiles, folders };
+  return { local, bySource };
 }
 
-function FolderTotalSize({ files }: { files: DetailFileRef[] }) {
-  const total = files.reduce((sum, f) => sum + f.size, 0);
-  return (
-    <span className="flex-shrink-0 text-xs text-muted-foreground">{formatSize(total)}</span>
-  );
-}
+// --- File row ---
 
-function OutputFileRow({
+function FileRow({
   file,
   onOpenFile,
   indent = 0,
+  onDeleteFile,
+  deletingFiles,
+  isMergeLockedSource,
+  showDelete = false,
+  hideSourceLabel = false,
 }: {
   file: DetailFileRef;
   onOpenFile: (file: DetailFileRef) => void;
   indent?: number;
+  onDeleteFile?: (file: DetailFileRef) => void | Promise<void>;
+  deletingFiles?: Set<string>;
+  isMergeLockedSource?: boolean;
+  showDelete?: boolean;
+  hideSourceLabel?: boolean;
 }) {
+  const key = getDisplayFileKey(file);
+  const isDeleting = deletingFiles?.has(key) ?? false;
+  const canDelete = showDelete && !file.sourceTaskId && !isMergeLockedSource;
+
   return (
     <div
-      key={getDisplayFileKey(file)}
-      className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50 animate-in fade-in duration-300"
-      style={indent > 0 ? { paddingLeft: `${indent * 16 + 8}px` } : undefined}
+      className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-opacity hover:bg-muted/50 animate-in fade-in duration-300 ${
+        isDeleting ? "pointer-events-none opacity-40" : ""
+      }`}
+      style={{ paddingLeft: `${8 + indent * 16}px` }}
       onClick={() => onOpenFile(file)}
+      data-testid="file-row"
     >
       <FileIcon name={file.name} />
-      <span className="min-w-0 flex-1 truncate text-sm">{displayName(file.name)}</span>
-      {file.sourceLabel && (
+      <span className="min-w-0 flex-1 truncate text-sm">
+        {file.name.split("/").pop()}
+      </span>
+      {!hideSourceLabel && file.sourceLabel && (
         <Badge variant="secondary" className="text-[10px]">
           {file.sourceLabel}
         </Badge>
       )}
-      <span className="flex-shrink-0 text-xs text-muted-foreground">
-        {formatSize(file.size)}
-      </span>
+      <span className="flex-shrink-0 text-xs text-muted-foreground">{formatSize(file.size)}</span>
+      {canDelete && onDeleteFile && (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            void onDeleteFile(file);
+          }}
+          disabled={isDeleting}
+          className={`flex-shrink-0 text-muted-foreground transition-opacity hover:text-destructive ${
+            isDeleting ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+          aria-label="Delete attachment"
+        >
+          {isDeleting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" />
+          )}
+        </button>
+      )}
     </div>
   );
 }
 
-function OutputFolderGroup({
-  name,
-  files,
-  subfolders,
+// --- Folder group ---
+
+function FolderGroup({
+  node,
   onOpenFile,
-  depth,
+  indent = 0,
+  onDeleteFile,
+  deletingFiles,
+  isMergeLockedSource,
+  showDelete = false,
+  hideSourceLabel = false,
 }: {
-  name: string;
-  files: DetailFileRef[];
-  subfolders: Map<string, DetailFileRef[]>;
+  node: FileTreeNode;
   onOpenFile: (file: DetailFileRef) => void;
-  depth: number;
+  indent?: number;
+  onDeleteFile?: (file: DetailFileRef) => void | Promise<void>;
+  deletingFiles?: Set<string>;
+  isMergeLockedSource?: boolean;
+  showDelete?: boolean;
+  hideSourceLabel?: boolean;
 }) {
-  const [open, setOpen] = useState(true);
-  const allFiles = [...files, ...[...subfolders.values()].flat()];
+  const [expanded, setExpanded] = useState(true);
+  const entries = Array.from(node.children.values());
+  const folders = entries.filter((e) => !e.file).sort((a, b) => a.name.localeCompare(b.name));
+  const files = entries.filter((e) => e.file).sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div>
-      <button
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50"
-        style={depth > 0 ? { paddingLeft: `${depth * 16 + 8}px` } : undefined}
-        onClick={() => setOpen(!open)}
-      >
-        <ChevronRight
-          className={`h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
-        />
-        <Folder className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-left font-medium">{name}</span>
-        <span className="flex-shrink-0 text-xs text-muted-foreground">
-          {allFiles.length} {allFiles.length === 1 ? "file" : "files"}
-        </span>
-        <FolderTotalSize files={allFiles} />
-      </button>
-      {open && (
-        <div className="flex flex-col gap-0.5">
-          {files.map((file) => (
-            <OutputFileRow
-              key={getDisplayFileKey(file)}
-              file={file}
+      {node.name && (
+        <button
+          className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted/50"
+          style={{ paddingLeft: `${8 + indent * 16}px` }}
+          onClick={() => setExpanded(!expanded)}
+        >
+          <ChevronRight
+            className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+          />
+          <Folder className="h-4 w-4 flex-shrink-0" />
+          <span className="truncate font-medium">{node.name}</span>
+        </button>
+      )}
+      {expanded && (
+        <div>
+          {folders.map((folder) => (
+            <FolderGroup
+              key={folder.name}
+              node={folder}
               onOpenFile={onOpenFile}
-              indent={depth + 1}
+              indent={node.name ? indent + 1 : indent}
+              onDeleteFile={onDeleteFile}
+              deletingFiles={deletingFiles}
+              isMergeLockedSource={isMergeLockedSource}
+              showDelete={showDelete}
+              hideSourceLabel={hideSourceLabel}
             />
           ))}
-          {[...subfolders.entries()].map(([subName, subFiles]) => (
-            <OutputFolderGroup
-              key={subName}
-              name={subName}
-              files={subFiles}
-              subfolders={new Map()}
+          {files.map((leaf) => (
+            <FileRow
+              key={leaf.file!.name}
+              file={leaf.file!}
               onOpenFile={onOpenFile}
-              depth={depth + 1}
+              indent={node.name ? indent + 1 : indent}
+              onDeleteFile={onDeleteFile}
+              deletingFiles={deletingFiles}
+              isMergeLockedSource={isMergeLockedSource}
+              showDelete={showDelete}
+              hideSourceLabel={hideSourceLabel}
             />
           ))}
         </div>
@@ -196,6 +246,102 @@ function OutputFolderGroup({
     </div>
   );
 }
+
+// --- Render a file tree from a list of files ---
+
+function FileTreeSection({
+  files,
+  onOpenFile,
+  onDeleteFile,
+  deletingFiles,
+  isMergeLockedSource,
+  showDelete = false,
+  hideSourceLabel = false,
+}: {
+  files: DetailFileRef[];
+  onOpenFile: (file: DetailFileRef) => void;
+  onDeleteFile?: (file: DetailFileRef) => void | Promise<void>;
+  deletingFiles?: Set<string>;
+  isMergeLockedSource?: boolean;
+  showDelete?: boolean;
+  hideSourceLabel?: boolean;
+}) {
+  const tree = buildFileTree(files);
+  return (
+    <FolderGroup
+      node={tree}
+      onOpenFile={onOpenFile}
+      onDeleteFile={onDeleteFile}
+      deletingFiles={deletingFiles}
+      isMergeLockedSource={isMergeLockedSource}
+      showDelete={showDelete}
+      hideSourceLabel={hideSourceLabel}
+    />
+  );
+}
+
+// --- Source task group ---
+
+function SourceTaskGroup({
+  title,
+  label,
+  files,
+  onOpenFile,
+  onDeleteFile,
+  deletingFiles,
+  isMergeLockedSource,
+  showDelete = false,
+}: {
+  title: string;
+  label: string;
+  files: DetailFileRef[];
+  onOpenFile: (file: DetailFileRef) => void;
+  onDeleteFile?: (file: DetailFileRef) => void | Promise<void>;
+  deletingFiles?: Set<string>;
+  isMergeLockedSource?: boolean;
+  showDelete?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+
+  return (
+    <div className="mt-1 rounded-md border border-dashed border-muted-foreground/25">
+      <button
+        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted/30"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <ChevronRight
+          className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+        />
+        <span className="min-w-0 flex-1 truncate text-left">
+          <span className="text-xs text-muted-foreground/70">From: </span>
+          <span className="font-medium">&ldquo;{title}&rdquo;</span>
+          {label && (
+            <span className="ml-1 text-xs text-muted-foreground/70">({label})</span>
+          )}
+        </span>
+        <span className="flex-shrink-0 text-xs text-muted-foreground/70">
+          {files.length} {files.length === 1 ? "file" : "files"}, {formatSize(totalSize)}
+        </span>
+      </button>
+      {expanded && (
+        <div className="pb-1">
+          <FileTreeSection
+            files={files}
+            onOpenFile={onOpenFile}
+            onDeleteFile={onDeleteFile}
+            deletingFiles={deletingFiles}
+            isMergeLockedSource={isMergeLockedSource}
+            showDelete={showDelete}
+            hideSourceLabel
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Main component ---
 
 interface TaskDetailFilesTabProps {
   displayFiles: DetailFileRef[];
@@ -224,7 +370,9 @@ export function TaskDetailFilesTab({
 }: TaskDetailFilesTabProps) {
   const attachments = displayFiles.filter((file) => file.subfolder === "attachments");
   const outputs = displayFiles.filter((file) => file.subfolder === "output");
-  const { rootFiles, folders } = buildOutputTree(outputs);
+
+  const { local: localAttachments, bySource: attachmentSources } = groupBySource(attachments);
+  const { local: localOutputs, bySource: outputSources } = groupBySource(outputs);
 
   return (
     <TabsContent value="files" className="flex-1 min-h-0 m-0 data-[state=active]:flex flex-col">
@@ -278,49 +426,25 @@ export function TaskDetailFilesTab({
                 <p className="py-2 text-sm text-muted-foreground">No attachments yet.</p>
               ) : (
                 <div className="flex flex-col gap-1">
-                  {attachments.map((file) => {
-                    const key = getDisplayFileKey(file);
-                    const isDeleting = deletingFiles.has(key);
-                    return (
-                      <div
-                        key={key}
-                        className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-opacity hover:bg-muted/50 animate-in fade-in duration-300 ${
-                          isDeleting ? "pointer-events-none opacity-40" : ""
-                        }`}
-                        onClick={() => onOpenFile(file)}
-                      >
-                        <FileIcon name={file.name} />
-                        <span className="min-w-0 flex-1 truncate text-sm">{file.name}</span>
-                        {file.sourceLabel && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            {file.sourceLabel}
-                          </Badge>
-                        )}
-                        <span className="flex-shrink-0 text-xs text-muted-foreground">
-                          {formatSize(file.size)}
-                        </span>
-                        {!file.sourceTaskId && !isMergeLockedSource && (
-                          <button
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void onDeleteFile(file);
-                            }}
-                            disabled={isDeleting}
-                            className={`flex-shrink-0 text-muted-foreground transition-opacity hover:text-destructive ${
-                              isDeleting ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                            }`}
-                            aria-label="Delete attachment"
-                          >
-                            {isDeleting ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-3.5 w-3.5" />
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {localAttachments.length > 0 && (
+                    <FileTreeSection
+                      files={localAttachments}
+                      onOpenFile={onOpenFile}
+                      onDeleteFile={onDeleteFile}
+                      deletingFiles={deletingFiles}
+                      isMergeLockedSource={isMergeLockedSource}
+                      showDelete
+                    />
+                  )}
+                  {Array.from(attachmentSources.entries()).map(([sourceId, source]) => (
+                    <SourceTaskGroup
+                      key={sourceId}
+                      title={source.title}
+                      label={source.label}
+                      files={source.files}
+                      onOpenFile={onOpenFile}
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -332,22 +456,20 @@ export function TaskDetailFilesTab({
               {outputs.length === 0 ? (
                 <p className="py-2 text-sm text-muted-foreground">No outputs yet.</p>
               ) : (
-                <div className="flex flex-col gap-0.5">
-                  {rootFiles.map((file) => (
-                    <OutputFileRow
-                      key={getDisplayFileKey(file)}
-                      file={file}
+                <div className="flex flex-col gap-1">
+                  {localOutputs.length > 0 && (
+                    <FileTreeSection
+                      files={localOutputs}
                       onOpenFile={onOpenFile}
                     />
-                  ))}
-                  {[...folders.entries()].map(([folderName, { files, subfolders }]) => (
-                    <OutputFolderGroup
-                      key={folderName}
-                      name={folderName}
-                      files={files}
-                      subfolders={subfolders}
+                  )}
+                  {Array.from(outputSources.entries()).map(([sourceId, source]) => (
+                    <SourceTaskGroup
+                      key={sourceId}
+                      title={source.title}
+                      label={source.label}
+                      files={source.files}
                       onOpenFile={onOpenFile}
-                      depth={0}
                     />
                   ))}
                 </div>
