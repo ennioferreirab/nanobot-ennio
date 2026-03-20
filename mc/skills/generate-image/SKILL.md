@@ -31,6 +31,21 @@ uv run python .claude/skills/generate-image/scripts/generate_image.py \
 
 Requires `OPENROUTER_API_KEY` in environment (already set in your shell).
 
+## Error Handling
+
+If the script returns **HTTP 402** or the message `Insufficient credits`, the
+OpenRouter account has run out of credits. **Do NOT retry or switch models** —
+use `ask_user` to inform the user:
+
+> "Image generation failed: OpenRouter credits are insufficient. Please add
+> credits at https://openrouter.ai/settings/credits and let me know when done."
+
+Wait for the user's confirmation before retrying.
+
+Other common errors:
+- **401 Unauthorized** — API key is invalid or missing. Ask the user to check it.
+- **429 Rate Limited** — wait a few seconds and retry once. If it persists, ask the user.
+
 ## Generate Images
 
 ### From Text

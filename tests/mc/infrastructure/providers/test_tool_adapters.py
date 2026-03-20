@@ -27,14 +27,14 @@ ASK_USER_TOOL_WITH_ONE_OF = {
 OTHER_TOOL = {
     "type": "function",
     "function": {
-        "name": "record_final_result",
-        "description": "Record the final result.",
+        "name": "send_message",
+        "description": "Send a message.",
         "parameters": {
             "type": "object",
             "properties": {
-                "result": {"type": "string"},
+                "message": {"type": "string"},
             },
-            "required": ["result"],
+            "required": ["message"],
         },
     },
 }
@@ -150,8 +150,6 @@ class TestPublicToolNamesStable:
                 "delegate_task",
                 "send_message",
                 "cron",
-                "report_progress",
-                "record_final_result",
             ]
         ]
         adapter = CodexToolAdapter()
@@ -163,8 +161,6 @@ class TestPublicToolNamesStable:
             "delegate_task",
             "send_message",
             "cron",
-            "report_progress",
-            "record_final_result",
         ]
 
 

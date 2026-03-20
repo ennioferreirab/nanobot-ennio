@@ -249,24 +249,6 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="record_final_result",
-            description=(
-                "Record the canonical final result for a backend-owned Mission Control step. "
-                "Use exactly once when the step is complete, before ending the turn."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "string",
-                        "description": "Final answer text to post to the task thread on completion.",
-                    }
-                },
-                "required": ["content"],
-                "additionalProperties": False,
-            },
-        ),
-        Tool(
             name="delegate_task",
             description=(
                 "Delegate a task to Mission Control. "
@@ -301,23 +283,6 @@ async def list_tools() -> list[Tool]:
                     "question": {"type": "string", "description": "The question to ask."},
                 },
                 "required": ["agent_name", "question"],
-            },
-        ),
-        Tool(
-            name="report_progress",
-            description="Report task progress to Mission Control.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "message": {"type": "string", "description": "Progress description."},
-                    "percentage": {
-                        "type": "integer",
-                        "description": "Completion percentage 0-100 (optional).",
-                        "minimum": 0,
-                        "maximum": 100,
-                    },
-                },
-                "required": ["message"],
             },
         ),
         Tool(
@@ -451,39 +416,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             ]
         return [TextContent(type="text", text=result.get("status", "Message sent"))]
 
-    elif name == "record_final_result":
-        service = _get_interaction_service()
-        context = _build_interaction_context()
-        if service is not None and context is not None:
-            await asyncio.to_thread(
-                service.record_final_result,
-                context=context,
-                content=arguments["content"],
-                source="claude-mcp",
-            )
-            return [TextContent(type="text", text="Final result recorded")]
-        try:
-            result = await ipc.request(
-                "record_final_result",
-                {
-                    "content": arguments["content"],
-                    "session_id": _get_interactive_session_id(),
-                    "agent_name": _get_agent_name(),
-                    "task_id": _get_task_id(),
-                    "source": "claude-mcp",
-                },
-            )
-        except ConnectionError:
-            return [
-                TextContent(
-                    type="text",
-                    text="Mission Control not reachable. Is the gateway running?",
-                )
-            ]
-        if "error" in result:
-            return [TextContent(type="text", text=f"Error: {result['error']}")]
-        return [TextContent(type="text", text=result.get("status", "Final result recorded"))]
-
     elif name == "delegate_task":
         try:
             result = await ipc.request(
@@ -533,36 +465,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if "error" in result:
             return [TextContent(type="text", text=f"Error: {result['error']}")]
         return [TextContent(type="text", text=result.get("response", ""))]
-
-    elif name == "report_progress":
-        service = _get_interaction_service()
-        context = _build_interaction_context()
-        if service is not None and context is not None:
-            await asyncio.to_thread(
-                service.report_progress,
-                context=context,
-                message=arguments["message"],
-                percentage=arguments.get("percentage"),
-            )
-            return [TextContent(type="text", text="Progress reported")]
-        try:
-            result = await ipc.request(
-                "report_progress",
-                {
-                    "message": arguments["message"],
-                    "percentage": arguments.get("percentage"),
-                    "agent_name": AGENT_NAME,
-                    "task_id": TASK_ID,
-                },
-            )
-        except ConnectionError:
-            return [
-                TextContent(
-                    type="text",
-                    text="Mission Control not reachable. Is the gateway running?",
-                )
-            ]
-        return [TextContent(type="text", text=result.get("status", "Progress reported"))]
 
     elif name == "cron":
         try:

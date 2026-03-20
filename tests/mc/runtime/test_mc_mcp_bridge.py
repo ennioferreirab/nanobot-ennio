@@ -16,8 +16,6 @@ EXPECTED_PHASE1_TOOLS = {
     "delegate_task",
     "send_message",
     "cron",
-    "report_progress",
-    "record_final_result",
     "create_agent_spec",
     "publish_squad_graph",
 }
@@ -209,37 +207,6 @@ class TestMCMcpBridgeCallTool:
         assert len(result) == 1
         assert result[0].text == "I am fine."
 
-    async def test_report_progress_forwarded(self):
-        """report_progress is forwarded to IPC."""
-        import mc.runtime.mcp.bridge as bridge_mod
-
-        mock_ipc = _make_mock_ipc({"report_progress": {"status": "Progress reported"}})
-
-        with patch.object(bridge_mod, "_ipc_client", mock_ipc):
-            result = await bridge_mod.call_tool(
-                "report_progress", {"message": "50% done", "percentage": 50}
-            )
-
-        assert len(result) == 1
-        assert result[0].text
-
-    async def test_report_progress_prefers_convex_interaction_service(self):
-        import mc.runtime.mcp.bridge as bridge_mod
-
-        service = MagicMock()
-        service.report_progress = MagicMock(return_value=None)
-
-        with (
-            patch.object(bridge_mod, "_get_interaction_service", return_value=service),
-            patch.object(bridge_mod, "_build_interaction_context", return_value=object()),
-        ):
-            result = await bridge_mod.call_tool(
-                "report_progress", {"message": "50% done", "percentage": 50}
-            )
-
-        assert result[0].text == "Progress reported"
-        service.report_progress.assert_called_once()
-
     async def test_cron_forwarded(self):
         """cron is forwarded to IPC."""
         import mc.runtime.mcp.bridge as bridge_mod
@@ -248,18 +215,6 @@ class TestMCMcpBridgeCallTool:
 
         with patch.object(bridge_mod, "_ipc_client", mock_ipc):
             result = await bridge_mod.call_tool("cron", {"action": "list"})
-
-        assert len(result) == 1
-        assert result[0].text
-
-    async def test_record_final_result_forwarded(self):
-        """record_final_result is forwarded to IPC."""
-        import mc.runtime.mcp.bridge as bridge_mod
-
-        mock_ipc = _make_mock_ipc({"record_final_result": {"status": "Final result recorded"}})
-
-        with patch.object(bridge_mod, "_ipc_client", mock_ipc):
-            result = await bridge_mod.call_tool("record_final_result", {"content": "All done!"})
 
         assert len(result) == 1
         assert result[0].text

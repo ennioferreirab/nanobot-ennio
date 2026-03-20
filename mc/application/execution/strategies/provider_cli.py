@@ -219,8 +219,8 @@ class ProviderCliRunnerStrategy:
             # Permission mode and tool lists from claude_code_opts
             cc_opts = agent.claude_code_opts
             if cc_opts is not None:
-                if cc_opts.permission_mode:
-                    command.extend(["--permission-mode", cc_opts.permission_mode])
+                permission_mode = cc_opts.permission_mode or "bypassPermissions"
+                command.extend(["--permission-mode", permission_mode])
 
                 if cc_opts.allowed_tools:
                     for tool in cc_opts.allowed_tools:
@@ -242,6 +242,7 @@ class ProviderCliRunnerStrategy:
                 # No cc_opts at all — allow everything by default
                 # See also: claude_code.py, vendor/claude-code/provider.py
                 logger.info("No cc_opts configured — defaulting allowedTools to '*'")
+                command.extend(["--permission-mode", "bypassPermissions"])
                 command.extend(["--allowedTools", "*"])
                 command.extend(["--allowedTools", "mcp__mc__*"])
 

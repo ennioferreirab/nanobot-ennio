@@ -289,69 +289,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(type="text", text=f"Error: {result['error']}")]
         return [TextContent(type="text", text=result.get("result", "Done"))]
 
-    elif name == "report_progress":
-        service = _get_interaction_service()
-        context = _build_interaction_context("mc")
-        if service is not None and context is not None:
-            await asyncio.to_thread(
-                service.report_progress,
-                context=context,
-                message=arguments["message"],
-                percentage=arguments.get("percentage"),
-            )
-            return [TextContent(type="text", text="Progress reported")]
-        try:
-            result = await ipc.request(
-                "report_progress",
-                {
-                    "message": arguments["message"],
-                    "percentage": arguments.get("percentage"),
-                    "agent_name": AGENT_NAME,
-                    "task_id": TASK_ID,
-                },
-            )
-        except ConnectionError:
-            return [
-                TextContent(
-                    type="text",
-                    text="Mission Control not reachable. Is the gateway running?",
-                )
-            ]
-        return [TextContent(type="text", text=result.get("status", "Progress reported"))]
-
-    elif name == "record_final_result":
-        service = _get_interaction_service()
-        context = _build_interaction_context("mc")
-        if service is not None and context is not None:
-            await asyncio.to_thread(
-                service.record_final_result,
-                context=context,
-                content=arguments["content"],
-                source="mc-mcp",
-            )
-            return [TextContent(type="text", text="Final result recorded")]
-        try:
-            result = await ipc.request(
-                "record_final_result",
-                {
-                    "content": arguments["content"],
-                    "session_id": _get_interactive_session_id(),
-                    "agent_name": _get_agent_name(),
-                    "task_id": _get_task_id(),
-                    "source": "mc-mcp",
-                },
-            )
-        except ConnectionError:
-            return [
-                TextContent(
-                    type="text",
-                    text="Mission Control not reachable. Is the gateway running?",
-                )
-            ]
-        if "error" in result:
-            return [TextContent(type="text", text=f"Error: {result['error']}")]
-        return [TextContent(type="text", text=result.get("status", "Final result recorded"))]
-
     elif name == "create_agent_spec":
         try:
             result = await ipc.request(
