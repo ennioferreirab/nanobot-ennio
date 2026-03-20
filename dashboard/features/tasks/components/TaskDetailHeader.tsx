@@ -514,6 +514,7 @@ export function TaskDetailHeader({
                     }
                   >
                     Workflow: {executionProvenance.workflowName}
+                    <span className="ml-1 font-mono opacity-60">{taskId}</span>
                   </button>
                 )}
             </div>
