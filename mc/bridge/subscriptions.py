@@ -176,8 +176,15 @@ class SubscriptionManager:
         consecutive_errors = 0
         max_errors = 10
 
+        subscription = None
         while True:
             try:
+                # Clean up previous subscription to avoid Rust SDK subscriber ID collision
+                if subscription is not None:
+                    try:
+                        subscription.unsubscribe()
+                    except Exception:
+                        pass
                 subscription = self._client.raw_client.subscribe(function_name, camel_args)
                 async for raw_result in subscription:
                     consecutive_errors = 0
