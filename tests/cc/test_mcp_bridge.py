@@ -189,69 +189,6 @@ class TestSendMessageTool:
         assert result[0].text == "Message sent"
         service.post_message.assert_called_once()
 
-
-class TestRecordFinalResultTool:
-    async def test_record_final_result_returns_status(self):
-        import claude_code.mcp_bridge as bridge_mod
-
-        mock_ipc = _make_mock_ipc({"record_final_result": {"status": "Final result recorded"}})
-
-        with (
-            patch.object(bridge_mod, "_ipc_client", mock_ipc),
-            patch.dict("os.environ", {"MC_INTERACTIVE_SESSION_ID": "interactive_session:claude"}),
-        ):
-            result = await bridge_mod.call_tool(
-                "record_final_result",
-                {"content": "Implemented the requested step."},
-            )
-
-        assert result[0].text == "Final result recorded"
-
-    async def test_record_final_result_passes_session_id(self):
-        import claude_code.mcp_bridge as bridge_mod
-
-        received: dict = {}
-
-        async def capture(method, params):
-            received["method"] = method
-            received.update(params)
-            return {"status": "Final result recorded"}
-
-        mock_ipc = MagicMock()
-        mock_ipc.request = capture
-
-        with (
-            patch.object(bridge_mod, "_ipc_client", mock_ipc),
-            patch.dict("os.environ", {"MC_INTERACTIVE_SESSION_ID": "interactive_session:claude"}),
-        ):
-            await bridge_mod.call_tool(
-                "record_final_result",
-                {"content": "Implemented the requested step."},
-            )
-
-        assert received["method"] == "record_final_result"
-        assert received["session_id"] == "interactive_session:claude"
-        assert received["source"] == "claude-mcp"
-        assert received["content"] == "Implemented the requested step."
-
-    async def test_record_final_result_prefers_convex_interaction_service(self):
-        import claude_code.mcp_bridge as bridge_mod
-
-        service = MagicMock()
-        service.record_final_result = MagicMock(return_value=None)
-
-        with (
-            patch.object(bridge_mod, "_get_interaction_service", return_value=service),
-            patch.object(bridge_mod, "_build_interaction_context", return_value=object()),
-        ):
-            result = await bridge_mod.call_tool(
-                "record_final_result",
-                {"content": "Implemented the requested step."},
-            )
-
-        assert result[0].text == "Final result recorded"
-        service.record_final_result.assert_called_once()
-
     async def test_send_message_passes_media(self):
         """send_message includes media paths in IPC params when given."""
         import claude_code.mcp_bridge as bridge_mod
@@ -400,81 +337,13 @@ class TestAskAgentTool:
 
 
 # ---------------------------------------------------------------------------
-# Test report_progress tool
-# ---------------------------------------------------------------------------
-
-
-class TestReportProgressTool:
-    async def test_report_progress_returns_status(self):
-        """report_progress returns 'Progress reported'."""
-        import claude_code.mcp_bridge as bridge_mod
-
-        mock_ipc = _make_mock_ipc({"report_progress": {"status": "Progress reported"}})
-
-        with patch.object(bridge_mod, "_ipc_client", mock_ipc):
-            result = await bridge_mod.call_tool(
-                "report_progress", {"message": "halfway done", "percentage": 50}
-            )
-
-        assert result[0].text == "Progress reported"
-
-    async def test_report_progress_passes_percentage(self):
-        """report_progress includes percentage in IPC params."""
-        import claude_code.mcp_bridge as bridge_mod
-
-        received: dict = {}
-
-        async def capture(method, params):
-            received.update(params)
-            return {"status": "Progress reported"}
-
-        mock_ipc = MagicMock()
-        mock_ipc.request = capture
-
-        with patch.object(bridge_mod, "_ipc_client", mock_ipc):
-            await bridge_mod.call_tool("report_progress", {"message": "done", "percentage": 100})
-
-        assert received["percentage"] == 100
-        assert received["message"] == "done"
-
-    async def test_report_progress_without_percentage(self):
-        """report_progress works without the optional percentage."""
-        import claude_code.mcp_bridge as bridge_mod
-
-        mock_ipc = _make_mock_ipc({"report_progress": {"status": "Progress reported"}})
-
-        with patch.object(bridge_mod, "_ipc_client", mock_ipc):
-            result = await bridge_mod.call_tool("report_progress", {"message": "starting"})
-
-        assert result[0].text == "Progress reported"
-
-    async def test_report_progress_prefers_convex_interaction_service(self):
-        import claude_code.mcp_bridge as bridge_mod
-
-        service = MagicMock()
-        service.report_progress = MagicMock(return_value=None)
-
-        with (
-            patch.object(bridge_mod, "_get_interaction_service", return_value=service),
-            patch.object(bridge_mod, "_build_interaction_context", return_value=object()),
-        ):
-            result = await bridge_mod.call_tool(
-                "report_progress",
-                {"message": "starting", "percentage": 10},
-            )
-
-        assert result[0].text == "Progress reported"
-        service.report_progress.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
 # Test list_tools
 # ---------------------------------------------------------------------------
 
 
 class TestListTools:
-    async def test_list_tools_returns_all_eight(self):
-        """list_tools returns all expected tools including the final-result recorder."""
+    async def test_list_tools_returns_all_expected(self):
+        """list_tools returns all expected tools."""
         import claude_code.mcp_bridge as bridge_mod
 
         tools = await bridge_mod.list_tools()
@@ -483,10 +352,8 @@ class TestListTools:
         assert names == {
             "ask_user",
             "send_message",
-            "record_final_result",
             "delegate_task",
             "ask_agent",
-            "report_progress",
             "cron",
             "search_memory",
         }

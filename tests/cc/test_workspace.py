@@ -137,7 +137,6 @@ class TestClaudeMdGeneration:
         assert "mcp__mc__send_message" in content
         assert "mcp__mc__delegate_task" in content
         assert "mcp__mc__ask_agent" in content
-        assert "mcp__mc__report_progress" in content
 
     def test_claude_md_contains_ask_user_warning(self, tmp_path: Path) -> None:
         """The IMPORTANT warning about AskUserQuestion must be present."""
@@ -508,8 +507,8 @@ class TestMcpConfigGeneration:
         data = json.loads(ctx.mcp_config.read_text())
 
         assert "mcpServers" in data
-        assert "nanobot" in data["mcpServers"]
-        server = data["mcpServers"]["nanobot"]
+        assert "openmc" in data["mcpServers"]
+        server = data["mcpServers"]["openmc"]
 
         assert server["command"] == "uv"
         assert server["args"] == ["run", "python", "-m", "claude_code.mcp_bridge"]
@@ -521,7 +520,7 @@ class TestMcpConfigGeneration:
         ctx = manager.prepare("my-agent", agent, "task-abc")
 
         data = json.loads(ctx.mcp_config.read_text())
-        env = data["mcpServers"]["nanobot"]["env"]
+        env = data["mcpServers"]["openmc"]["env"]
 
         assert env["MC_SOCKET_PATH"] == "/tmp/mc-my-agent-task-abc.sock"
         assert env["AGENT_NAME"] == "my-agent"
@@ -538,7 +537,7 @@ class TestMcpConfigGeneration:
         )
 
         data = json.loads(ctx.mcp_config.read_text())
-        env = data["mcpServers"]["nanobot"]["env"]
+        env = data["mcpServers"]["openmc"]["env"]
 
         assert env["MC_INTERACTIVE_SESSION_ID"] == "interactive_session:claude"
 
@@ -562,7 +561,7 @@ class TestMcpConfigGeneration:
             )
 
         data = json.loads(ctx.mcp_config.read_text())
-        env = data["mcpServers"]["nanobot"]["env"]
+        env = data["mcpServers"]["openmc"]["env"]
 
         expected_memory_workspace = tmp_path / "agents" / "my-agent"
         assert env["MEMORY_WORKSPACE"] == str(expected_memory_workspace)
@@ -624,7 +623,7 @@ class TestMcpConfigGeneration:
         ctx = manager.prepare("my-agent", agent, "task-abc")
 
         data = json.loads(ctx.mcp_config.read_text())
-        env = data["mcpServers"]["nanobot"]["env"]
+        env = data["mcpServers"]["openmc"]["env"]
 
         assert env["ANTHROPIC_API_KEY"] == "anthropic-from-config"
         assert env["OPENAI_API_KEY"] == "openai-from-config"
@@ -704,7 +703,7 @@ class TestIdempotentPreparation:
         ctx = manager.prepare("test-agent", agent, "task-second")
 
         data = json.loads(ctx.mcp_config.read_text())
-        env = data["mcpServers"]["nanobot"]["env"]
+        env = data["mcpServers"]["openmc"]["env"]
         assert env["TASK_ID"] == "task-second"
 
 

@@ -347,7 +347,7 @@ class ClaudeCodeCLIParser:
     ) -> ParsedCliEvent | None:
         normalized = tool_name.strip().lower()
         if normalized not in {
-            "mcp__nanobot__ask_user",
+            "mcp__openmc__ask_user",
             "mcp__mc__ask_user",
             "askuserquestion",
         }:

@@ -156,7 +156,7 @@ def test_parse_output_returns_ask_user_requested_for_nanobot_mcp_tool() -> None:
                     {
                         "type": "tool_use",
                         "id": "tu_ask_001",
-                        "name": "mcp__nanobot__ask_user",
+                        "name": "mcp__openmc__ask_user",
                         "input": {"question": "What does Easy do?"},
                     }
                 ],

@@ -318,36 +318,6 @@ class TestMCSocketServerHandlers:
         finally:
             await srv.stop()
 
-    async def test_record_final_result_routes_to_interactive_supervisor(self):
-        sock = _short_sock()
-
-        supervisor = MagicMock()
-        supervisor.record_final_result = MagicMock(
-            return_value={"session_id": "interactive_session:claude"}
-        )
-
-        srv = MCSocketServer(None, None, interactive_supervisor=supervisor)
-        await srv.start(sock)
-        client = MCSocketClient(sock)
-
-        try:
-            result = await client.request(
-                "record_final_result",
-                {
-                    "session_id": "interactive_session:claude",
-                    "content": "Implemented the requested step.",
-                    "source": "claude-mcp",
-                },
-            )
-            assert result == {"status": "Final result recorded"}
-            supervisor.record_final_result.assert_called_once_with(
-                session_id="interactive_session:claude",
-                content="Implemented the requested step.",
-                source="claude-mcp",
-            )
-        finally:
-            await srv.stop()
-
     async def test_create_agent_spec_dispatches_to_bridge(self):
         """create_agent_spec calls bridge.create_agent_spec + publish."""
         sock = _short_sock()

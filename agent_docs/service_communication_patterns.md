@@ -60,9 +60,7 @@ This document describes every **communication channel, protocol, and data-flow p
                      │  idempotency    │     │  │  → delegate_task      │ │
                      │  OCC locking    │     │  │  → send_message       │ │
                      └─────────────────┘     │  │  → ask_agent          │ │
-                                             │  │  → report_progress    │ │
                                              │  │  → cron               │ │
-                                             │  │  → record_final_result│ │
                                              │  │  → create_agent_spec  │ │
                                              │  │  → publish_squad_graph│ │
                                              │  └──────────────────────┘ │
@@ -128,7 +126,6 @@ Server → Client:  {<response>}\n
 |--------|---------|------------|----------|---------|
 | `ask_user` | `_handle_ask_user` | `question`, `options?`, `questions?`, `task_id?` | `{"answer": str}` | Indefinite (waits for user) |
 | `send_message` | `_handle_send_message` | `content`, `channel?`, `chat_id?`, `media?`, `task_id?` | `{"status": "Message sent"}` | — |
-| `record_final_result` | `_handle_record_final_result` | `content`, `session_id?`, `source?` | `{"status": "Final result recorded"}` | — |
 | `delegate_task` | `_handle_delegate_task` | `description`, `agent?`, `priority?` | `{"task_id": str, "status": "created"}` | — |
 | `ask_agent` | `_handle_ask_agent` | `agent_name`, `question`, `depth?` | `{"response": str}` | 120s |
 | `report_progress` | `_handle_report_progress` | `message`, `percentage?` | `{"status": "Progress reported"}` | — |
@@ -422,24 +419,22 @@ Both are **stdio MCP servers** launched as subprocesses by the agent runtime.
 }
 ```
 
-The agent process (Claude Code CLI or nanobot) reads `.mcp.json` on startup and spawns the bridge. The JSON key is `"nanobot"` but the MCP `Server` name is `"mc"` — so tools appear as `mcp__mc__<tool_name>` in the agent's tool palette (the prefix comes from the server name, not the JSON key).
+The agent process (Claude Code CLI or nanobot) reads `.mcp.json` on startup and spawns the bridge. The JSON key is `"openmc"` and the MCP `Server` name is `"mc"` — tools appear as `mcp__mc__<tool_name>` in the agent's tool palette (the prefix comes from the server name, not the JSON key).
 
 ### 3.3 Tool Catalog
 
-**CC bridge (8 tools):**
+**CC bridge (6 tools):**
 
 | Tool | IPC Method | Target |
 |------|-----------|--------|
 | `ask_user` | `ask_user` | `AskUserHandler.ask()` → task thread |
 | `send_message` | `send_message` | `MessageBus` or Convex thread |
-| `record_final_result` | `record_final_result` | Interactive supervisor |
 | `delegate_task` | `delegate_task` | `tasks:create` mutation |
 | `ask_agent` | `ask_agent` | Isolated `AgentLoop` (120s, depth≤2) |
-| `report_progress` | `report_progress` | `activities:create` event |
 | `cron` | `cron` | `CronService` |
 | `search_memory` | *(local, no IPC)* | `mc.memory.create_memory_store().search()` |
 
-**MC bridge (9 Phase 1 tools)** — defined in `mc/runtime/mcp/tool_specs.py`:
+**MC bridge (7 Phase 1 tools)** — defined in `mc/runtime/mcp/tool_specs.py`:
 
 Same as CC bridge minus `search_memory`, plus:
 

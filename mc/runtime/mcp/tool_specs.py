@@ -6,7 +6,7 @@ namespace identity is carried by the MCP server identity, not by suffixes.
 
 Phase 1 tools:
   ask_user, ask_agent, delegate_task, send_message, cron,
-  report_progress, record_final_result, create_agent_spec, publish_squad_graph
+  create_agent_spec, publish_squad_graph
 """
 
 from __future__ import annotations
@@ -194,41 +194,6 @@ PHASE1_TOOLS: list[Tool] = [
                 },
             },
             "required": ["action"],
-        },
-    ),
-    Tool(
-        name="report_progress",
-        description="Report task progress to Mission Control.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "message": {"type": "string", "description": "Progress description."},
-                "percentage": {
-                    "type": "integer",
-                    "description": "Completion percentage 0-100 (optional).",
-                    "minimum": 0,
-                    "maximum": 100,
-                },
-            },
-            "required": ["message"],
-        },
-    ),
-    Tool(
-        name="record_final_result",
-        description=(
-            "Record the canonical final result for a backend-owned Mission Control step. "
-            "Use exactly once when the step is complete, before ending the turn."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": "string",
-                    "description": ("Final answer text to post to the task thread on completion."),
-                }
-            },
-            "required": ["content"],
-            "additionalProperties": False,
         },
     ),
     Tool(
