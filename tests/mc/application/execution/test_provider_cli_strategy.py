@@ -1761,6 +1761,45 @@ async def test_strategy_treats_stopped_session_as_controlled_failure() -> None:
     assert upsert_calls[-1][0][1]["last_error"] == "Session stopped by operator."
 
 
+# ---------------------------------------------------------------------------
+# Finding #8: Secret injection in _build_runtime_env
+# ---------------------------------------------------------------------------
+
+
+def test_build_runtime_env_includes_resolved_secrets(monkeypatch) -> None:
+    """_build_runtime_env merges resolve_secret_env() into the env dict."""
+    fake_secrets = {"OPENROUTER_API_KEY": "sk-test-123", "BRAVE_API_KEY": "brave-456"}
+    monkeypatch.setattr(
+        "mc.infrastructure.secrets.resolve_secret_env",
+        lambda config=None: fake_secrets,
+    )
+    # Clear CONVEX vars so they don't interfere
+    monkeypatch.delenv("CONVEX_URL", raising=False)
+    monkeypatch.delenv("CONVEX_ADMIN_KEY", raising=False)
+
+    parser = MagicMock()
+    parser.provider_name = "claude-code"
+    registry = ProviderSessionRegistry()
+    supervisor = MagicMock()
+
+    strategy = ProviderCliRunnerStrategy(
+        parser=parser,
+        registry=registry,
+        supervisor=supervisor,
+        command=["claude", "--output-format", "stream-json"],
+        cwd="/tmp/workspace",
+    )
+    request = _make_request(agent_name="test-agent", task_id="task-1")
+    env = strategy._build_runtime_env(request=request, mc_session_id="sess-1")
+
+    # Secrets present
+    assert env["OPENROUTER_API_KEY"] == "sk-test-123"
+    assert env["BRAVE_API_KEY"] == "brave-456"
+    # Explicit keys not clobbered by secrets
+    assert env["AGENT_NAME"] == "test-agent"
+    assert env["TASK_ID"] == "task-1"
+
+
 @pytest.mark.asyncio
 async def test_strategy_without_bridge_does_not_call_convex() -> None:
     """When bridge is None (default), no Convex mutations are made."""

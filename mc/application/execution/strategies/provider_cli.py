@@ -119,9 +119,7 @@ class ProviderCliRunnerStrategy:
 
         if board_name and self._bridge is not None:
             try:
-                board_data = await asyncio.to_thread(
-                    self._bridge.get_board_by_name, board_name
-                )
+                board_data = await asyncio.to_thread(self._bridge.get_board_by_name, board_name)
                 if board_data:
                     from mc.infrastructure.boards import get_agent_memory_mode
 
