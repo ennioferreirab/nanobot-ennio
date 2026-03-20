@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="nanobot_logo.png" alt="nanobot-mcontrol" width="500">
-  <h1>nanobot-mcontrol: Multi-Agent Orchestration Platform</h1>
+  <img src="nanobot_logo.png" alt="Open Control" width="500">
+  <h1>Open Control: Multi-Agent Orchestration Platform</h1>
   <p>
     <a href="https://pypi.org/project/nanobot-ai/"><img src="https://img.shields.io/pypi/v/nanobot-ai" alt="PyPI"></a>
     <a href="https://pepy.tech/project/nanobot-ai"><img src="https://static.pepy.tech/badge/nanobot-ai" alt="Downloads"></a>
@@ -11,6 +11,18 @@
     <a href="https://discord.gg/MnCvHqpUGB"><img src="https://img.shields.io/badge/Discord-Community-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 </div>
+
+## Open Control Naming Policy
+
+**Open Control** is the public product name for this repository.
+
+This repository still depends on [`vendor/nanobot/`](vendor/nanobot/) as an
+upstream runtime substrate, so some code paths, commands, and filesystem
+locations still use the legacy `nanobot` name while the rebrand is in flight.
+
+Until the compatibility migration is complete, treat `nanobot` CLI commands and
+the `~/.nanobot` home directory as supported runtime surfaces rather than the
+public project brand.
 
 🐈 **nanobot** is an **ultra-lightweight** personal AI assistant inspired by [OpenClaw](https://github.com/openclaw/openclaw) 
 
@@ -978,7 +990,7 @@ If you edit the `.service` file itself, run `systemctl --user daemon-reload` bef
 ## Project Structure
 
 ```
-nanobot-mcontrol/
+open-control/
 ├── mc/                    # Mission Control backend (orchestration layer)
 │   ├── bridge.py          #   Convex <-> Python sync
 │   ├── gateway.py         #   Message routing & ingestion
