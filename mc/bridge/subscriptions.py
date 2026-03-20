@@ -89,10 +89,9 @@ class SubscriptionManager:
 
         consumers: list[asyncio.Queue] = [queue]  # type: ignore[no-redef]
         task = asyncio.get_running_loop().create_task(
-            self._poll_loop(
+            self._subscribe_loop(
                 function_name,
                 args,
-                poll_interval,
                 consumers,
                 sleep_controller=sleep_controller,
             )
@@ -163,6 +162,65 @@ class SubscriptionManager:
                 await sleep_controller.wait_for_next_cycle(poll_interval)
             else:
                 await asyncio.sleep(poll_interval)
+
+    async def _subscribe_loop(
+        self,
+        function_name: str,
+        args: dict[str, Any] | None,
+        consumers: list[asyncio.Queue[Any]],
+        sleep_controller: Any | None = None,
+    ) -> None:
+        """Reactive subscription loop using Convex SDK's native WebSocket subscriptions."""
+        camel_args = _convert_keys_to_camel(args) if args else {}
+        last_result: Any = None
+        consecutive_errors = 0
+        max_errors = 10
+
+        while True:
+            try:
+                subscription = self._client.raw_client.subscribe(function_name, camel_args)
+                async for raw_result in subscription:
+                    consecutive_errors = 0
+                    result = _convert_keys_to_snake(raw_result)
+                    if sleep_controller is not None:
+                        is_error = isinstance(result, dict) and result.get("_error") is True
+                        should_wake = (
+                            not is_error
+                            and bool(result)
+                            and (
+                                getattr(sleep_controller, "mode", "active") == "sleep"
+                                or result != last_result
+                            )
+                        )
+                        if should_wake:
+                            await sleep_controller.record_work_found()
+                        else:
+                            await sleep_controller.record_idle()
+                    if result != last_result:
+                        last_result = result
+                        for q in consumers:
+                            q.put_nowait(result)
+            except Exception as exc:
+                consecutive_errors += 1
+                if consecutive_errors >= max_errors:
+                    logger.error(
+                        "Subscription %s failed %d times consecutively: %s",
+                        function_name,
+                        max_errors,
+                        exc,
+                    )
+                    error_msg = {"_error": True, "message": str(exc)}
+                    for q in consumers:
+                        q.put_nowait(error_msg)
+                    return
+                logger.warning(
+                    "Subscription %s error (attempt %d/%d): %s — reconnecting",
+                    function_name,
+                    consecutive_errors,
+                    max_errors,
+                    exc,
+                )
+                await asyncio.sleep(min(2**consecutive_errors, 30))
 
     @staticmethod
     def _freeze_args(args: dict[str, Any] | None) -> tuple:

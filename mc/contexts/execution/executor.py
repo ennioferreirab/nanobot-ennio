@@ -279,7 +279,7 @@ class TaskExecutor(CCExecutorMixin):
         logger.info("[executor] Starting execution loop")
 
         queue = self._bridge.async_subscribe(
-            "tasks:listByStatus",
+            "tasks:listByStatusLite",
             {"status": "assigned"},
             sleep_controller=self._sleep_controller,
         )
