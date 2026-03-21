@@ -38,7 +38,7 @@ export const TASK_TRANSITIONS: Record<string, string[]> = {
   in_progress: ["review", "done", "assigned"],
   review: ["done", "assigned", "in_progress"],
   done: ["assigned", "review", "in_progress"],
-  retrying: ["in_progress", "crashed"],
+  retrying: ["in_progress", "assigned", "crashed"],
   crashed: ["inbox", "assigned"],
 };
 
@@ -60,6 +60,7 @@ export const TRANSITION_EVENT_MAP: Record<string, string> = {
   "review->done": "task_completed",
   "review->in_progress": "task_started",
   "retrying->in_progress": "task_retrying",
+  "retrying->assigned": "task_retrying",
   "retrying->crashed": "task_crashed",
   "crashed->inbox": "task_retrying",
   "done->assigned": "thread_message_sent",

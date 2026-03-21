@@ -93,8 +93,8 @@ export async function retryTask(ctx: ReviewMutationCtx, taskId: Id<"tasks">): Pr
     await applyRequiredTaskTransition(ctx, retryingTask, {
       taskId,
       fromStatus: "retrying",
-      toStatus: "in_progress",
-      reason: `Manual retry resumed execution for "${task.title}"`,
+      toStatus: "assigned",
+      reason: `Manual retry re-queued for executor pickup "${task.title}"`,
       idempotencyKey: `task:${String(taskId)}:${retryingTask.stateVersion ?? 0}:retry-resume`,
       suppressActivityLog: true,
     });
