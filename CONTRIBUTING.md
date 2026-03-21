@@ -55,17 +55,12 @@ Key conventions:
 - snake_case for functions/variables, PascalCase for classes
 - React/TypeScript UI modules should consume hooks or view-models instead of importing `convex/react` directly
 
-## Architecture Rules
+## Architecture
 
-Follow [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) when placing new code:
-
-- `mc/runtime/` composes flows and lifecycle wiring
-- `mc/contexts/` owns business behavior
-- `mc/domain/` owns pure rules and shared invariants
-- `mc/bridge/` owns Convex-facing access
-- `mc/infrastructure/` owns framework, environment, and filesystem concerns
-
-Do not add new public modules back into the `mc/` root. Use canonical package entrypoints where available.
+Before modifying any layer, read the relevant contract in
+[`agent_docs/`](agent_docs/). These docs define service boundaries, database
+schema, communication patterns, and code conventions. See the
+[README](README.md#agent-docs--harness-engineering) for the full index.
 
 ## TDD and Verification
 
