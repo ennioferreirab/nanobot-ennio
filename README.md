@@ -95,6 +95,28 @@ agent_docs/          Binding structural and engineering contracts
 - `dashboard/convex/` is the persistent state source of truth.
 - `dashboard/features/` groups UI and hooks by product area.
 
+## Agent Docs — Harness Engineering
+
+The [`agent_docs/`](agent_docs/) directory is the most important entry point for
+understanding how Open Control works. It contains the binding contracts that
+every AI agent — and every human contributor — must read before modifying a
+layer. While `CLAUDE.md` describes the full application in a single file,
+`agent_docs/` breaks it down into focused, self-contained references:
+
+| Document | What it covers |
+|----------|----------------|
+| [`service_architecture.md`](agent_docs/service_architecture.md) | Every runtime service, process lifecycle, IPC protocols, and the task execution state machine |
+| [`service_communication_patterns.md`](agent_docs/service_communication_patterns.md) | How services talk to each other — IPC sockets, Convex bridge, webhooks, inter-agent messaging |
+| [`database_schema.md`](agent_docs/database_schema.md) | All Convex tables, field types, indexes, relationships, and valid enum values |
+| [`harness_engineering.md`](agent_docs/harness_engineering.md) | Platform internals — skills, memory, workspaces, threads, and squad routing |
+| [`building_the_project.md`](agent_docs/building_the_project.md) | Setup, startup sequence, port assignments, and health checks |
+| [`running_tests.md`](agent_docs/running_tests.md) | What to test, what to skip, banned anti-patterns, and the quality checklist |
+| [`scaling_decisions.md`](agent_docs/scaling_decisions.md) | Architectural decisions that work now but need revisiting at scale |
+| [`code_conventions/`](agent_docs/code_conventions/) | Python, TypeScript, and Convex coding standards |
+
+These docs are structural contracts — if a code change alters behavior governed
+by one of them, the doc must be updated in the same commit.
+
 ## Vendor Boundary
 
 Open Control owns the orchestration layer, dashboard, repo docs, and local
