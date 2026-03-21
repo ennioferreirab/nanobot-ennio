@@ -9,14 +9,16 @@ import { NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { verifyLinearWebhookSignature, type LinearWebhookPayload } from "@/lib/integrations/linear";
 
-// Linear state type → MC task status mapping
+// Linear state type → MC task status mapping.
+// Only maps to statuses accepted by validateInboundStatus:
+// inbox, assigned, in_progress, review, done.
 const LINEAR_STATE_TO_MC_STATUS: Record<string, string> = {
   triage: "inbox",
   backlog: "inbox",
   unstarted: "inbox",
   started: "in_progress",
   completed: "done",
-  canceled: "deleted",
+  canceled: "done",
 };
 
 function getConvexClient(): ConvexHttpClient & {
@@ -40,6 +42,16 @@ function getConvexClient(): ConvexHttpClient & {
 export async function POST(request: Request) {
   const rawBody = await request.text();
 
+  // Validate HMAC signature first — reject unauthenticated requests before
+  // spending resources on JSON parsing and business logic.
+  const webhookSecret = process.env.MC_LINEAR_WEBHOOK_SECRET;
+  if (webhookSecret) {
+    const signature = request.headers.get("linear-signature") ?? "";
+    if (!verifyLinearWebhookSignature(rawBody, signature, webhookSecret)) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
+  }
+
   let payload: LinearWebhookPayload;
   try {
     payload = JSON.parse(rawBody) as LinearWebhookPayload;
@@ -50,15 +62,6 @@ export async function POST(request: Request) {
   // Skip events from our own application to prevent feedback loops
   if (payload.actor?.type === "application") {
     return NextResponse.json({ ok: true, skipped: "application_actor" });
-  }
-
-  // Validate HMAC signature when a webhook secret is configured
-  const webhookSecret = process.env.MC_LINEAR_WEBHOOK_SECRET;
-  if (webhookSecret) {
-    const signature = request.headers.get("linear-signature") ?? "";
-    if (!verifyLinearWebhookSignature(rawBody, signature, webhookSecret)) {
-      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-    }
   }
 
   try {
@@ -80,7 +83,7 @@ export async function POST(request: Request) {
           tags: labels.map((l) => l.name),
           timestamp: now,
         });
-      } else if (action === "update" && payload.updatedFrom && "stateId" in payload.updatedFrom) {
+      } else if (action === "update" && payload.updatedFrom && ("state" in payload.updatedFrom || "stateId" in payload.updatedFrom)) {
         // Only process events where the state actually changed
         const newState = data.state as { type?: string } | undefined;
         const stateType = newState?.type ?? "";

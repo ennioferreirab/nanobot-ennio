@@ -85,6 +85,9 @@ export function useIntegrationConfig(): UseIntegrationConfigReturn {
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    } catch (error) {
+      console.error("[IntegrationConfig] Save failed:", error);
+      throw error;
     } finally {
       setSaving(false);
     }
@@ -92,10 +95,16 @@ export function useIntegrationConfig(): UseIntegrationConfigReturn {
 
   const handleToggleEnabled = useCallback(
     async (enabled: boolean) => {
+      const previousEnabled = formState.enabled;
       setFormState((prev) => ({ ...prev, enabled }));
-      await toggleEnabled({ enabled });
+      try {
+        await toggleEnabled({ enabled });
+      } catch {
+        // Revert optimistic update on failure
+        setFormState((prev) => ({ ...prev, enabled: previousEnabled }));
+      }
     },
-    [toggleEnabled],
+    [toggleEnabled, formState.enabled],
   );
 
   return {

@@ -67,13 +67,6 @@ export function LinearConfigCard({
     [setFormState],
   );
 
-  const handleToggleEnabled = useCallback(
-    async (checked: boolean) => {
-      await onToggleEnabled(checked);
-    },
-    [onToggleEnabled],
-  );
-
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -92,7 +85,7 @@ export function LinearConfigCard({
               <Switch
                 checked={formState.enabled}
                 onCheckedChange={(checked) => {
-                  void handleToggleEnabled(checked);
+                  void onToggleEnabled(checked);
                 }}
                 aria-label="Toggle Linear integration"
               />

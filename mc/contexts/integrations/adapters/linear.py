@@ -381,10 +381,15 @@ class LinearAdapter:
         """Resolve concrete workflow state ID from cached team states."""
         # Get the issue to find its team
         issue = await self._client.get_issue(issue_id)
-        team = issue.get("team", {})
-        team_id = team.get("id", "") if team else ""
+        if not issue:
+            logger.warning("[linear] Cannot resolve workflow state: issue %s not found", issue_id)
+            return None
+
+        team = issue.get("team") or {}
+        team_id = team.get("id", "")
 
         if not team_id:
+            logger.warning("[linear] Issue %s has no team, cannot resolve workflow state", issue_id)
             return None
 
         # Cache team workflow states

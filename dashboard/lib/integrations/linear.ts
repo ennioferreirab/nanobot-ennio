@@ -1,11 +1,11 @@
 /**
  * Linear webhook signature validation helper.
  */
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 /**
  * Verify Linear webhook HMAC-SHA256 signature.
- * Uses constant-time comparison to prevent timing attacks.
+ * Uses crypto.timingSafeEqual for constant-time comparison.
  */
 export function verifyLinearWebhookSignature(
   rawBody: string,
@@ -16,14 +16,9 @@ export function verifyLinearWebhookSignature(
 
   const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
 
-  // Constant-time comparison
   if (expected.length !== signature.length) return false;
 
-  let result = 0;
-  for (let i = 0; i < expected.length; i++) {
-    result |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
-  }
-  return result === 0;
+  return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
 }
 
 /**

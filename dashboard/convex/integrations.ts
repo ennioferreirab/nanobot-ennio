@@ -1,5 +1,6 @@
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 
 import { createTask } from "./lib/taskMetadata";
@@ -618,17 +619,17 @@ export const getOutboundPending = internalQuery({
  * Find the first enabled Linear config and its board, or use default board.
  * Used by webhook handlers that don't know the configId.
  */
-async function resolveLinearConfig(ctx: { db: any }) {
+async function resolveLinearConfig(ctx: Pick<MutationCtx, "db">) {
   const config = await ctx.db
     .query("integrationConfigs")
-    .withIndex("by_platform", (q: any) => q.eq("platform", "linear"))
+    .withIndex("by_platform", (q) => q.eq("platform", "linear"))
     .first();
 
   if (!config || !config.enabled) {
     // Fall back to default board with no config tracking
     const board = await ctx.db
       .query("boards")
-      .withIndex("by_isDefault", (q: any) => q.eq("isDefault", true))
+      .withIndex("by_isDefault", (q) => q.eq("isDefault", true))
       .first();
     return { config: null, boardId: board?._id ?? null };
   }
@@ -640,14 +641,14 @@ async function resolveLinearConfig(ctx: { db: any }) {
  * Find a task by its external platform mapping.
  */
 async function findMappedTask(
-  ctx: { db: any },
+  ctx: Pick<MutationCtx, "db">,
   platform: string,
   externalId: string,
-): Promise<{ taskId: Id<"tasks">; configId: Id<"integrationConfigs"> | null } | null> {
+): Promise<{ taskId: Id<"tasks">; configId: Id<"integrationConfigs"> } | null> {
   // Try to find via integrationMappings table
   const mapping = await ctx.db
     .query("integrationMappings")
-    .withIndex("by_platform_external", (q: any) =>
+    .withIndex("by_platform_external", (q) =>
       q.eq("platform", platform).eq("externalId", externalId).eq("externalType", "issue"),
     )
     .first();
@@ -856,6 +857,10 @@ export const getLinearConfig = query({
 
 /**
  * Create or update Linear integration config (for settings UI).
+ *
+ * boardId is required by the schema. When creating a new config without an
+ * explicit boardId the handler falls back to the default board. If no default
+ * board exists either, the mutation throws.
  */
 export const upsertLinearConfig = mutation({
   args: {
@@ -873,14 +878,33 @@ export const upsertLinearConfig = mutation({
     const now = new Date().toISOString();
 
     if (existing) {
-      await ctx.db.patch(existing._id, {
+      // Only patch boardId when explicitly provided (avoid clearing a required field)
+      const patch: Record<string, unknown> = {
         apiKey: args.apiKey,
         webhookSecret: args.webhookSecret,
-        boardId: args.boardId,
         enabled: args.enabled,
         updatedAt: now,
-      });
+      };
+      if (args.boardId !== undefined) {
+        patch.boardId = args.boardId;
+      }
+      await ctx.db.patch(existing._id, patch);
       return existing._id;
+    }
+
+    // Resolve boardId: use provided value or fall back to default board
+    let boardId = args.boardId;
+    if (!boardId) {
+      const defaultBoard = await ctx.db
+        .query("boards")
+        .withIndex("by_isDefault", (q) => q.eq("isDefault", true))
+        .first();
+      if (!defaultBoard) {
+        throw new ConvexError(
+          "boardId is required when creating a new integration config. No default board found.",
+        );
+      }
+      boardId = defaultBoard._id;
     }
 
     return await ctx.db.insert("integrationConfigs", {
@@ -888,7 +912,7 @@ export const upsertLinearConfig = mutation({
       name: "Linear",
       apiKey: args.apiKey,
       webhookSecret: args.webhookSecret,
-      boardId: args.boardId,
+      boardId,
       enabled: args.enabled,
       syncDirection: "bidirectional" as const,
       createdAt: now,

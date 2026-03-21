@@ -25,8 +25,8 @@ class TestDefaultInboundStatusMap:
     def test_completed_maps_to_done(self) -> None:
         assert resolve_status_inbound("completed") == "done"
 
-    def test_canceled_maps_to_deleted(self) -> None:
-        assert resolve_status_inbound("canceled") == "deleted"
+    def test_canceled_maps_to_done(self) -> None:
+        assert resolve_status_inbound("canceled") == "done"
 
     def test_all_default_inbound_keys_covered(self) -> None:
         # Ensure this test stays in sync with the map definition

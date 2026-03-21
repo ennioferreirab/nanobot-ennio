@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-# Default inbound mapping: Linear workflow state type -> MC task status
+# Default inbound mapping: Linear workflow state type -> MC task status.
+# Only maps to statuses accepted by validateInboundStatus:
+# inbox, assigned, in_progress, review, done.
 DEFAULT_INBOUND_STATUS_MAP: dict[str, str] = {
     "triage": "inbox",
     "backlog": "inbox",
     "unstarted": "inbox",
     "started": "in_progress",
     "completed": "done",
-    "canceled": "deleted",
+    "canceled": "done",
 }
 
 # Default outbound mapping: MC task status -> Linear workflow state type
