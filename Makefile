@@ -15,17 +15,24 @@
 # make docker-test       Spin up isolated test instance (auto-detects ports)
 # make docker-test-down  Stop the test instance
 #
-# make lint        Ruff + ESLint
-# make typecheck   Pyright + tsc
-# make format      Format all code
+# make install      Install all dependencies (Python + Node)
+# make lint         Ruff + ESLint
+# make typecheck    Pyright + tsc
+# make format       Format all code
 # ──────────────────────────────────────────────────────────────────
 
-.PHONY: start up down status test validate takeover lint typecheck format \
+.PHONY: install start up down status test validate takeover lint typecheck format \
         test-py test-ts lint-py lint-ts typecheck-py typecheck-ts format-py format-ts \
         docker-build docker-up docker-down docker-test docker-test-down
 
 MC_CMD := uv run nanobot mc start
 PUBLIC_MC_CMD := uv run open-control mc start
+
+# ─── Setup ───────────────────────────────────────────────────────
+
+install:
+	uv sync --group dev
+	cd dashboard && npm ci
 
 # ─── Stack lifecycle ──────────────────────────────────────────────
 
