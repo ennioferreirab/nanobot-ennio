@@ -60,20 +60,6 @@ uses port `3210`.
 make check
 ```
 
-## Compatibility Notes
-
-Open Control is the public product name for this repository.
-
-Until the compatibility migration is complete, the following legacy surfaces are
-still supported:
-
-- the new `open-control` CLI alias for public docs and packaging
-- the `nanobot` CLI name for current runtime commands
-- the `~/.nanobot` runtime home directory
-- upstream import paths exposed through `nanobot.*`
-
-These are compatibility details, not the intended public brand.
-
 ## Agent Docs — Harness Engineering
 
 The [`agent_docs/`](agent_docs/) directory is the most important entry point for
@@ -114,6 +100,20 @@ workflow expectations.
 **Bento** is the Open Control mascot a black Shih Tzu who runs mission
 control. The dogs in the control room represent AI agents; the humans represent
 the people who work alongside them.
+
+## Compatibility Notes
+
+Open Control is the public product name for this repository.
+
+Until the compatibility migration is complete, the following legacy surfaces are
+still supported:
+
+- the new `open-control` CLI alias for public docs and packaging
+- the `nanobot` CLI name for current runtime commands
+- the `~/.nanobot` runtime home directory
+- upstream import paths exposed through `nanobot.*`
+
+These are compatibility details, not the intended public brand.
 
 ## License
 
