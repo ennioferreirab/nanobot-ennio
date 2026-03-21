@@ -1,4 +1,4 @@
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { ConvexError, v } from "convex/values";
 
@@ -607,5 +607,314 @@ export const getOutboundPending = internalQuery({
       }));
 
     return { messages: mappedMessages, activities: mappedActivities };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Public mutations — called by webhook API route (with admin auth)
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the first enabled Linear config and its board, or use default board.
+ * Used by webhook handlers that don't know the configId.
+ */
+async function resolveLinearConfig(ctx: { db: any }) {
+  const config = await ctx.db
+    .query("integrationConfigs")
+    .withIndex("by_platform", (q: any) => q.eq("platform", "linear"))
+    .first();
+
+  if (!config || !config.enabled) {
+    // Fall back to default board with no config tracking
+    const board = await ctx.db
+      .query("boards")
+      .withIndex("by_isDefault", (q: any) => q.eq("isDefault", true))
+      .first();
+    return { config: null, boardId: board?._id ?? null };
+  }
+
+  return { config, boardId: config.boardId };
+}
+
+/**
+ * Find a task by its external platform mapping.
+ */
+async function findMappedTask(
+  ctx: { db: any },
+  platform: string,
+  externalId: string,
+): Promise<{ taskId: Id<"tasks">; configId: Id<"integrationConfigs"> | null } | null> {
+  // Try to find via integrationMappings table
+  const mapping = await ctx.db
+    .query("integrationMappings")
+    .withIndex("by_platform_external", (q: any) =>
+      q.eq("platform", platform).eq("externalId", externalId).eq("externalType", "issue"),
+    )
+    .first();
+
+  if (mapping) {
+    return {
+      taskId: mapping.internalId as Id<"tasks">,
+      configId: mapping.configId,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Webhook handler: process an inbound issue creation.
+ * Auto-discovers Linear config and board. Idempotent.
+ */
+export const webhookProcessIssue = mutation({
+  args: {
+    platform: v.string(),
+    externalId: v.string(),
+    externalUrl: v.optional(v.string()),
+    title: v.string(),
+    description: v.optional(v.string()),
+    status: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+    timestamp: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Idempotency: check if already mapped
+    const existing = await findMappedTask(ctx, args.platform, args.externalId);
+    if (existing) {
+      return { taskId: existing.taskId, created: false };
+    }
+
+    const { config, boardId } = await resolveLinearConfig(ctx);
+    if (!boardId) {
+      throw new ConvexError("No board available for inbound issue. Configure a Linear integration or create a default board.");
+    }
+
+    const now = new Date().toISOString();
+    const taskPayload = buildTaskCreationPayload(
+      {
+        title: args.title,
+        description: args.description,
+        status: args.status ?? "inbox",
+        boardId,
+        tags: args.tags,
+      },
+      now,
+    );
+
+    // Append external URL to description
+    let description = taskPayload.description ?? "";
+    if (args.externalUrl) {
+      const urlLine = `[${args.platform} issue](${args.externalUrl})`;
+      description = description ? `${description}\n\n${urlLine}` : urlLine;
+    }
+
+    const taskId = await createTask(ctx, {
+      title: taskPayload.title,
+      description: description || undefined,
+      isManual: taskPayload.isManual,
+      boardId: taskPayload.boardId,
+      tags: taskPayload.tags,
+    });
+
+    // Record mapping if we have a config
+    if (config) {
+      await ctx.db.insert("integrationMappings", {
+        configId: config._id,
+        platform: args.platform,
+        externalId: args.externalId,
+        externalType: "issue",
+        internalId: String(taskId),
+        internalType: "task",
+        externalUrl: args.externalUrl,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await logActivity(ctx, {
+        taskId,
+        eventType: "integration_sync_inbound",
+        description: `Task created from inbound ${args.platform} issue ${args.externalId}`,
+        timestamp: now,
+      });
+    }
+
+    return { taskId, created: true };
+  },
+});
+
+/**
+ * Webhook handler: process an inbound status change.
+ * Auto-discovers mapping by platform + externalId.
+ */
+export const webhookProcessStatusChange = mutation({
+  args: {
+    platform: v.string(),
+    externalId: v.string(),
+    newStatus: v.string(),
+    timestamp: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const mapped = await findMappedTask(ctx, args.platform, args.externalId);
+    if (!mapped) {
+      return { updated: false, reason: "task_not_found" };
+    }
+
+    const task = await ctx.db.get(mapped.taskId);
+    if (!task) {
+      return { updated: false, reason: "task_deleted" };
+    }
+
+    const validatedStatus = validateInboundStatus(args.newStatus);
+    if (task.status === validatedStatus) {
+      return { updated: false, reason: "already_at_status" };
+    }
+
+    const now = new Date().toISOString();
+    await ctx.db.patch(mapped.taskId, {
+      status: validatedStatus as "inbox" | "assigned" | "in_progress" | "review" | "done",
+      previousStatus: task.status,
+      updatedAt: now,
+      stateVersion: (task.stateVersion ?? 1) + 1,
+    });
+
+    await logActivity(ctx, {
+      taskId: mapped.taskId,
+      eventType: "integration_sync_inbound",
+      description: `Status updated to "${args.newStatus}" from inbound ${args.platform} event`,
+      timestamp: now,
+    });
+
+    return { updated: true, taskId: mapped.taskId };
+  },
+});
+
+/**
+ * Webhook handler: process an inbound comment.
+ * Auto-discovers mapping by platform + externalId.
+ */
+export const webhookProcessComment = mutation({
+  args: {
+    platform: v.string(),
+    externalId: v.string(),
+    authorName: v.string(),
+    content: v.string(),
+    timestamp: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const mapped = await findMappedTask(ctx, args.platform, args.externalId);
+    if (!mapped) {
+      return { inserted: false, reason: "task_not_found" };
+    }
+
+    const task = await ctx.db.get(mapped.taskId);
+    if (!task) {
+      return { inserted: false, reason: "task_deleted" };
+    }
+
+    const msgPayload = buildCommentMessagePayload(
+      { content: args.content, authorName: args.authorName },
+      args.timestamp,
+    );
+
+    const messageId = await ctx.db.insert("messages", {
+      taskId: mapped.taskId,
+      authorName: msgPayload.authorName,
+      authorType: msgPayload.authorType,
+      content: msgPayload.content,
+      messageType: msgPayload.messageType,
+      type: msgPayload.type,
+      timestamp: msgPayload.timestamp,
+    });
+
+    await logActivity(ctx, {
+      taskId: mapped.taskId,
+      eventType: "integration_sync_inbound",
+      description: `Comment from ${args.platform} synced to task thread`,
+      timestamp: args.timestamp,
+    });
+
+    return { inserted: true, messageId };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Public config mutations — called by settings UI
+// ---------------------------------------------------------------------------
+
+/**
+ * Get the Linear integration config (for settings UI).
+ */
+export const getLinearConfig = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("integrationConfigs")
+      .withIndex("by_platform", (q) => q.eq("platform", "linear"))
+      .first();
+  },
+});
+
+/**
+ * Create or update Linear integration config (for settings UI).
+ */
+export const upsertLinearConfig = mutation({
+  args: {
+    apiKey: v.string(),
+    webhookSecret: v.optional(v.string()),
+    boardId: v.optional(v.id("boards")),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("integrationConfigs")
+      .withIndex("by_platform", (q) => q.eq("platform", "linear"))
+      .first();
+
+    const now = new Date().toISOString();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        apiKey: args.apiKey,
+        webhookSecret: args.webhookSecret,
+        boardId: args.boardId,
+        enabled: args.enabled,
+        updatedAt: now,
+      });
+      return existing._id;
+    }
+
+    return await ctx.db.insert("integrationConfigs", {
+      platform: "linear",
+      name: "Linear",
+      apiKey: args.apiKey,
+      webhookSecret: args.webhookSecret,
+      boardId: args.boardId,
+      enabled: args.enabled,
+      syncDirection: "bidirectional" as const,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+/**
+ * Toggle Linear integration enabled/disabled (for settings UI).
+ */
+export const toggleLinearEnabled = mutation({
+  args: { enabled: v.boolean() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("integrationConfigs")
+      .withIndex("by_platform", (q) => q.eq("platform", "linear"))
+      .first();
+
+    if (!existing) {
+      throw new ConvexError("Linear integration not configured. Save the API key first.");
+    }
+
+    await ctx.db.patch(existing._id, {
+      enabled: args.enabled,
+      updatedAt: new Date().toISOString(),
+    });
   },
 });
