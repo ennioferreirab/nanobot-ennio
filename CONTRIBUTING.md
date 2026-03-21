@@ -62,21 +62,6 @@ Use TDD for every feature and bug fix:
 6. Commit with clear messages
 7. Push and open a Pull Request
 
-## Adding Features
-
-### New Agent Type
-
-1. Create agent YAML in the agents directory
-2. Register via `open-control mc agents sync` when the public alias is available, or
-   `nanobot agents sync` as the current compatibility command
-3. Add tests in `tests/mc/`
-
-### New Hook Handler
-
-1. Create handler class extending `BaseHandler` in `mc/hooks/handlers/`
-2. Handlers are auto-discovered -- no registration needed
-3. Add tests in `tests/mc/hooks/handlers/`
-
 ## Reporting Issues
 
 Please include:
