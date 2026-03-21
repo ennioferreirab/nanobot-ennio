@@ -38,8 +38,7 @@ Open Control is built for work that needs more than a single chat loop:
 ### Local setup
 
 ```bash
-uv sync --group dev
-cd dashboard && npm ci
+make install
 ```
 
 ### Run the stack
