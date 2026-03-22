@@ -40,3 +40,4 @@ output/.DS_Store
 .claire/
 terminal_bridge.py
 bmad_history/
+docs/*
