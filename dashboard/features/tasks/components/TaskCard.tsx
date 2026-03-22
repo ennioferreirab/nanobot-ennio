@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import * as motion from "motion/react-client";
-import { useReducedMotion } from "motion/react";
+import { useReducedMotion, AnimatePresence } from "motion/react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,8 +21,11 @@ import {
 import { Doc } from "@/convex/_generated/dataModel";
 import { STATUS_COLORS, TAG_COLORS, type TaskStatus } from "@/lib/constants";
 import { InlineRejection } from "@/components/InlineRejection";
+import { InlineConfirm } from "@/components/InlineConfirm";
 import { useTaskCardActions } from "@/features/tasks/hooks/useTaskCardActions";
 import { badgeVariants } from "@/components/ui/badge";
+import { TagChip } from "@/components/TagChip";
+import { StatusBadge } from "@/components/StatusBadge";
 
 type TaskCardProgress = {
   completedSteps: number;
@@ -86,7 +89,7 @@ export function TaskCard({ task, onClick, tagColorMap, layoutIdPrefix, progress 
       >
         <Card
           className={[
-            "cursor-pointer rounded-[10px] border-l-[3px] p-4 transition-shadow hover:shadow-md",
+            "cursor-pointer rounded-[10px] border-t-[3px] p-4 transition-shadow hover:shadow-md",
             colors.border,
             isDragging ? "opacity-50 shadow-lg" : "",
             isManual ? "cursor-grab" : "",
@@ -97,7 +100,7 @@ export function TaskCard({ task, onClick, tagColorMap, layoutIdPrefix, progress 
         >
           <div className="flex items-start justify-between gap-2">
             <h3
-              className={`min-w-0 text-sm font-semibold text-foreground ${
+              className={`min-w-0 text-subtitle text-foreground ${
                 titleExpanded ? "" : "line-clamp-2"
               }`}
             >
@@ -141,20 +144,11 @@ export function TaskCard({ task, onClick, tagColorMap, layoutIdPrefix, progress 
             <div className="mt-2 flex flex-wrap gap-1">
               {task.tags.map((tag) => {
                 const colorKey = tagColorMap?.[tag];
-                const color = colorKey ? TAG_COLORS[colorKey] : null;
-                return (
-                  <span
-                    key={tag}
-                    className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] ${
-                      color ? `${color.bg} ${color.text}` : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {color && (
-                      <span className={`w-1.5 h-1.5 rounded-full ${color.dot} flex-shrink-0`} />
-                    )}
-                    {tag}
-                  </span>
-                );
+                const validColor =
+                  colorKey && colorKey in TAG_COLORS
+                    ? (colorKey as keyof typeof TAG_COLORS)
+                    : undefined;
+                return <TagChip key={tag} label={tag} color={validColor} />;
               })}
             </div>
           )}
@@ -181,14 +175,7 @@ export function TaskCard({ task, onClick, tagColorMap, layoutIdPrefix, progress 
                 <span className="truncate">{task.assignedAgent}</span>
               </span>
             )}
-            {!(task.status === "review") && (
-              <Badge
-                variant="secondary"
-                className={`h-5 rounded-full px-2 text-[10px] font-medium ${colors.bg} ${colors.text}`}
-              >
-                {task.status}
-              </Badge>
-            )}
+            {!(task.status === "review") && <StatusBadge status={task.status} type="task" />}
             {task.trustLevel === "human_approved" && (
               <Badge className="h-5 rounded-full bg-amber-500 px-2 text-[10px] text-white">
                 HITL
@@ -283,48 +270,29 @@ export function TaskCard({ task, onClick, tagColorMap, layoutIdPrefix, progress 
               />
             </div>
           </div>
-          {showRejection && (
-            <div onClick={(e) => e.stopPropagation()}>
-              <InlineRejection taskId={task._id} onClose={() => setShowRejection(false)} />
-            </div>
-          )}
-          {showDeleteConfirm && (
-            <div onClick={(e) => e.stopPropagation()}>
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className="overflow-hidden"
-              >
-                <div className="flex items-center gap-2 pt-2">
-                  <span className="text-xs text-muted-foreground">Delete this task?</span>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    className="h-6 px-2 text-xs"
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await softDeleteTask(task._id);
-                    }}
-                  >
-                    Yes
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2 text-xs"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowDeleteConfirm(false);
-                    }}
-                  >
-                    No
-                  </Button>
-                </div>
-              </motion.div>
-            </div>
-          )}
+          <AnimatePresence>
+            {showRejection && (
+              <div onClick={(e) => e.stopPropagation()}>
+                <InlineRejection taskId={task._id} onClose={() => setShowRejection(false)} />
+              </div>
+            )}
+          </AnimatePresence>
+          <AnimatePresence>
+            {showDeleteConfirm && (
+              <div onClick={(e) => e.stopPropagation()}>
+                <InlineConfirm
+                  message="Delete this task?"
+                  onConfirm={() => {
+                    void softDeleteTask(task._id);
+                  }}
+                  onCancel={() => setShowDeleteConfirm(false)}
+                  confirmLabel="Yes"
+                  cancelLabel="No"
+                  variant="destructive"
+                />
+              </div>
+            )}
+          </AnimatePresence>
         </Card>
       </motion.div>
     </div>

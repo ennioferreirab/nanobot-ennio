@@ -450,7 +450,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
     <Sheet open={!!taskId} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="w-[90vw] sm:w-[50vw] sm:max-w-none flex flex-col overflow-hidden p-0"
+        className="w-screen md:w-[90vw] lg:w-[50vw] md:max-w-none flex flex-col overflow-hidden p-0"
       >
         {isTaskLoaded ? (
           <>

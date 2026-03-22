@@ -142,8 +142,12 @@ function SettingTextareaField({
   );
 }
 
+const SETTINGS_SECTIONS = ["General", "Models", "Gateway", "Integrations", "Appearance"] as const;
+type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
 export function SettingsPanel() {
   const [showGlobalOrientationModal, setShowGlobalOrientationModal] = useState(false);
+  const [activeSection, setActiveSection] = useState<SettingsSection>("General");
   const {
     autoTitleHasLowTier,
     defaultEmbeddingModel,
@@ -158,258 +162,285 @@ export function SettingsPanel() {
   } = useSettingsPanelState();
 
   return (
-    <div className="space-y-6 p-6 pb-12 overflow-y-auto max-h-full">
-      <div>
-        <h2 className="text-lg font-semibold">Settings</h2>
-        <p className="text-sm text-muted-foreground mt-1">Configure global system defaults.</p>
-      </div>
-
-      <Separator />
-
-      <div className="space-y-1">
-        <label className="text-sm font-medium">Theme</label>
-        <ThemeToggle />
-      </div>
-
-      <Separator />
-
-      <SettingNumberField
-        label="Task Timeout (minutes)"
-        settingKey="task_timeout_minutes"
-        defaultValue={getValue("task_timeout_minutes")}
-        onSave={handleSave}
-        saved={!!savedFields["task_timeout_minutes"]}
-      />
-
-      <SettingNumberField
-        label="Inter-Agent Review Timeout (minutes)"
-        settingKey="inter_agent_timeout_minutes"
-        defaultValue={getValue("inter_agent_timeout_minutes")}
-        onSave={handleSave}
-        saved={!!savedFields["inter_agent_timeout_minutes"]}
-      />
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Global Orientation Prompt</span>
-            {savedFields["global_orientation_prompt"] && (
-              <Check className="h-4 w-4 text-green-500 transition-opacity" />
-            )}
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Edit global orientation prompt"
-            className="h-6 px-2 text-xs gap-1"
-            onClick={() => setShowGlobalOrientationModal(true)}
+    <div className="flex flex-col overflow-hidden max-h-full">
+      {/* Section navigation */}
+      <div className="flex items-center gap-1 border-b border-border px-4 pt-4 pb-0 shrink-0">
+        {SETTINGS_SECTIONS.map((section) => (
+          <button
+            key={section}
+            onClick={() => setActiveSection(section)}
+            className={`px-3 py-2 text-micro uppercase tracking-wider transition-colors border-b-2 -mb-px ${
+              activeSection === section
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
           >
-            <Pencil className="h-3 w-3" />
-            Edit
-          </Button>
+            {section}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-6 p-6 pb-12 overflow-y-auto flex-1">
+        <div>
+          <h2 className="text-lg font-semibold">Settings</h2>
+          <p className="text-sm text-muted-foreground mt-1">Configure global system defaults.</p>
         </div>
 
-        <SettingTextareaField
-          ariaLabel="Global Orientation Prompt"
-          settingKey="global_orientation_prompt"
-          value={globalOrientationPromptValue}
-          onSave={(key, value) => {
-            void handleSave(key, value);
+        <Separator />
+
+        {activeSection === "General" && (
+          <>
+            <SettingNumberField
+              label="Task Timeout (minutes)"
+              settingKey="task_timeout_minutes"
+              defaultValue={getValue("task_timeout_minutes")}
+              onSave={handleSave}
+              saved={!!savedFields["task_timeout_minutes"]}
+            />
+
+            <SettingNumberField
+              label="Inter-Agent Review Timeout (minutes)"
+              settingKey="inter_agent_timeout_minutes"
+              defaultValue={getValue("inter_agent_timeout_minutes")}
+              onSave={handleSave}
+              saved={!!savedFields["inter_agent_timeout_minutes"]}
+            />
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Global Orientation Prompt</span>
+                  {savedFields["global_orientation_prompt"] && (
+                    <Check className="h-4 w-4 text-green-500 transition-opacity" />
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Edit global orientation prompt"
+                  className="h-6 px-2 text-xs gap-1"
+                  onClick={() => setShowGlobalOrientationModal(true)}
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </Button>
+              </div>
+
+              <SettingTextareaField
+                ariaLabel="Global Orientation Prompt"
+                settingKey="global_orientation_prompt"
+                value={globalOrientationPromptValue}
+                onSave={(key, value) => {
+                  void handleSave(key, value);
+                }}
+                helperText="Applied to agent tasks, steps, and chat when saved. While empty, MC falls back to the local default orientation file."
+              />
+            </div>
+          </>
+        )}
+
+        {activeSection === "Models" && (
+          <>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">Default LLM Model</label>
+                {savedFields["default_llm_model"] && (
+                  <Check className="h-4 w-4 text-green-500 transition-opacity" />
+                )}
+              </div>
+              <Select
+                value={
+                  TIER_OPTIONS.some((o) => o.value === getValue("default_llm_model"))
+                    ? getValue("default_llm_model")
+                    : "tier:standard-medium"
+                }
+                onValueChange={(val) => handleSave("default_llm_model", val)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIER_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Reasoning level is configured in Model Tier settings below.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <label className="text-sm font-medium">Auto Title</label>
+                  <p className="text-xs text-muted-foreground">
+                    Generate task titles automatically using AI
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {savedFields["auto_title_enabled"] && (
+                    <Check className="h-4 w-4 text-green-500 transition-opacity" />
+                  )}
+                  <Switch
+                    checked={getValue("auto_title_enabled") === "true"}
+                    onCheckedChange={(checked) =>
+                      handleSave("auto_title_enabled", checked ? "true" : "false")
+                    }
+                  />
+                </div>
+              </div>
+              {getValue("auto_title_enabled") === "true" &&
+                (!autoTitleHasLowTier ? (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+                    <span className="flex-shrink-0">⚠</span>
+                    <span>
+                      <span className="font-medium">standard-low</span> model tier not configured —
+                      titles will use the default model. Configure it in{" "}
+                      <span className="font-medium">Model Tier Settings</span> below for lower cost.
+                    </span>
+                  </p>
+                ) : null)}
+            </div>
+
+            <Separator />
+
+            <ModelTierSettings />
+
+            <Separator />
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <label className="text-sm font-medium">Vector Memory Search</label>
+                </div>
+                <div className="flex items-center gap-2">
+                  {savedFields["memory_embedding_model"] && (
+                    <Check className="h-4 w-4 text-green-500 transition-opacity" />
+                  )}
+                  <Switch
+                    checked={embeddingEnabled}
+                    onCheckedChange={(checked) => {
+                      void handleEmbeddingToggle(checked);
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground font-medium">Embedding Model</label>
+                <Input
+                  value={embeddingInputValue}
+                  disabled={!embeddingEnabled}
+                  placeholder={defaultEmbeddingModel}
+                  onChange={(e) => handleEmbeddingInputChange(e.target.value)}
+                  onBlur={() => {
+                    if (embeddingEnabled) {
+                      const val = embeddingInputValue.trim() || defaultEmbeddingModel;
+                      handleEmbeddingInputChange(val);
+                      void handleSave("memory_embedding_model", val);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && embeddingEnabled) {
+                      const val = embeddingInputValue.trim() || defaultEmbeddingModel;
+                      handleEmbeddingInputChange(val);
+                      void handleSave("memory_embedding_model", val);
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  className={!embeddingEnabled ? "opacity-50 cursor-not-allowed" : ""}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {embeddingEnabled
+                    ? "Memory search uses FTS + vector embeddings. Falls back to FTS-only if the model is unavailable."
+                    : "Enable to use FTS + vector search. FTS-only when disabled."}
+                </p>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeSection === "Gateway" && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold">Polling & Sleep</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Polling intervals for gateway components. Changes take effect on gateway restart.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-micro uppercase tracking-wider text-muted-foreground">
+                Gateway Sleep
+              </p>
+            </div>
+            {POLLING_FIELDS.filter((f) => f.group === "gateway").map((f) => (
+              <SettingNumberField
+                key={f.key}
+                label={f.label}
+                settingKey={f.key}
+                defaultValue={getValue(f.key)}
+                onSave={handleSave}
+                saved={!!savedFields[f.key]}
+                min={f.min}
+                max={f.max}
+              />
+            ))}
+
+            <div className="space-y-1">
+              <p className="text-micro uppercase tracking-wider text-muted-foreground">
+                Component Intervals
+              </p>
+            </div>
+            {POLLING_FIELDS.filter((f) => f.group === "component").map((f) => (
+              <SettingNumberField
+                key={f.key}
+                label={f.label}
+                settingKey={f.key}
+                defaultValue={getValue(f.key)}
+                onSave={handleSave}
+                saved={!!savedFields[f.key]}
+                min={f.min}
+                max={f.max}
+              />
+            ))}
+          </div>
+        )}
+
+        {activeSection === "Integrations" && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold">Integrations</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Connect external tools to sync work items.
+              </p>
+            </div>
+            <IntegrationSettings />
+          </div>
+        )}
+
+        {activeSection === "Appearance" && (
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Theme</label>
+            <ThemeToggle />
+          </div>
+        )}
+
+        <PromptEditModal
+          open={showGlobalOrientationModal}
+          onClose={() => setShowGlobalOrientationModal(false)}
+          onSave={(prompt) => {
+            void handleSave("global_orientation_prompt", prompt);
           }}
-          helperText="Applied to agent tasks, steps, and chat when saved. While empty, MC falls back to the local default orientation file."
+          initialPrompt={globalOrientationPromptValue}
+          initialVariables={[]}
+          title="Edit Global Orientation Prompt"
+          showVariables={false}
         />
       </div>
-
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">Default LLM Model</label>
-          {savedFields["default_llm_model"] && (
-            <Check className="h-4 w-4 text-green-500 transition-opacity" />
-          )}
-        </div>
-        <Select
-          value={
-            TIER_OPTIONS.some((o) => o.value === getValue("default_llm_model"))
-              ? getValue("default_llm_model")
-              : "tier:standard-medium"
-          }
-          onValueChange={(val) => handleSave("default_llm_model", val)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {TIER_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          Reasoning level is configured in Model Tier settings below.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <label className="text-sm font-medium">Auto Title</label>
-            <p className="text-xs text-muted-foreground">
-              Generate task titles automatically using AI
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {savedFields["auto_title_enabled"] && (
-              <Check className="h-4 w-4 text-green-500 transition-opacity" />
-            )}
-            <Switch
-              checked={getValue("auto_title_enabled") === "true"}
-              onCheckedChange={(checked) =>
-                handleSave("auto_title_enabled", checked ? "true" : "false")
-              }
-            />
-          </div>
-        </div>
-        {getValue("auto_title_enabled") === "true" &&
-          (!autoTitleHasLowTier ? (
-            <p className="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
-              <span className="flex-shrink-0">⚠</span>
-              <span>
-                <span className="font-medium">standard-low</span> model tier not configured — titles
-                will use the default model. Configure it in{" "}
-                <span className="font-medium">Model Tier Settings</span> below for lower cost.
-              </span>
-            </p>
-          ) : null)}
-      </div>
-
-      <Separator />
-
-      <ModelTierSettings />
-
-      <Separator />
-
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <label className="text-sm font-medium">Vector Memory Search</label>
-          </div>
-          <div className="flex items-center gap-2">
-            {savedFields["memory_embedding_model"] && (
-              <Check className="h-4 w-4 text-green-500 transition-opacity" />
-            )}
-            <Switch
-              checked={embeddingEnabled}
-              onCheckedChange={(checked) => {
-                void handleEmbeddingToggle(checked);
-              }}
-            />
-          </div>
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground font-medium">Embedding Model</label>
-          <Input
-            value={embeddingInputValue}
-            disabled={!embeddingEnabled}
-            placeholder={defaultEmbeddingModel}
-            onChange={(e) => handleEmbeddingInputChange(e.target.value)}
-            onBlur={() => {
-              if (embeddingEnabled) {
-                const val = embeddingInputValue.trim() || defaultEmbeddingModel;
-                handleEmbeddingInputChange(val);
-                void handleSave("memory_embedding_model", val);
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && embeddingEnabled) {
-                const val = embeddingInputValue.trim() || defaultEmbeddingModel;
-                handleEmbeddingInputChange(val);
-                void handleSave("memory_embedding_model", val);
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            className={!embeddingEnabled ? "opacity-50 cursor-not-allowed" : ""}
-          />
-          <p className="text-xs text-muted-foreground">
-            {embeddingEnabled
-              ? "Memory search uses FTS + vector embeddings. Falls back to FTS-only if the model is unavailable."
-              : "Enable to use FTS + vector search. FTS-only when disabled."}
-          </p>
-        </div>
-      </div>
-
-      <Separator />
-
-      <div className="space-y-4">
-        <div>
-          <h3 className="text-sm font-semibold">Polling & Sleep</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Polling intervals for gateway components. Changes take effect on gateway restart.
-          </p>
-        </div>
-
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Gateway Sleep
-          </p>
-        </div>
-        {POLLING_FIELDS.filter((f) => f.group === "gateway").map((f) => (
-          <SettingNumberField
-            key={f.key}
-            label={f.label}
-            settingKey={f.key}
-            defaultValue={getValue(f.key)}
-            onSave={handleSave}
-            saved={!!savedFields[f.key]}
-            min={f.min}
-            max={f.max}
-          />
-        ))}
-
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Component Intervals
-          </p>
-        </div>
-        {POLLING_FIELDS.filter((f) => f.group === "component").map((f) => (
-          <SettingNumberField
-            key={f.key}
-            label={f.label}
-            settingKey={f.key}
-            defaultValue={getValue(f.key)}
-            onSave={handleSave}
-            saved={!!savedFields[f.key]}
-            min={f.min}
-            max={f.max}
-          />
-        ))}
-      </div>
-
-      <Separator />
-
-      <div className="space-y-4">
-        <div>
-          <h3 className="text-sm font-semibold">Integrations</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Connect external tools to sync work items.
-          </p>
-        </div>
-        <IntegrationSettings />
-      </div>
-
-      <PromptEditModal
-        open={showGlobalOrientationModal}
-        onClose={() => setShowGlobalOrientationModal(false)}
-        onSave={(prompt) => {
-          void handleSave("global_orientation_prompt", prompt);
-        }}
-        initialPrompt={globalOrientationPromptValue}
-        initialVariables={[]}
-        title="Edit Global Orientation Prompt"
-        showVariables={false}
-      />
     </div>
   );
 }

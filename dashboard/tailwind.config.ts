@@ -51,6 +51,14 @@ export default {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
         },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -73,9 +81,24 @@ export default {
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        xl: "var(--radius-xl)",
+        lg: "var(--radius-lg)",
+        md: "var(--radius)",
+        sm: "var(--radius-sm)",
+      },
+      fontSize: {
+        display: ["28px", { lineHeight: "36px", letterSpacing: "-0.02em", fontWeight: "700" }],
+        title: ["20px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "600" }],
+        subtitle: ["16px", { lineHeight: "24px", letterSpacing: "-0.005em", fontWeight: "600" }],
+        body: ["14px", { lineHeight: "22px", letterSpacing: "0", fontWeight: "400" }],
+        caption: ["12px", { lineHeight: "18px", letterSpacing: "0", fontWeight: "500" }],
+        micro: ["10px", { lineHeight: "14px", letterSpacing: "0.04em", fontWeight: "600" }],
+      },
+      transitionDuration: {
+        fast: "100ms",
+        normal: "200ms",
+        slow: "300ms",
+        slower: "500ms",
       },
       animation: {
         "pulse-once": "pulse-once 0.6s ease-in-out",

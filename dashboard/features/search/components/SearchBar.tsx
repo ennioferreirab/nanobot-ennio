@@ -13,9 +13,10 @@ import { cn } from "@/lib/utils";
 interface SearchBarProps {
   onSearchChange?: (value: string) => void;
   className?: string;
+  placeholder?: string;
 }
 
-export function SearchBar({ onSearchChange, className }: SearchBarProps) {
+export function SearchBar({ onSearchChange, className, placeholder }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState("");
   const [attrValues, setAttrValues] = useState<Record<string, string>>({});
@@ -103,7 +104,7 @@ export function SearchBar({ onSearchChange, className }: SearchBarProps) {
           ref={inputRef}
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="Search tasks…"
+          placeholder={placeholder ?? "Search tasks…"}
           aria-label="Search tasks"
           className="h-9 bg-background pl-8 pr-8"
         />

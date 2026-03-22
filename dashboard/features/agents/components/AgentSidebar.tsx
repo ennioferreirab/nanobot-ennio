@@ -220,7 +220,7 @@ export function AgentSidebar() {
           <SidebarGroup>
             <Collapsible open={registeredOpen} onOpenChange={setRegisteredOpen}>
               <CollapsibleTrigger asChild>
-                <SidebarGroupLabel className="cursor-pointer hover:text-sidebar-foreground/80">
+                <SidebarGroupLabel className="cursor-pointer hover:text-sidebar-foreground/80 text-micro uppercase tracking-wider text-muted-foreground">
                   Registered
                   <ChevronDown
                     className={`ml-auto h-3 w-3 transition-transform ${registeredOpen ? "" : "-rotate-90"}`}
@@ -264,7 +264,7 @@ export function AgentSidebar() {
             <SidebarGroup>
               <Collapsible open={systemOpen} onOpenChange={setSystemOpen}>
                 <CollapsibleTrigger asChild>
-                  <SidebarGroupLabel className="cursor-pointer hover:text-sidebar-foreground/80">
+                  <SidebarGroupLabel className="cursor-pointer hover:text-sidebar-foreground/80 text-micro uppercase tracking-wider text-muted-foreground">
                     <Shield className="mr-1 h-3 w-3" />
                     System
                     <ChevronDown
@@ -293,7 +293,7 @@ export function AgentSidebar() {
             <SidebarGroup>
               <Collapsible open={remoteOpen} onOpenChange={setRemoteOpen}>
                 <CollapsibleTrigger asChild>
-                  <SidebarGroupLabel className="cursor-pointer hover:text-sidebar-foreground/80">
+                  <SidebarGroupLabel className="cursor-pointer hover:text-sidebar-foreground/80 text-micro uppercase tracking-wider text-muted-foreground">
                     <Terminal className="mr-1 h-3 w-3" />
                     Remoto
                     <ChevronDown
@@ -331,7 +331,7 @@ export function AgentSidebar() {
             <SidebarGroup>
               <Collapsible open={deletedOpen} onOpenChange={setDeletedOpen}>
                 <CollapsibleTrigger asChild>
-                  <SidebarGroupLabel className="cursor-pointer hover:text-sidebar-foreground/80">
+                  <SidebarGroupLabel className="cursor-pointer hover:text-sidebar-foreground/80 text-micro uppercase tracking-wider text-muted-foreground">
                     <Trash2 className="mr-1 h-3 w-3" />
                     Deleted
                     <ChevronDown

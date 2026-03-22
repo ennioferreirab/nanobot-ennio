@@ -186,12 +186,12 @@ export function AgentSidebarItem({
           ) : (
             <>
               <span
-                className={`truncate text-sm font-medium ${isDisabled ? "" : "text-sidebar-foreground"}`}
+                className={`truncate text-[13px] font-medium ${isDisabled ? "" : "text-sidebar-foreground"}`}
               >
                 {agent.displayName}
               </span>
               <span
-                className={`truncate text-xs ${isDisabled ? "" : "text-sidebar-foreground/70"}`}
+                className={`truncate text-caption ${isDisabled ? "" : "text-muted-foreground"}`}
               >
                 {agent.role}
               </span>

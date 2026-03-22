@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, type KeyboardEvent } from "react";
+import { AnimatePresence } from "motion/react";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { AgentTextViewerModal } from "@/components/AgentTextViewerModal";
 import { Loader2, Pause, Pencil, Play, Trash2 } from "lucide-react";
 import { TAG_COLORS } from "@/lib/constants";
+import { TagChip } from "@/components/TagChip";
+import { StatusBadge } from "@/components/StatusBadge";
 import type {
   ExecutionProvenance,
   MergedTaskRef,
@@ -107,7 +110,6 @@ function renderTitleKeyDown(
 export function TaskDetailHeader({
   task,
   taskId,
-  colors,
   taskStatus,
   isAwaitingKickoff,
   isPaused,
@@ -166,7 +168,7 @@ export function TaskDetailHeader({
 }: TaskDetailHeaderProps) {
   return (
     <SheetHeader className="px-6 pt-6 pb-4 flex-shrink-0 overflow-hidden">
-      <SheetTitle className="text-lg font-semibold pr-6">
+      <SheetTitle className="text-title pr-6">
         {isEditingTitle ? (
           <Input
             value={editTitleValue}
@@ -195,31 +197,13 @@ export function TaskDetailHeader({
       <SheetDescription asChild>
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant="outline"
-              className={`text-xs ${colors?.bg ?? "bg-muted"} ${colors?.text ?? "text-foreground"} border-0`}
-            >
-              {task.status.replaceAll("_", " ")}
-            </Badge>
+            <StatusBadge status={task.status} type="task" size="sm" />
             {(task.tags ?? []).map((tag) => {
-              const colorKey = tagColorMap[tag];
-              const color = colorKey ? TAG_COLORS[colorKey] : null;
-              const chipClass = `inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs max-w-[200px] ${
-                color ? `${color.bg} ${color.text}` : "bg-muted text-muted-foreground"
-              }`;
-              const renderDot = () =>
-                color ? (
-                  <span className={`w-1.5 h-1.5 rounded-full ${color.dot} flex-shrink-0`} />
-                ) : null;
+              const colorKey = tagColorMap[tag] as keyof typeof TAG_COLORS | undefined;
               const attrs =
                 tagAttrValues?.filter((value) => value.tagName === tag && value.value) ?? [];
               if (attrs.length === 0) {
-                return (
-                  <span key={tag} className={chipClass} title={tag}>
-                    {renderDot()}
-                    <span className="truncate">{tag}</span>
-                  </span>
-                );
+                return <TagChip key={tag} label={tag} color={colorKey} size="sm" />;
               }
               return (
                 <Fragment key={tag}>
@@ -230,10 +214,12 @@ export function TaskDetailHeader({
                     if (!attrDef) return null;
                     const label = `${tag}:${attrDef.name}=${attr.value}`;
                     return (
-                      <span key={`${tag}-${attr.attributeId}`} className={chipClass} title={label}>
-                        {renderDot()}
-                        <span className="truncate">{label}</span>
-                      </span>
+                      <TagChip
+                        key={`${tag}-${attr.attributeId}`}
+                        label={label}
+                        color={colorKey}
+                        size="sm"
+                      />
                     );
                   })}
                 </Fragment>
@@ -524,11 +510,13 @@ export function TaskDetailHeader({
           )}
         </div>
       </SheetDescription>
-      {showRejection && taskId && (
-        <div className="pt-2">
-          <InlineRejection taskId={taskId} onClose={onToggleRejection} />
-        </div>
-      )}
+      <AnimatePresence>
+        {showRejection && taskId && (
+          <div className="pt-2">
+            <InlineRejection taskId={taskId} onClose={onToggleRejection} />
+          </div>
+        )}
+      </AnimatePresence>
       {showDeleteConfirm && (
         <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 dark:border-red-800 dark:bg-red-950">
           <p className="text-xs text-red-800 dark:text-red-200 mb-2">

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as motion from "motion/react-client";
+import { AnimatePresence } from "motion/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
@@ -102,7 +103,7 @@ export function KanbanColumn({
 
   return (
     <div
-      className={`flex min-h-0 w-[85vw] shrink-0 snap-center flex-col overflow-hidden rounded-lg border border-border/70 bg-muted/40 transition-colors md:min-w-0 md:w-auto md:shrink md:snap-none ${isDragOver ? "ring-2 ring-blue-400 bg-blue-50/30 dark:bg-blue-950/30" : ""}`}
+      className={`flex min-h-0 w-[85vw] shrink-0 snap-center flex-col overflow-hidden rounded-lg border border-border/70 bg-transparent transition-colors md:min-w-0 md:w-auto md:shrink md:snap-none ${isDragOver ? "ring-2 ring-blue-400 bg-blue-50/30 dark:bg-blue-950/30" : ""}`}
       onDragOver={(e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
@@ -165,7 +166,7 @@ export function KanbanColumn({
     >
       <div className="mb-3 flex items-center gap-2 px-1">
         <div className={`h-2 w-2 rounded-full ${accentColor}`} />
-        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+        <h2 className="text-title text-foreground">{title}</h2>
         <Badge variant="secondary" className="text-xs">
           {totalCount}
         </Badge>
@@ -192,38 +193,40 @@ export function KanbanColumn({
           />
         )}
       </div>
-      {showClearConfirm && (
-        <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: "auto", opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.15 }}
-          className="overflow-hidden px-1 mb-2"
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Clear all done tasks?</span>
-            <Button
-              size="sm"
-              variant="destructive"
-              className="text-xs h-6 px-2"
-              onClick={() => {
-                onClear?.();
-                setShowClearConfirm(false);
-              }}
-            >
-              Yes
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-xs h-6 px-2"
-              onClick={() => setShowClearConfirm(false)}
-            >
-              Cancel
-            </Button>
-          </div>
-        </motion.div>
-      )}
+      <AnimatePresence>
+        {showClearConfirm && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="overflow-hidden px-1 mb-2"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Clear all done tasks?</span>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="text-xs h-6 px-2"
+                onClick={() => {
+                  onClear?.();
+                  setShowClearConfirm(false);
+                }}
+              >
+                Yes
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-xs h-6 px-2"
+                onClick={() => setShowClearConfirm(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="flex-1 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {tasks.length === 0 && stepGroups.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">No tasks</p>

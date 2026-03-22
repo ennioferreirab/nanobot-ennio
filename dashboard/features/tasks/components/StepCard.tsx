@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import * as motion from "motion/react-client";
-import { useReducedMotion } from "motion/react";
+import { useReducedMotion, AnimatePresence } from "motion/react";
 import type { KeyboardEvent } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { Doc } from "@/convex/_generated/dataModel";
 import { STEP_STATUS_COLORS, type StepStatus } from "@/lib/constants";
+import { StatusBadge } from "@/components/StatusBadge";
+import { InlineConfirm } from "@/components/InlineConfirm";
 
 interface StepCardProps {
   step: Doc<"steps">;
@@ -114,7 +116,7 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
           </div>
 
           <div className="mb-1.5 flex items-start justify-between gap-2">
-            <h3 className="min-w-0 text-sm font-semibold text-foreground line-clamp-2">
+            <h3 className="min-w-0 text-[13px] font-medium text-foreground line-clamp-2">
               {step.title}
             </h3>
             <div className="mt-0.5 flex shrink-0 items-center gap-1">
@@ -134,17 +136,7 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
               </span>
               <span className="truncate">{assignedAgentName}</span>
             </span>
-            <Badge
-              variant="secondary"
-              className={`h-5 rounded-full px-2 text-[10px] font-medium ${colors.bg} ${colors.text}`}
-            >
-              {step.status}
-            </Badge>
-            {step.status === "crashed" && (
-              <Badge className="h-5 rounded-full bg-red-500 px-2 text-[10px] text-white">
-                Crashed
-              </Badge>
-            )}
+            <StatusBadge status={step.status} type="step" />
             {step.status === "blocked" && (
               <Badge
                 variant="outline"
@@ -217,43 +209,22 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
             </div>
           )}
           {actionError && <p className="mt-1 text-[10px] text-red-600 truncate">{actionError}</p>}
-          {showDeleteConfirm && (
-            <div onClick={(e) => e.stopPropagation()}>
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className="overflow-hidden"
-              >
-                <div className="flex items-center gap-2 pt-2">
-                  <span className="text-xs text-muted-foreground">Delete this step?</span>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    className="h-6 px-2 text-xs"
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await deleteStep({ stepId: step._id });
-                    }}
-                  >
-                    Yes
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2 text-xs"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowDeleteConfirm(false);
-                    }}
-                  >
-                    No
-                  </Button>
-                </div>
-              </motion.div>
-            </div>
-          )}
+          <AnimatePresence>
+            {showDeleteConfirm && (
+              <div onClick={(e) => e.stopPropagation()}>
+                <InlineConfirm
+                  message="Delete this step?"
+                  onConfirm={() => {
+                    void deleteStep({ stepId: step._id });
+                  }}
+                  onCancel={() => setShowDeleteConfirm(false)}
+                  confirmLabel="Yes"
+                  cancelLabel="No"
+                  variant="destructive"
+                />
+              </div>
+            )}
+          </AnimatePresence>
         </Card>
       </motion.div>
     </div>

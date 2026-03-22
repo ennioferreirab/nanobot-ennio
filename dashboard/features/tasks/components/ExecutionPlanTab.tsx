@@ -611,7 +611,7 @@ export function ExecutionPlanTab({
           onOpenLive: isVisualOnly ? undefined : onOpenLive,
           isLiveStep: Boolean(
             liveStepIdSet.has(n.id) ||
-              (matchedDisplayStep?.liveId != null && liveStepIdSet.has(matchedDisplayStep.liveId)),
+            (matchedDisplayStep?.liveId != null && liveStepIdSet.has(matchedDisplayStep.liveId)),
           ),
         },
       };

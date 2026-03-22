@@ -101,8 +101,8 @@ function getLegacyMessageStyles(messageType: string, authorType: string): Messag
     case "system_event":
       return { bg: "bg-muted", label: null, labelColor: "" };
     default:
-      if (authorType === "user") return { bg: "bg-blue-50", label: null, labelColor: "" };
-      return { bg: "bg-background", label: null, labelColor: "" };
+      if (authorType === "user") return { bg: "bg-primary/10", label: null, labelColor: "" };
+      return { bg: "bg-secondary", label: null, labelColor: "" };
   }
 }
 
@@ -111,13 +111,13 @@ function getMessageStyles(message: Doc<"messages">): MessageStyles {
   if (message.type) {
     switch (message.type) {
       case STRUCTURED_MESSAGE_TYPE.STEP_COMPLETION:
-        return { bg: "bg-background", label: "Step Complete", labelColor: "text-green-600" };
+        return { bg: "bg-secondary", label: "Step Complete", labelColor: "text-green-600" };
       case STRUCTURED_MESSAGE_TYPE.SYSTEM_ERROR:
         return { bg: "bg-red-50", label: "Error", labelColor: "text-red-600" };
       case STRUCTURED_MESSAGE_TYPE.LEAD_AGENT_CHAT:
         return { bg: "bg-indigo-50", label: "Lead Agent", labelColor: "text-indigo-600" };
       case STRUCTURED_MESSAGE_TYPE.USER_MESSAGE:
-        return { bg: "bg-blue-50", label: null, labelColor: "" };
+        return { bg: "bg-primary/10", label: null, labelColor: "" };
       case STRUCTURED_MESSAGE_TYPE.COMMENT:
         return { bg: "bg-slate-50", label: "Comment", labelColor: "text-slate-500" };
     }
@@ -150,7 +150,11 @@ function ThreadMessageComponent({
   const stepTitle = resolveStepTitle(message, steps);
 
   return (
-    <div className={`flex w-full min-w-0 max-w-full gap-2 rounded-md p-2 ${styles.bg}`}>
+    <div
+      className={`flex w-full min-w-0 max-w-full gap-2 p-2 ${styles.bg} ${
+        message.authorType === "user" ? "rounded-xl rounded-br-sm" : "rounded-xl rounded-bl-sm"
+      }`}
+    >
       <Avatar className="h-6 w-6 shrink-0">
         {message.authorName === "Bento" && <AvatarImage src="/bento.png" alt="Bento" />}
         <AvatarFallback className="text-xs">{getInitials(message.authorName)}</AvatarFallback>
@@ -178,7 +182,7 @@ function ThreadMessageComponent({
           {isDenial && <XCircle className="h-3.5 w-3.5 text-red-600 shrink-0 mt-0.5" />}
           {isSystem || message.authorType === "user" ? (
             <p
-              className={`text-sm text-muted-foreground break-words [overflow-wrap:anywhere] ${isSystem || isSystemError ? "italic" : ""}`}
+              className={`text-body text-muted-foreground break-words [overflow-wrap:anywhere] ${isSystem || isSystemError ? "italic" : ""}`}
             >
               {message.content}
             </p>

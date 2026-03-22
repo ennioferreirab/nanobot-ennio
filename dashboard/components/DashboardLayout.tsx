@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Id } from "@/convex/_generated/dataModel";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AgentSidebar } from "@/features/agents/components/AgentSidebar";
@@ -27,6 +27,8 @@ import { SearchBar } from "@/features/search/components/SearchBar";
 import { parseSearch } from "@/lib/searchParser";
 import { useGatewaySleepRuntime, useGatewaySleepCountdown } from "@/hooks/useGatewaySleepRuntime";
 import { useGatewaySleepModeRequest } from "@/features/settings/hooks/useGatewaySleepModeRequest";
+import { CommandPalette } from "@/components/CommandPalette";
+import { MobileTabBar } from "@/components/MobileTabBar";
 
 function useMediaQuery(query: string): boolean {
   const subscribe = useCallback(
@@ -60,6 +62,21 @@ function DashboardContent({ isXl }: { isXl: boolean }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [activityPanelCollapsed, setActivityPanelCollapsed] = useState(true);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState("board");
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const parsedSearch = useMemo(() => parseSearch(searchQuery), [searchQuery]);
   const { openTerminals, closeAllTerminals } = useBoard();
@@ -86,7 +103,7 @@ function DashboardContent({ isXl }: { isXl: boolean }) {
       <AgentSidebar />
       <SidebarInset className="h-screen min-w-0 overflow-hidden">
         <div className="flex h-screen flex-col overflow-hidden bg-background">
-          <header className="flex h-[60px] items-center justify-between border-b border-border px-4">
+          <header className="flex h-14 items-center justify-between border-b border-border px-4">
             <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
               <SidebarTrigger className="md:hidden" />
               <h1
@@ -99,7 +116,11 @@ function DashboardContent({ isXl }: { isXl: boolean }) {
             </div>
             <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 justify-center px-2 md:px-4 max-w-2xl">
               <BoardSelector onOpenSettings={() => setBoardSettingsOpen(true)} />
-              <SearchBar onSearchChange={setSearchQuery} className="hidden sm:flex" />
+              <SearchBar
+                onSearchChange={setSearchQuery}
+                className="hidden sm:flex"
+                placeholder="Create a task or press ⌘K..."
+              />
             </div>
             <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-auto">
               <button
@@ -170,7 +191,7 @@ function DashboardContent({ isXl }: { isXl: boolean }) {
             <TaskInput />
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4 pb-14 md:pb-4">
             {openTerminals.length > 0 ? (
               <TerminalBoard />
             ) : (
@@ -218,6 +239,8 @@ function DashboardContent({ isXl }: { isXl: boolean }) {
           setSelectedTaskId(taskId as Id<"tasks">);
         }}
       />
+      <CommandPalette isOpen={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
+      <MobileTabBar activeTab={mobileTab} onTabChange={setMobileTab} />
     </SidebarProvider>
   );
 }

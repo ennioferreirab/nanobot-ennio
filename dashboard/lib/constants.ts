@@ -132,52 +132,52 @@ export type AuthorType = (typeof AUTHOR_TYPE)[keyof typeof AUTHOR_TYPE];
 // Status color mapping for Kanban board
 export const STATUS_COLORS: Record<TaskStatus, { border: string; bg: string; text: string }> = {
   ready: {
-    border: "border-l-teal-500",
+    border: "border-t-teal-500",
     bg: "bg-teal-100 dark:bg-teal-950",
     text: "text-teal-700 dark:text-teal-300",
   },
   failed: {
-    border: "border-l-rose-500",
+    border: "border-t-rose-500",
     bg: "bg-rose-100 dark:bg-rose-950",
     text: "text-rose-700 dark:text-rose-300",
   },
   inbox: {
-    border: "border-l-violet-500",
+    border: "border-t-violet-500",
     bg: "bg-violet-100 dark:bg-violet-950",
     text: "text-violet-700 dark:text-violet-300",
   },
   assigned: {
-    border: "border-l-cyan-500",
+    border: "border-t-cyan-500",
     bg: "bg-cyan-100 dark:bg-cyan-950",
     text: "text-cyan-700 dark:text-cyan-300",
   },
   in_progress: {
-    border: "border-l-blue-500",
+    border: "border-t-blue-500",
     bg: "bg-blue-100 dark:bg-blue-950",
     text: "text-blue-700 dark:text-blue-300",
   },
   review: {
-    border: "border-l-amber-500",
+    border: "border-t-amber-500",
     bg: "bg-amber-100 dark:bg-amber-950",
     text: "text-amber-700 dark:text-amber-300",
   },
   done: {
-    border: "border-l-green-500",
+    border: "border-t-green-500",
     bg: "bg-green-100 dark:bg-green-950",
     text: "text-green-700 dark:text-green-300",
   },
   retrying: {
-    border: "border-l-amber-600",
+    border: "border-t-amber-600",
     bg: "bg-amber-100 dark:bg-amber-950",
     text: "text-amber-700 dark:text-amber-300",
   },
   crashed: {
-    border: "border-l-red-500",
+    border: "border-t-red-500",
     bg: "bg-red-100 dark:bg-red-950",
     text: "text-red-700 dark:text-red-300",
   },
   deleted: {
-    border: "border-l-gray-400",
+    border: "border-t-gray-400",
     bg: "bg-gray-100 dark:bg-gray-900",
     text: "text-gray-500 dark:text-gray-400",
   },
