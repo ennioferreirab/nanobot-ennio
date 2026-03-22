@@ -166,7 +166,7 @@ export function KanbanColumn({
     >
       <div className="mb-3 flex items-center gap-2 px-1">
         <div className={`h-2 w-2 rounded-full ${accentColor}`} />
-        <h2 className="text-title text-foreground">{title}</h2>
+        <h2 className="min-w-0 truncate text-title text-foreground">{title}</h2>
         <Badge variant="secondary" className="text-xs">
           {totalCount}
         </Badge>

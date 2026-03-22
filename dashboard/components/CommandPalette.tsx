@@ -44,7 +44,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
           />
           {/* Palette */}
           <motion.div
-            className="fixed left-1/2 top-[20%] z-50 w-[560px] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+            className="fixed left-1/2 top-[20%] z-50 w-[560px] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
             initial={{
               opacity: 0,
               scale: prefersReducedMotion ? 1 : 0.95,

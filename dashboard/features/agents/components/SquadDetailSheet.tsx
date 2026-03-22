@@ -200,7 +200,11 @@ export function SquadDetailSheet({
   return (
     <>
       <Sheet open={!!squadId} onOpenChange={(open) => !open && handleClose()}>
-        <SheetContent side="right" className="w-[96vw] sm:max-w-6xl flex flex-col p-0" hideClose>
+        <SheetContent
+          side="right"
+          className="w-[96vw] sm:max-w-6xl flex flex-col p-0 overflow-hidden"
+          hideClose
+        >
           {squad ? (
             <>
               <SheetHeader className="px-6 pt-6 pb-4 border-b">
@@ -270,7 +274,7 @@ export function SquadDetailSheet({
                 </div>
               </SheetHeader>
 
-              <ScrollArea className="flex-1 px-6 py-4">
+              <ScrollArea className="flex-1 min-h-0 px-6 py-4">
                 <div className="space-y-6">
                   {publishError && (
                     <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

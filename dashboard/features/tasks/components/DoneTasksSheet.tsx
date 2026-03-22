@@ -32,7 +32,10 @@ export function DoneTasksSheet({ open, onClose }: DoneTasksSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <SheetContent side="right" className="flex w-full flex-col p-0 sm:w-[480px] sm:max-w-none">
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col p-0 sm:w-[480px] sm:max-w-none overflow-hidden"
+      >
         <SheetHeader className="px-6 pb-4 pt-6">
           <SheetTitle className="flex items-center gap-2 text-lg font-semibold">
             <CheckCircle2 className="h-5 w-5" />
@@ -48,7 +51,7 @@ export function DoneTasksSheet({ open, onClose }: DoneTasksSheetProps) {
           </SheetDescription>
         </SheetHeader>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-h-0">
           <div className="px-6 pb-6">
             {doneHistory === undefined ? (
               <p className="py-8 text-center text-sm text-muted-foreground">Loading...</p>

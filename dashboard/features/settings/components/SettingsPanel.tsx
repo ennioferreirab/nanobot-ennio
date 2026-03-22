@@ -164,7 +164,7 @@ export function SettingsPanel() {
   return (
     <div className="flex flex-col overflow-hidden max-h-full">
       {/* Section navigation */}
-      <div className="flex items-center gap-1 border-b border-border px-4 pt-4 pb-0 shrink-0">
+      <div className="flex items-center gap-1 border-b border-border px-4 pt-4 pb-0 shrink-0 overflow-x-auto">
         {SETTINGS_SECTIONS.map((section) => (
           <button
             key={section}

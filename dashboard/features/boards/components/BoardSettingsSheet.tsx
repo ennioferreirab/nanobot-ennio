@@ -69,7 +69,7 @@ export function BoardSettingsSheet({ open, onClose }: BoardSettingsSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent side="right" className="w-full sm:w-[400px] flex flex-col p-0">
+      <SheetContent side="right" className="w-full sm:w-[400px] flex flex-col p-0 overflow-hidden">
         <SheetHeader className="px-6 pt-6 pb-4 border-b border-border">
           <SheetTitle>Board Settings</SheetTitle>
           <SheetDescription className="text-xs text-muted-foreground font-mono">
@@ -77,7 +77,7 @@ export function BoardSettingsSheet({ open, onClose }: BoardSettingsSheetProps) {
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="board-display-name">Display Name</Label>
             <Input

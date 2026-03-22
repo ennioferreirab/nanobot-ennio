@@ -476,7 +476,10 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
   return (
     <>
       <Sheet open={!!agentName} onOpenChange={(open) => !open && handleClose()}>
-        <SheetContent side="right" className="w-full sm:w-[480px] flex flex-col p-0">
+        <SheetContent
+          side="right"
+          className="w-full sm:w-[480px] flex flex-col p-0 overflow-hidden"
+        >
           {isLoaded ? (
             <>
               <SheetHeader className="px-6 pt-6 pb-4">
@@ -504,7 +507,7 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
 
               <Separator />
 
-              <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-4 space-y-4">
+              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-4 space-y-4">
                 {saveError && (
                   <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
                     <p className="text-sm text-destructive">{saveError}</p>
