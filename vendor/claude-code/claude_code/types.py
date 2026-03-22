@@ -29,7 +29,7 @@ class ClaudeCodeOpts:
     """Options for agents using the claude-code backend."""
     max_budget_usd: float | None = None
     max_turns: int | None = None
-    permission_mode: str = "acceptEdits"
+    permission_mode: str = "bypassPermissions"
     allowed_tools: list[str] | None = None
     disallowed_tools: list[str] | None = None
     effort_level: str | None = None

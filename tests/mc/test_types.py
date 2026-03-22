@@ -24,7 +24,7 @@ class TestClaudeCodeOpts:
         opts = ClaudeCodeOpts()
         assert opts.max_budget_usd is None
         assert opts.max_turns is None
-        assert opts.permission_mode == "acceptEdits"
+        assert opts.permission_mode == "bypassPermissions"
         assert opts.allowed_tools is None
         assert opts.disallowed_tools is None
 
@@ -46,7 +46,7 @@ class TestClaudeCodeOpts:
         opts = ClaudeCodeOpts(max_budget_usd=5.0)
         assert opts.max_budget_usd == 5.0
         assert opts.max_turns is None
-        assert opts.permission_mode == "acceptEdits"
+        assert opts.permission_mode == "bypassPermissions"
 
     def test_max_turns_only(self) -> None:
         opts = ClaudeCodeOpts(max_turns=50)
@@ -116,7 +116,7 @@ class TestClaudeCodeConfig:
         assert cfg.default_model == "claude-sonnet-4-6"
         assert cfg.default_max_budget_usd == 5.0
         assert cfg.default_max_turns == 50
-        assert cfg.default_permission_mode == "acceptEdits"
+        assert cfg.default_permission_mode == "bypassPermissions"
         assert cfg.auth_method == "oauth"
 
     def test_valid_auth_method_api_key(self) -> None:

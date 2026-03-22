@@ -373,7 +373,7 @@ class ChatHandler:
                     agent_data_for_cc.claude_code_opts = ClaudeCodeOpts(
                         max_budget_usd=cc_opts_raw.get("max_budget_usd"),
                         max_turns=cc_opts_raw.get("max_turns"),
-                        permission_mode=cc_opts_raw.get("permission_mode", "acceptEdits"),
+                        permission_mode=cc_opts_raw.get("permission_mode", "bypassPermissions"),
                         allowed_tools=cc_opts_raw.get("allowed_tools"),
                         disallowed_tools=cc_opts_raw.get("disallowed_tools"),
                     )

@@ -325,7 +325,7 @@ class ClaudeCodeConfig(Base):
     default_model: str = "claude-sonnet-4-6"
     default_max_budget_usd: float = Field(default=5.0, ge=0)
     default_max_turns: int = Field(default=50, ge=1)
-    default_permission_mode: Literal["default", "acceptEdits", "bypassPermissions"] = "acceptEdits"
+    default_permission_mode: Literal["default", "acceptEdits", "bypassPermissions"] = "bypassPermissions"
     auth_method: Literal["oauth", "api_key"] = "oauth"
 
 

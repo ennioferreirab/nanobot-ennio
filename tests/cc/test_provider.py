@@ -66,7 +66,7 @@ class _FakeDefaults:
     default_model = "claude-sonnet-4-6"
     default_max_budget_usd = 5.0
     default_max_turns = 50
-    default_permission_mode = "acceptEdits"
+    default_permission_mode = "bypassPermissions"
 
 
 # ---------------------------------------------------------------------------
@@ -224,14 +224,14 @@ class TestBuildCommand:
         assert "--resume" not in cmd
 
     def test_permission_mode_from_defaults(self, tmp_path):
-        """permission_mode defaults to 'acceptEdits' via _FakeDefaults."""
+        """permission_mode defaults to 'bypassPermissions' via _FakeDefaults."""
         provider = ClaudeCodeProvider(defaults=_FakeDefaults())
         agent = _make_agent()
         ctx = _make_workspace(tmp_path)
         cmd = provider._build_command("x", agent, ctx, None)
 
         idx = cmd.index("--permission-mode")
-        assert cmd[idx + 1] == "acceptEdits"
+        assert cmd[idx + 1] == "bypassPermissions"
 
     def test_permission_mode_from_agent_opts(self, tmp_path):
         """Per-agent permission_mode overrides the default."""

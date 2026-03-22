@@ -202,7 +202,7 @@ class CCExecutorMixin:
                 from claude_code.types import ClaudeCodeOpts
 
                 agent_data.claude_code_opts = ClaudeCodeOpts(
-                    permission_mode=cc_raw.get("permission_mode", "acceptEdits"),
+                    permission_mode=cc_raw.get("permission_mode", "bypassPermissions"),
                     max_budget_usd=cc_raw.get("max_budget_usd"),
                     max_turns=cc_raw.get("max_turns"),
                 )
