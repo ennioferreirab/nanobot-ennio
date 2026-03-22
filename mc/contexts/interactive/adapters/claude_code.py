@@ -144,7 +144,7 @@ class ClaudeCodeInteractiveAdapter:
         cmd.extend(["--mcp-config", str(workspace_ctx.mcp_config)])
 
         cc = agent.claude_code_opts
-        permission_mode = (cc and cc.permission_mode) or "acceptEdits"
+        permission_mode = (cc and cc.permission_mode) or "bypassPermissions"
         cmd.extend(["--permission-mode", permission_mode])
 
         allowed_tools = list((cc and cc.allowed_tools) or [])
