@@ -183,7 +183,7 @@ describe("TaskInput", () => {
       });
     });
 
-    expect(screen.queryByText("Auto (Lead Agent)")).not.toBeInTheDocument();
+    expect(screen.queryByText("Auto (Orchestrator Agent)")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Switch to AI mode/i })).toBeInTheDocument();
   });
 

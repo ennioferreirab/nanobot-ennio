@@ -45,7 +45,7 @@ class TestTaskRepository:
             idempotency_key="py:task-1:v3:in_progress:review",
             awaiting_kickoff=True,
             review_phase="plan_review",
-            agent_name="lead-agent",
+            agent_name="orchestrator-agent",
         )
 
         assert result["kind"] == "applied"
@@ -60,7 +60,7 @@ class TestTaskRepository:
                 "review_phase": "plan_review",
                 "reason": "Plan ready for review",
                 "idempotency_key": "py:task-1:v3:in_progress:review",
-                "agent_name": "lead-agent",
+                "agent_name": "orchestrator-agent",
             },
         )
 
@@ -384,13 +384,13 @@ class TestMessageRepository:
         args = client.mutation.call_args[0][1]
         assert args["artifacts"] == artifacts
 
-    def test_post_lead_agent_message(self):
+    def test_post_orchestrator_agent_message(self):
         client = _make_client_mock()
         repo = MessageRepository(client)
-        repo.post_lead_agent_message("t1", "Chat text", "lead_agent_chat")
+        repo.post_orchestrator_agent_message("t1", "Chat text", "orchestrator_agent_chat")
 
         args = client.mutation.call_args[0][1]
-        assert args["type"] == "lead_agent_chat"
+        assert args["type"] == "orchestrator_agent_chat"
 
     def test_post_system_error(self):
         client = _make_client_mock()

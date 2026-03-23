@@ -86,7 +86,7 @@ export const STRUCTURED_MESSAGE_TYPE = {
   STEP_COMPLETION: "step_completion",
   USER_MESSAGE: "user_message",
   SYSTEM_ERROR: "system_error",
-  LEAD_AGENT_CHAT: "lead_agent_chat",
+  ORCHESTRATOR_AGENT_CHAT: "orchestrator_agent_chat",
   COMMENT: "comment",
 } as const;
 
@@ -106,12 +106,17 @@ export const AUTHOR_TYPE = {
 
 // System agent names (agents that cannot be disabled, excluded from task routing).
 // The internal `nanobot` key remains stored for compatibility during the rebrand.
-export const SYSTEM_AGENT_NAMES = new Set(["lead-agent", "mc-agent", "nanobot", "low-agent"]);
+export const SYSTEM_AGENT_NAMES = new Set([
+  "orchestrator-agent",
+  "mc-agent",
+  "nanobot",
+  "low-agent",
+]);
 
 // Agents hidden from user-facing selectors (dropdowns, mentions, sidebar).
 // The internal `nanobot` system agent is intentionally excluded from this set so
 // it remains available where the compatibility runtime still exposes it.
-export const HIDDEN_AGENT_NAMES = new Set(["lead-agent", "mc-agent", "low-agent"]);
+export const HIDDEN_AGENT_NAMES = new Set(["orchestrator-agent", "mc-agent", "low-agent"]);
 
 // Virtual agent sentinel for human-in-the-loop steps.
 // Not a DB agent — used in step assignment dropdowns and planner roster.

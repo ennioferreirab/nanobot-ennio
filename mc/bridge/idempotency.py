@@ -9,7 +9,7 @@ from typing import Any
 SUPPORTED_MUTATIONS = {
     "messages:create",
     "messages:postStepCompletion",
-    "messages:postLeadAgentMessage",
+    "messages:postOrchestratorAgentMessage",
     "activities:create",
     "tasks:transition",
     "steps:transition",

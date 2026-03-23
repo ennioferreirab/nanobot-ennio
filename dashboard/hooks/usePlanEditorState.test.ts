@@ -16,7 +16,7 @@ const makePlan = (generatedAt = "2026-01-01T00:00:00Z"): ExecutionPlan => ({
     },
   ],
   generatedAt,
-  generatedBy: "lead-agent",
+  generatedBy: "orchestrator-agent",
 });
 
 describe("usePlanEditorState", () => {
@@ -122,7 +122,7 @@ describe("usePlanEditorState", () => {
     const plan: ExecutionPlan = {
       steps: [],
       generatedAt: "2026-01-01T00:00:00Z",
-      generatedBy: "lead-agent",
+      generatedBy: "orchestrator-agent",
     };
     const errors = result.current.validate(plan);
     expect(errors).toContain("Plan must have at least one step");
@@ -149,7 +149,7 @@ describe("usePlanEditorState", () => {
         },
       ],
       generatedAt: "2026-01-01T00:00:00Z",
-      generatedBy: "lead-agent",
+      generatedBy: "orchestrator-agent",
     };
     const errors = result.current.validate(plan);
     expect(errors.length).toBeGreaterThan(0);

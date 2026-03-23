@@ -22,7 +22,7 @@ export interface ExecutionPlanStepInput {
 export interface ExecutionPlanInput {
   steps: ExecutionPlanStepInput[];
   generatedAt: string;
-  generatedBy: "lead-agent";
+  generatedBy: "orchestrator-agent";
 }
 
 export async function updateTaskExecutionPlan(
@@ -128,7 +128,7 @@ export async function clearTaskExecutionPlan(
     content:
       nextStatus === "review"
         ? "Execution plan cleared. The task returned to review so you can build a fresh plan."
-        : "Execution plan cleared. Start a new Lead Agent conversation to build the next plan.",
+        : "Execution plan cleared. Start a new Orchestrator Agent conversation to build the next plan.",
     messageType: "system_event",
     timestamp: now,
   });

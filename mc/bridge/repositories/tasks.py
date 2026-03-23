@@ -216,7 +216,7 @@ class TaskRepository:
 
         Args:
             task_id: Convex task _id.
-            routing_mode: e.g. "lead_agent".
+            routing_mode: e.g. "orchestrator_agent".
             routing_decision: Serialized RoutingDecision dict.
 
         Returns:

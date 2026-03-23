@@ -217,7 +217,7 @@ class TestBoardAgentFilter:
         agents = [
             self._make_agent("dev-agent"),
             self._make_agent("research-agent"),
-            self._make_agent("lead-agent", is_system=True),
+            self._make_agent("orchestrator-agent", is_system=True),
         ]
         result = self._filter_agents(agents, [])
         assert len(result) == 3
@@ -226,24 +226,24 @@ class TestBoardAgentFilter:
         agents = [
             self._make_agent("dev-agent"),
             self._make_agent("research-agent"),
-            self._make_agent("lead-agent", is_system=True),
+            self._make_agent("orchestrator-agent", is_system=True),
             self._make_agent("mc-agent", is_system=True),
         ]
         result = self._filter_agents(agents, ["dev-agent"])
         names = {a.name for a in result}
         assert "dev-agent" in names, "Listed agent must be included"
-        assert "lead-agent" in names, "System agent must always be included"
+        assert "orchestrator-agent" in names, "System agent must always be included"
         assert "mc-agent" in names, "System agent must always be included"
         assert "research-agent" not in names, "Non-listed agent must be excluded"
 
     def test_system_agents_always_pass(self):
         agents = [
             self._make_agent("dev-agent"),
-            self._make_agent("lead-agent", is_system=True),
+            self._make_agent("orchestrator-agent", is_system=True),
         ]
         result = self._filter_agents(agents, ["research-agent"])  # dev-agent not listed
         names = {a.name for a in result}
-        assert "lead-agent" in names
+        assert "orchestrator-agent" in names
         assert "dev-agent" not in names
 
     def test_multiple_agents_in_filter(self):
@@ -251,8 +251,8 @@ class TestBoardAgentFilter:
             self._make_agent("dev-agent"),
             self._make_agent("research-agent"),
             self._make_agent("test-agent"),
-            self._make_agent("lead-agent", is_system=True),
+            self._make_agent("orchestrator-agent", is_system=True),
         ]
         result = self._filter_agents(agents, ["dev-agent", "research-agent"])
         names = {a.name for a in result}
-        assert names == {"dev-agent", "research-agent", "lead-agent"}
+        assert names == {"dev-agent", "research-agent", "orchestrator-agent"}

@@ -43,8 +43,8 @@ describe("GET /api/specs/squad/context", () => {
             isSystem: false,
           },
           {
-            name: "lead-agent",
-            displayName: "Lead Agent",
+            name: "orchestrator-agent",
+            displayName: "Orchestrator Agent",
             role: "Coordinator",
             skills: ["planning"],
             enabled: true,

@@ -9,14 +9,14 @@ from nanobot.cli.commands import app
 from typer.testing import CliRunner
 
 from mc.cli.init_wizard import (
-    LEAD_AGENT_CONFIG,
+    ORCHESTRATOR_AGENT_CONFIG,
     PRESETS,
     AgentPlan,
     agent_exists,
-    build_lead_agent_yaml,
+    build_orchestrator_agent_yaml,
     build_preset_yaml,
     create_agents,
-    lead_agent_exists,
+    orchestrator_agent_exists,
 )
 
 runner = CliRunner()
@@ -58,27 +58,28 @@ def tmp_agents_dir_simple(tmp_path):
 
 class TestBuildLeadAgentYaml:
     def test_valid_yaml(self):
-        text = build_lead_agent_yaml()
+        text = build_orchestrator_agent_yaml()
         data = yaml.safe_load(text)
-        assert data["name"] == "lead-agent"
-        assert data["role"] == "Lead Agent — Orchestrator"
+        assert data["name"] == "orchestrator-agent"
+        assert data["role"] == "Orchestrator Agent"
         assert "prompt" in data
+        assert "Orchestrator Agent for Mission Control" in data["prompt"]
         assert isinstance(data["skills"], list)
         assert len(data["skills"]) > 0
 
     def test_matches_config_dict(self):
-        text = build_lead_agent_yaml()
+        text = build_orchestrator_agent_yaml()
         data = yaml.safe_load(text)
-        assert data == LEAD_AGENT_CONFIG
+        assert data == ORCHESTRATOR_AGENT_CONFIG
 
     def test_passes_agent_validation(self):
         from mc.cli.agent_assist import validate_yaml_content
 
-        text = build_lead_agent_yaml()
+        text = build_orchestrator_agent_yaml()
         parsed, errors = validate_yaml_content(text)
         assert errors == []
         assert parsed is not None
-        assert parsed["name"] == "lead-agent"
+        assert parsed["name"] == "orchestrator-agent"
 
 
 class TestBuildPresetYaml:
@@ -106,7 +107,7 @@ class TestBuildPresetYaml:
 
     def test_preset_names_not_lead(self):
         for p in PRESETS:
-            assert p.name != "lead-agent", "Preset must not shadow lead-agent"
+            assert p.name != "orchestrator-agent", "Preset must not shadow orchestrator-agent"
 
 
 # ---------------------------------------------------------------------------
@@ -124,14 +125,14 @@ class TestAgentExists:
         (agent_dir / "config.yaml").write_text("name: my-agent\n")
         assert agent_exists("my-agent") is True
 
-    def test_lead_agent_exists_false(self, tmp_agents_dir_simple):
-        assert lead_agent_exists() is False
+    def test_orchestrator_agent_exists_false(self, tmp_agents_dir_simple):
+        assert orchestrator_agent_exists() is False
 
-    def test_lead_agent_exists_true(self, tmp_agents_dir_simple):
-        lead_dir = tmp_agents_dir_simple / "lead-agent"
+    def test_orchestrator_agent_exists_true(self, tmp_agents_dir_simple):
+        lead_dir = tmp_agents_dir_simple / "orchestrator-agent"
         lead_dir.mkdir()
-        (lead_dir / "config.yaml").write_text("name: lead-agent\n")
-        assert lead_agent_exists() is True
+        (lead_dir / "config.yaml").write_text("name: orchestrator-agent\n")
+        assert orchestrator_agent_exists() is True
 
 
 # ---------------------------------------------------------------------------
@@ -159,24 +160,24 @@ class TestCreateAgents:
     def test_create_single_agent(self, tmp_path):
         agents_dir = tmp_path / "agents"
         agents_dir.mkdir()
-        yaml_text = build_lead_agent_yaml()
+        yaml_text = build_orchestrator_agent_yaml()
 
         with (
             patch("mc.cli.init_wizard.AGENTS_DIR", agents_dir),
             patch("mc.cli.init_wizard.create_agent_workspace") as mock_create,
         ):
-            config_path = agents_dir / "lead-agent" / "config.yaml"
+            config_path = agents_dir / "orchestrator-agent" / "config.yaml"
             # Simulate workspace creation
-            (agents_dir / "lead-agent").mkdir(parents=True)
+            (agents_dir / "orchestrator-agent").mkdir(parents=True)
             config_path.write_text(yaml_text)
             mock_create.return_value = config_path
 
             plans = [
                 AgentPlan(
-                    name="lead-agent",
+                    name="orchestrator-agent",
                     role="Lead",
                     yaml_text=yaml_text,
-                    source="lead",
+                    source="orchestrator",
                 )
             ]
             results = create_agents(plans)
@@ -239,7 +240,7 @@ class TestInitCLI:
         assert "setup wizard" in result.stdout.lower() or "wizard" in result.stdout.lower()
 
     def test_lead_only(self, tmp_path):
-        """--skip-presets --skip-custom --yes creates only the lead-agent."""
+        """--skip-presets --skip-custom --yes creates only the orchestrator-agent."""
         agents_dir = tmp_path / "agents"
         agents_dir.mkdir()
 
@@ -260,16 +261,16 @@ class TestInitCLI:
 
             result = runner.invoke(app, ["mc", "init", "--skip-presets", "--skip-custom", "--yes"])
             assert result.exit_code == 0
-            assert "lead-agent" in result.stdout
+            assert "orchestrator-agent" in result.stdout
             mock_create.assert_called_once()
-            assert mock_create.call_args[0][0] == "lead-agent"
+            assert mock_create.call_args[0][0] == "orchestrator-agent"
 
     def test_lead_exists_skips(self, tmp_path):
-        """If lead-agent already exists, step 1 skips it."""
+        """If orchestrator-agent already exists, step 1 skips it."""
         agents_dir = tmp_path / "agents"
-        lead_dir = agents_dir / "lead-agent"
+        lead_dir = agents_dir / "orchestrator-agent"
         lead_dir.mkdir(parents=True)
-        (lead_dir / "config.yaml").write_text(build_lead_agent_yaml())
+        (lead_dir / "config.yaml").write_text(build_orchestrator_agent_yaml())
 
         with (
             patch("mc.cli.AGENTS_DIR", agents_dir),
@@ -306,6 +307,6 @@ class TestInitCLI:
             result = runner.invoke(app, ["mc", "init", "--skip-custom", "--yes"])
             assert result.exit_code == 0
             # Should create lead + all 5 presets
-            assert "lead-agent" in created_names
+            assert "orchestrator-agent" in created_names
             for p in PRESETS:
                 assert p.name in created_names

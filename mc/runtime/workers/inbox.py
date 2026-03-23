@@ -167,7 +167,7 @@ class InboxWorker:
             await self._materialize_and_dispatch_workflow(task_id, title, task_data, execution_plan)
             return
 
-        # Human routing: operator-directed assignment bypasses lead-agent routing.
+        # Human routing: operator-directed assignment bypasses orchestrator-agent routing.
         routing_mode = task_data.get("routing_mode")
         if routing_mode == "human" and assigned_agent:
             result = await asyncio.to_thread(
@@ -229,7 +229,7 @@ class InboxWorker:
             await asyncio.to_thread(
                 self._bridge.patch_routing_decision,
                 task_id,
-                "lead_agent",
+                "orchestrator_agent",
                 routing_decision_payload,
             )
         except Exception:

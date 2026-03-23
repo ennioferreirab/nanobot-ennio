@@ -14,7 +14,12 @@ vi.mock("@/hooks/useSelectableAgents", () => ({
   useSelectableAgents: () => [
     { name: "agent-a", displayName: "Agent A", enabled: true, role: "worker" },
     { name: "agent-b", displayName: "Agent B", enabled: true, role: "worker" },
-    { name: "lead-agent", displayName: "Lead Agent", enabled: true, role: "leader" },
+    {
+      name: "orchestrator-agent",
+      displayName: "Orchestrator Agent",
+      enabled: true,
+      role: "leader",
+    },
   ],
 }));
 
@@ -77,15 +82,15 @@ describe("AddStepForm", () => {
     expect(screen.queryByTestId("add-step-blocked-by-trigger")).not.toBeInTheDocument();
   });
 
-  it("filters out lead-agent from selectable agents", () => {
+  it("filters out orchestrator-agent from selectable agents", () => {
     render(<AddStepForm existingSteps={[]} onAdd={vi.fn()} onCancel={vi.fn()} />);
 
     // Open the agent select dropdown
     const trigger = screen.getByTestId("add-step-agent-select");
     fireEvent.click(trigger);
 
-    // lead-agent should not appear in options
-    expect(screen.queryByText("Lead Agent")).not.toBeInTheDocument();
+    // orchestrator-agent should not appear in options
+    expect(screen.queryByText("Orchestrator Agent")).not.toBeInTheDocument();
     // Regular agents should appear
     expect(screen.getByText("Agent A")).toBeInTheDocument();
     expect(screen.getByText("Agent B")).toBeInTheDocument();

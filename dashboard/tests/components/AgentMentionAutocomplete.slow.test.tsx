@@ -213,10 +213,10 @@ describe("AgentMentionAutocomplete (via ThreadInput)", () => {
     render(
       <ThreadInput
         task={makeTask({ status: "review", awaitingKickoff: true })}
-        mode="lead-agent"
+        mode="orchestrator-agent"
       />,
     );
-    const textarea = screen.getByPlaceholderText(/Ask the Lead Agent to change the plan/i);
+    const textarea = screen.getByPlaceholderText(/Ask the Orchestrator Agent to change the plan/i);
     await user.click(textarea);
     await user.type(textarea, "@");
     // Should never show autocomplete
@@ -257,7 +257,7 @@ describe("AgentMentionAutocomplete (via ThreadInput)", () => {
     });
     // ArrowUp from first item wraps to the last visible selectable agent.
     await user.keyboard("{ArrowUp}");
-    // Enter selects dev-agent because lead-agent is hidden from mentions.
+    // Enter selects dev-agent because orchestrator-agent is hidden from mentions.
     await user.keyboard("{Enter}");
     await waitFor(() => {
       expect(screen.queryByTestId("mention-autocomplete")).not.toBeInTheDocument();

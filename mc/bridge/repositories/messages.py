@@ -124,7 +124,7 @@ class MessageRepository:
         )
         return result
 
-    def post_lead_agent_message(
+    def post_orchestrator_agent_message(
         self,
         task_id: str,
         content: str,
@@ -132,14 +132,14 @@ class MessageRepository:
         plan_review: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
     ) -> Any:
-        """Post a Lead Agent chat message to the unified task thread.
+        """Post an Orchestrator Agent chat message to the unified task thread.
 
-        Calls messages:postLeadAgentMessage Convex mutation.
+        Calls messages:postOrchestratorAgentMessage Convex mutation.
 
         Args:
             task_id: Convex task _id.
             content: Message body (chat message).
-            msg_type: ThreadMessageType value -- "lead_agent_chat".
+            msg_type: ThreadMessageType value -- "orchestrator_agent_chat".
         """
         args: dict[str, Any] = {
             "task_id": task_id,
@@ -149,12 +149,12 @@ class MessageRepository:
         if plan_review is not None:
             args["plan_review"] = plan_review
         args["idempotency_key"] = idempotency_key or (
-            f"py:lead-agent:{task_id}:{msg_type}:{_content_digest(content, plan_review)}"
+            f"py:orchestrator-agent:{task_id}:{msg_type}:{_content_digest(content, plan_review)}"
         )
-        result = self._client.mutation("messages:postLeadAgentMessage", args)
+        result = self._client.mutation("messages:postOrchestratorAgentMessage", args)
         self._log_state_transition(
             "message",
-            f"Lead agent message ({msg_type}) posted on task {task_id}",
+            f"Orchestrator agent message ({msg_type}) posted on task {task_id}",
         )
         return result
 

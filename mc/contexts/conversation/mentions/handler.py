@@ -23,7 +23,7 @@ from mc.types import (
     AuthorType,
     MessageType,
     TrustLevel,
-    is_lead_agent,
+    is_orchestrator_agent,
 )
 
 if TYPE_CHECKING:
@@ -129,8 +129,8 @@ async def handle_mention(
         query[:80],
     )
 
-    # Guard: lead-agent cannot be mentioned directly
-    if is_lead_agent(agent_name) or agent_name == "lead-agent":
+    # Guard: orchestrator-agent cannot be mentioned directly
+    if is_orchestrator_agent(agent_name) or agent_name == "orchestrator-agent":
         await asyncio.to_thread(
             bridge.send_message,
             task_id,
@@ -138,7 +138,7 @@ async def handle_mention(
             AuthorType.SYSTEM,
             (
                 f"@{agent_name} cannot be mentioned directly. "
-                "The Lead Agent is a pure orchestrator and does not respond to mentions."
+                "The Orchestrator Agent is a pure orchestrator and does not respond to mentions."
             ),
             MessageType.SYSTEM_EVENT,
         )

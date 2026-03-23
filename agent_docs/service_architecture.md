@@ -112,7 +112,7 @@ Thin coordinator that spawns four status-based workers:
 | Worker | Subscribes to | Poll interval | Responsibility |
 |--------|--------------|---------------|----------------|
 | `InboxWorker` | `inbox` tasks | 3s | Auto-title via `low-agent`, routing |
-| `PlanningWorker` | `planning` tasks | 5s | Plan generation via `lead-agent` LLM |
+| `PlanningWorker` | `planning` tasks | 5s | Plan generation via `orchestrator-agent` LLM |
 | `KickoffResumeWorker` | `in_progress` tasks | 5s | Materialize steps, kickoff/resume |
 | `ReviewWorker` | `review` tasks | 5s | Route review, handle approval/denial |
 
@@ -607,7 +607,7 @@ End-to-end flow showing how all services participate:
 1. User creates task (Dashboard → Convex mutation)
 2. MC Gateway detects new task (InboxWorker polling)
 3. InboxWorker auto-titles task (LLM call via low-agent)
-4. PlanningWorker generates execution plan (LLM call via lead-agent)
+4. PlanningWorker generates execution plan (LLM call via orchestrator-agent)
 5. User approves plan (Dashboard → Convex mutation)
 6. KickoffResumeWorker materializes steps (Convex batch mutations)
 7. TaskExecutor picks up in_progress task

@@ -38,7 +38,7 @@ describe("InlineRejection", () => {
     render(<InlineRejection {...baseProps} />);
     expect(screen.getByPlaceholderText("Explain what needs to change...")).toBeInTheDocument();
     expect(screen.getByText("Submit")).toBeInTheDocument();
-    expect(screen.queryByText("Return to Lead Agent")).not.toBeInTheDocument();
+    expect(screen.queryByText("Return to Orchestrator Agent")).not.toBeInTheDocument();
   });
 
   it("Submit button is disabled when textarea is empty", () => {

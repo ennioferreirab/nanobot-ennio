@@ -134,10 +134,10 @@ describe("reviewSpecs.createDraft", () => {
       scope: "workflow",
       criteria: [],
       approvalThreshold: 0.7,
-      reviewerPolicy: "lead-agent",
+      reviewerPolicy: "orchestrator-agent",
     });
 
-    expect(inserts[0].value.reviewerPolicy).toBe("lead-agent");
+    expect(inserts[0].value.reviewerPolicy).toBe("orchestrator-agent");
   });
 
   it("sets createdAt and updatedAt on insert", async () => {

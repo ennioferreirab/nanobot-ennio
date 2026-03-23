@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-LEAD_AGENT_NAME = "lead-agent"
+ORCHESTRATOR_AGENT_NAME = "orchestrator-agent"
 NANOBOT_AGENT_NAME = "nanobot"
 LOW_AGENT_NAME = "low-agent"
 HUMAN_AGENT_NAME = "human"
@@ -32,13 +32,13 @@ VALID_TIER_NAMES: frozenset[str] = frozenset(
 )
 
 
-class LeadAgentExecutionError(RuntimeError):
-    """Raised when lead-agent execution is attempted."""
+class OrchestratorAgentExecutionError(RuntimeError):
+    """Raised when orchestrator-agent execution is attempted."""
 
 
-def is_lead_agent(agent_name: str | None) -> bool:
-    """Return True when the given name is the lead-agent."""
-    return agent_name == LEAD_AGENT_NAME
+def is_orchestrator_agent(agent_name: str | None) -> bool:
+    """Return True when the given name is the orchestrator-agent."""
+    return agent_name == ORCHESTRATOR_AGENT_NAME
 
 
 def is_tier_reference(model: str | None) -> bool:
@@ -191,7 +191,7 @@ class ThreadMessageType(StrEnum):
     STEP_COMPLETION = "step_completion"
     USER_MESSAGE = "user_message"
     SYSTEM_ERROR = "system_error"
-    LEAD_AGENT_CHAT = "lead_agent_chat"
+    ORCHESTRATOR_AGENT_CHAT = "orchestrator_agent_chat"
 
 
 # Alias for Story 2.5 — same enum, exposed under the name used in the story spec.
@@ -251,7 +251,7 @@ class ExecutionPlan:
 
     steps: list[ExecutionPlanStep] = field(default_factory=list)
     generated_at: str = ""
-    generated_by: str = LEAD_AGENT_NAME
+    generated_by: str = ORCHESTRATOR_AGENT_NAME
 
     def __post_init__(self) -> None:
         if not self.generated_at:
@@ -327,7 +327,7 @@ class ExecutionPlan:
         return cls(
             steps=steps,
             generated_at=(data.get("generated_at") or data.get("created_at", "")),
-            generated_by=(data.get("generated_by") or LEAD_AGENT_NAME),
+            generated_by=(data.get("generated_by") or ORCHESTRATOR_AGENT_NAME),
         )
 
 

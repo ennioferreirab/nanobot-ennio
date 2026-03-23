@@ -495,7 +495,7 @@ export function ExecutionPlanTab({
         const updatedPlan: ExecutionPlan = {
           steps: updatedSteps,
           generatedAt: currentPlan?.generatedAt ?? new Date().toISOString(),
-          generatedBy: currentPlan?.generatedBy ?? "lead-agent",
+          generatedBy: currentPlan?.generatedBy ?? "orchestrator-agent",
         };
         onLocalPlanChange(updatedPlan);
         setEditingStepId(null);
@@ -529,7 +529,7 @@ export function ExecutionPlanTab({
       onLocalPlanChange({
         steps: updatedSteps,
         generatedAt: currentPlan?.generatedAt ?? new Date().toISOString(),
-        generatedBy: currentPlan?.generatedBy ?? "lead-agent",
+        generatedBy: currentPlan?.generatedBy ?? "orchestrator-agent",
       });
     },
     [editablePlanSteps, executionPlan, onLocalPlanChange],
@@ -735,7 +735,7 @@ export function ExecutionPlanTab({
         const updatedPlan: ExecutionPlan = {
           steps: [...currentSteps, newStep],
           generatedAt: currentPlan?.generatedAt ?? new Date().toISOString(),
-          generatedBy: currentPlan?.generatedBy ?? "lead-agent",
+          generatedBy: currentPlan?.generatedBy ?? "orchestrator-agent",
         };
         onLocalPlanChange(updatedPlan);
         setAddStepError(null);
@@ -804,7 +804,7 @@ export function ExecutionPlanTab({
         const updatedPlan: ExecutionPlan = {
           steps: updatedSteps,
           generatedAt: currentPlan?.generatedAt ?? new Date().toISOString(),
-          generatedBy: currentPlan?.generatedBy ?? "lead-agent",
+          generatedBy: currentPlan?.generatedBy ?? "orchestrator-agent",
         };
         onLocalPlanChange(updatedPlan);
         setEditStepError(null);

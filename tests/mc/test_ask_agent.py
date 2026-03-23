@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from nanobot.agent.tools.ask_agent import AskAgentTool
 
-from mc.types import LEAD_AGENT_NAME, AgentData
+from mc.types import ORCHESTRATOR_AGENT_NAME, AgentData
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -119,25 +119,25 @@ class TestAskAgentLeadAgentProtection:
     """Cannot target the lead agent."""
 
     @pytest.mark.asyncio
-    async def test_lead_agent_string_rejected(self) -> None:
+    async def test_orchestrator_agent_string_rejected(self) -> None:
         tool = _make_tool()
         result = await tool.execute(
-            target_agent="lead-agent",
+            target_agent="orchestrator-agent",
             question="Any question?",
         )
-        assert "Cannot ask the Lead Agent" in result
+        assert "Cannot ask the Orchestrator Agent" in result
 
     @pytest.mark.asyncio
-    async def test_lead_agent_constant_rejected(self) -> None:
+    async def test_orchestrator_agent_constant_rejected(self) -> None:
         tool = _make_tool()
         result = await tool.execute(
-            target_agent=LEAD_AGENT_NAME,
+            target_agent=ORCHESTRATOR_AGENT_NAME,
             question="Any question?",
         )
-        assert "Cannot ask the Lead Agent" in result
+        assert "Cannot ask the Orchestrator Agent" in result
 
     @pytest.mark.asyncio
-    async def test_lead_agent_rejected_before_agent_loading(self) -> None:
+    async def test_orchestrator_agent_rejected_before_agent_loading(self) -> None:
         """Lead agent check must happen before any config loading."""
         tool = _make_tool()
 
@@ -145,12 +145,12 @@ class TestAskAgentLeadAgentProtection:
             "mc.infrastructure.agents.yaml_validator.validate_agent_file",
         ) as mock_validate:
             result = await tool.execute(
-                target_agent="lead-agent",
+                target_agent="orchestrator-agent",
                 question="Any question?",
             )
 
         mock_validate.assert_not_called()
-        assert "Cannot ask the Lead Agent" in result
+        assert "Cannot ask the Orchestrator Agent" in result
 
 
 # ---------------------------------------------------------------------------

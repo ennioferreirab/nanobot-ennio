@@ -98,7 +98,7 @@ describe("useTaskDetailActions", () => {
     const plan = {
       steps: [],
       generatedAt: "2026-01-01T00:00:00Z",
-      generatedBy: "lead-agent" as const,
+      generatedBy: "orchestrator-agent" as const,
     };
     await act(async () => {
       await result.current.kickOff(testId<"tasks">("task1"), plan);

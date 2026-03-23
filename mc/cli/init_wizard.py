@@ -27,11 +27,11 @@ from mc.infrastructure.runtime_home import get_agents_dir
 
 AGENTS_DIR = get_agents_dir()
 
-LEAD_AGENT_CONFIG: dict = {
-    "name": "lead-agent",
-    "role": "Lead Agent — Orchestrator",
+ORCHESTRATOR_AGENT_CONFIG: dict = {
+    "name": "orchestrator-agent",
+    "role": "Orchestrator Agent",
     "prompt": (
-        "You are the lead agent for Mission Control. "
+        "You are the Orchestrator Agent for Mission Control. "
         "You receive incoming tasks, match them to the best available agent "
         "based on skills and availability, create execution plans, and "
         "coordinate multi-agent workflows. You escalate to the human operator "
@@ -128,7 +128,7 @@ class AgentPlan:
     name: str
     role: str
     yaml_text: str
-    source: str  # "lead", "preset", or "custom"
+    source: str  # "orchestrator", "preset", or "custom"
     skip: bool = False
     skip_reason: str = ""
 
@@ -153,9 +153,9 @@ def agent_exists(name: str) -> bool:
     return (AGENTS_DIR / name / "config.yaml").is_file()
 
 
-def lead_agent_exists() -> bool:
-    """Return True if the lead-agent is already configured."""
-    return agent_exists("lead-agent")
+def orchestrator_agent_exists() -> bool:
+    """Return True if the orchestrator-agent is already configured."""
+    return agent_exists("orchestrator-agent")
 
 
 # ---------------------------------------------------------------------------
@@ -163,9 +163,9 @@ def lead_agent_exists() -> bool:
 # ---------------------------------------------------------------------------
 
 
-def build_lead_agent_yaml() -> str:
-    """Return the YAML string for the lead-agent preset."""
-    return yaml.dump(LEAD_AGENT_CONFIG, default_flow_style=False, sort_keys=False)
+def build_orchestrator_agent_yaml() -> str:
+    """Return the YAML string for the orchestrator-agent preset."""
+    return yaml.dump(ORCHESTRATOR_AGENT_CONFIG, default_flow_style=False, sort_keys=False)
 
 
 def build_preset_yaml(preset: AgentPreset) -> str:

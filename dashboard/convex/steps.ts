@@ -826,9 +826,9 @@ export const addStep = mutation({
     if (!args.description.trim()) throw new ConvexError("Step description is required");
     if (!args.assignedAgent.trim()) throw new ConvexError("Assigned agent is required");
 
-    // Validate lead-agent is never assignable
-    if (args.assignedAgent === "lead-agent") {
-      throw new ConvexError("lead-agent cannot be assigned to steps");
+    // Validate orchestrator-agent is never assignable
+    if (args.assignedAgent === "orchestrator-agent") {
+      throw new ConvexError("orchestrator-agent cannot be assigned to steps");
     }
 
     const task = await ctx.db.get(args.taskId);
@@ -1001,8 +1001,8 @@ export const updateStep = mutation({
       if (!args.assignedAgent.trim()) {
         throw new ConvexError("Assigned agent is required");
       }
-      if (args.assignedAgent === "lead-agent") {
-        throw new ConvexError("lead-agent cannot be assigned to steps");
+      if (args.assignedAgent === "orchestrator-agent") {
+        throw new ConvexError("orchestrator-agent cannot be assigned to steps");
       }
     }
 

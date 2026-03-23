@@ -937,32 +937,32 @@ class TestPostStepCompletion:
         assert mock_client.mutation.call_count == 2
 
 
-class TestPostLeadAgentMessage:
+class TestPostOrchestratorAgentMessage:
     @patch("mc.bridge.ConvexClient")
-    def test_post_lead_agent_chat(self, MockClient):
-        """post_lead_agent_message with lead_agent_chat type sends correct type value."""
+    def test_post_orchestrator_agent_chat(self, MockClient):
+        """post_orchestrator_agent_message sends the orchestrator thread type value."""
         mock_client = MockClient.return_value
         mock_client.mutation.return_value = None
 
         bridge = ConvexBridge("https://test.convex.cloud")
-        bridge.post_lead_agent_message(
+        bridge.post_orchestrator_agent_message(
             task_id="task-abc",
             content="I need clarification...",
-            msg_type="lead_agent_chat",
+            msg_type="orchestrator_agent_chat",
         )
 
         call_args = mock_client.mutation.call_args[0]
-        assert call_args[1]["type"] == "lead_agent_chat"
+        assert call_args[1]["type"] == "orchestrator_agent_chat"
 
     @patch("mc.bridge.time.sleep")
     @patch("mc.bridge.ConvexClient")
-    def test_post_lead_agent_message_uses_retry(self, MockClient, mock_sleep):
-        """post_lead_agent_message retries on transient failure."""
+    def test_post_orchestrator_agent_message_uses_retry(self, MockClient, mock_sleep):
+        """post_orchestrator_agent_message retries on transient failure."""
         mock_client = MockClient.return_value
         mock_client.mutation.side_effect = [Exception("Timeout"), None]
 
         bridge = ConvexBridge("https://test.convex.cloud")
-        bridge.post_lead_agent_message("t1", "chat text", "lead_agent_chat")
+        bridge.post_orchestrator_agent_message("t1", "chat text", "orchestrator_agent_chat")
 
         assert mock_client.mutation.call_count == 2
 

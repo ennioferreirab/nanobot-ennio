@@ -14,7 +14,7 @@ from mc.types import (
     StepStatus,
     TaskStatus,
     TrustLevel,
-    is_lead_agent,
+    is_orchestrator_agent,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,8 +94,8 @@ async def pickup_task(
     agent_name = task_data.get("assigned_agent") or NANOBOT_AGENT_NAME
     trust_level = task_data.get("trust_level", TrustLevel.AUTONOMOUS)
     try:
-        if is_lead_agent(agent_name):
-            await reroute_lead_agent_task(
+        if is_orchestrator_agent(agent_name):
+            await reroute_orchestrator_agent_task(
                 executor._bridge,
                 task_data,
             )
@@ -154,16 +154,16 @@ async def pickup_task(
         executor._known_assigned_ids.discard(task_id)
 
 
-async def reroute_lead_agent_task(
+async def reroute_orchestrator_agent_task(
     bridge: Any,
     task_data: dict[str, Any],
 ) -> None:
-    """Re-route lead-agent tasks through LLM delegation."""
+    """Re-route orchestrator-agent tasks through LLM delegation."""
     task_id = task_data["id"]
     title = task_data.get("title", "Untitled")
 
     logger.warning(
-        "[executor] Lead Agent dispatch intercepted for task '%s'. "
+        "[executor] Orchestrator Agent dispatch intercepted for task '%s'. "
         "Pure orchestrator invariant enforced; rerouting via LLM delegation.",
         title,
     )
@@ -174,7 +174,7 @@ async def reroute_lead_agent_task(
         rerouted_agent = decision.target_agent
     except RuntimeError as exc:
         logger.warning(
-            "[executor] LLM delegation failed for lead-agent reroute on task '%s': %s; "
+            "[executor] LLM delegation failed for orchestrator-agent reroute on task '%s': %s; "
             "falling back to '%s'",
             title,
             exc,
@@ -188,7 +188,7 @@ async def reroute_lead_agent_task(
         TaskStatus.ASSIGNED,
         agent_name=rerouted_agent,
         reason=(
-            f"Lead Agent dispatch intercepted for '{title}'. "
+            f"Orchestrator Agent dispatch intercepted for '{title}'. "
             f"Pure orchestrator invariant enforced; task re-routed to "
             f"{rerouted_agent} via LLM delegation."
         ),
@@ -207,7 +207,7 @@ async def reroute_lead_agent_task(
         "System",
         AuthorType.SYSTEM,
         (
-            "Lead Agent is a pure orchestrator and cannot execute tasks "
+            "Orchestrator Agent is a pure orchestrator and cannot execute tasks "
             f"directly. Task re-routed to {rerouted_agent}."
         ),
         MessageType.SYSTEM_EVENT,

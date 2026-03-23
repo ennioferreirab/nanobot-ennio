@@ -47,7 +47,7 @@ from mc.types import (
     NANOBOT_AGENT_NAME,
     extract_cc_model_name,
     is_cc_model,
-    is_lead_agent,
+    is_orchestrator_agent,
 )
 
 if TYPE_CHECKING:
@@ -475,8 +475,8 @@ class ContextBuilder:
         if agent_name == NANOBOT_AGENT_NAME:
             agent_prompt = None
 
-        # Inject agent roster for lead-agent context
-        if is_lead_agent(agent_name):
+        # Inject agent roster for orchestrator-agent context
+        if is_orchestrator_agent(agent_name):
             roster = build_agent_roster()
             if roster:
                 req.description = (req.description or "") + f"\n\n{roster}"
@@ -525,9 +525,9 @@ class ContextBuilder:
         step_description = step.get("description") or ""
         agent_name = (step.get("assigned_agent") or NANOBOT_AGENT_NAME).strip()
 
-        if is_lead_agent(agent_name):
+        if is_orchestrator_agent(agent_name):
             logger.warning(
-                "[context] Step '%s' assigned to lead-agent; rerouting to '%s'",
+                "[context] Step '%s' assigned to orchestrator-agent; rerouting to '%s'",
                 step_title,
                 NANOBOT_AGENT_NAME,
             )

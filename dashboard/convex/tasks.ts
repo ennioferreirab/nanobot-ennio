@@ -81,7 +81,7 @@ export const create = mutation({
     supervisionMode: v.optional(v.union(v.literal("autonomous"), v.literal("supervised"))),
     files: taskFilesValidator,
     routingMode: v.optional(
-      v.union(v.literal("lead_agent"), v.literal("workflow"), v.literal("human")),
+      v.union(v.literal("orchestrator_agent"), v.literal("workflow"), v.literal("human")),
     ),
   },
   handler: async (ctx, args) => {
@@ -462,7 +462,7 @@ const executionPlanSchema = v.object({
     }),
   ),
   generatedAt: v.string(),
-  generatedBy: v.union(v.literal("lead-agent"), v.literal("workflow")),
+  generatedBy: v.union(v.literal("orchestrator-agent"), v.literal("workflow")),
 });
 
 /**

@@ -82,7 +82,7 @@ reportMissingTypeStubs = false
 | Classes | `PascalCase` | `TaskExecutor` |
 | Constants | `UPPER_SNAKE_CASE` | `LLM_TIMEOUT_SECONDS` |
 | Private/internal | `_` prefix | `_parse_plan_response` |
-| Exceptions | `PascalCase` + `Error` suffix | `LeadAgentExecutionError` |
+| Exceptions | `PascalCase` + `Error` suffix | `OrchestratorAgentExecutionError` |
 | Modules, packages | `snake_case` | `task_lifecycle.py` |
 | Protocols | `PascalCase`, descriptive | `MessageSender`, `TaskStore` |
 

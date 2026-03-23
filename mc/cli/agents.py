@@ -371,38 +371,38 @@ def register_init_command(mc_app: typer.Typer) -> None:
             PRESETS,
             AgentPlan,
             agent_exists,
-            build_lead_agent_yaml,
+            build_orchestrator_agent_yaml,
             build_preset_yaml,
             create_agents,
-            lead_agent_exists,
+            orchestrator_agent_exists,
         )
 
         plans: list[AgentPlan] = []
         console.print()
         console.print(Rule("[bold]Mission Control Setup Wizard[/bold]"))
         console.print()
-        console.print("[bold]Step 1:[/bold] Lead Agent\n")
+        console.print("[bold]Step 1:[/bold] Orchestrator Agent\n")
 
-        if lead_agent_exists():
-            console.print("  lead-agent already exists -- [dim]skipping[/dim]")
+        if orchestrator_agent_exists():
+            console.print("  orchestrator-agent already exists -- [dim]skipping[/dim]")
             plans.append(
                 AgentPlan(
-                    name="lead-agent",
-                    role="Lead Agent -- Orchestrator",
+                    name="orchestrator-agent",
+                    role="Orchestrator Agent",
                     yaml_text="",
-                    source="lead",
+                    source="orchestrator",
                     skip=True,
                     skip_reason="already exists",
                 )
             )
         else:
-            console.print("  Will create [bold]lead-agent[/bold] (orchestrator)")
+            console.print("  Will create [bold]orchestrator-agent[/bold] (orchestrator)")
             plans.append(
                 AgentPlan(
-                    name="lead-agent",
-                    role="Lead Agent -- Orchestrator",
-                    yaml_text=build_lead_agent_yaml(),
-                    source="lead",
+                    name="orchestrator-agent",
+                    role="Orchestrator Agent",
+                    yaml_text=build_orchestrator_agent_yaml(),
+                    source="orchestrator",
                 )
             )
         console.print()
@@ -670,4 +670,71 @@ def migrate_agents(
     console.print(summary)
 
     if errors:
+        raise typer.Exit(1)
+
+
+@agents_app.command("rename-lead-agent")
+def rename_lead_agent(
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Report planned Convex/runtime-home changes without writing them.",
+    ),
+    runtime_home_path: str = typer.Option(
+        "",
+        "--runtime-home",
+        help="Path to runtime home (default: configured ~/.nanobot-compatible home).",
+    ),
+) -> None:
+    """Rename the legacy lead-agent to orchestrator-agent across Convex and runtime home."""
+    import mc.cli as _cli
+    from mc.contexts.agents.orchestrator_rename import migrate_lead_agent_to_orchestrator
+    from mc.infrastructure.runtime_home import get_runtime_home
+
+    resolved_runtime_home = (
+        Path(runtime_home_path).expanduser() if runtime_home_path else get_runtime_home()
+    )
+
+    if dry_run:
+        console.print("[yellow]DRY RUN — no changes will be written[/yellow]")
+
+    bridge = _cli._get_bridge()
+    try:
+        results = migrate_lead_agent_to_orchestrator(
+            bridge,
+            runtime_home=resolved_runtime_home,
+            dry_run=dry_run,
+        )
+    finally:
+        bridge.close()
+
+    convex = results.get("convex") or {}
+    runtime = results.get("runtime_home") or {}
+    changes = convex.get("changes") or {}
+    conflicts = list(convex.get("conflicts") or []) + list(runtime.get("conflicts") or [])
+    renamed_dirs = runtime.get("renamed_dirs") or []
+    updated_files = runtime.get("updated_files") or []
+
+    console.print("\n[bold]Convex backfill[/bold]")
+    for table_name, count in sorted(changes.items()):
+        console.print(f"  {table_name}: {count}")
+
+    console.print("\n[bold]Runtime home[/bold]")
+    console.print(f"  renamed dirs: {len(renamed_dirs)}")
+    console.print(f"  updated files: {len(updated_files)}")
+
+    if renamed_dirs:
+        console.print("\n[green]Renamed directories:[/green]")
+        for item in renamed_dirs:
+            console.print(f"  [green]✓[/green] {item}")
+
+    if updated_files:
+        console.print("\n[green]Updated files:[/green]")
+        for item in updated_files:
+            console.print(f"  [green]✓[/green] {item}")
+
+    if conflicts:
+        console.print("\n[red]Conflicts:[/red]")
+        for item in conflicts:
+            console.print(f"  [red]✗[/red] {item}")
         raise typer.Exit(1)

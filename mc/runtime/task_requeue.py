@@ -7,7 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from mc.runtime.cron_delivery import PendingDeliveries
-from mc.types import NANOBOT_AGENT_NAME, AuthorType, MessageType, is_lead_agent
+from mc.types import NANOBOT_AGENT_NAME, AuthorType, MessageType, is_orchestrator_agent
 
 if TYPE_CHECKING:
     from mc.bridge import ConvexBridge
@@ -69,9 +69,9 @@ async def _requeue_cron_task(
         return None
 
     agent_name = agent or task.get("assigned_agent") or NANOBOT_AGENT_NAME
-    if is_lead_agent(agent_name):
+    if is_orchestrator_agent(agent_name):
         logger.warning(
-            "[gateway] Cron task %s had lead-agent assignment; using %s "
+            "[gateway] Cron task %s had orchestrator-agent assignment; using %s "
             "(pure orchestrator invariant)",
             task_id,
             NANOBOT_AGENT_NAME,

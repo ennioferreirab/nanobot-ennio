@@ -84,7 +84,7 @@ class OutboundPipeline:
             body = f"**Step completed** by {author}\n\n{content}"
         elif msg_type == "system_error":
             body = f"**System error**\n\n{content}"
-        elif msg_type == "lead_agent_chat":
+        elif msg_type == "orchestrator_agent_chat":
             body = f"**{author}** (plan)\n\n{content}"
         else:
             body = content

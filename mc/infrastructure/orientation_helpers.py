@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from mc.types import is_lead_agent
+from mc.types import is_orchestrator_agent
 
 
 def get_iana_timezone() -> str | None:
@@ -42,7 +42,7 @@ def build_agent_roster() -> str:
         result = validate_agent_file(config_path)
         if isinstance(result, list):
             continue
-        if getattr(result, "is_system", False) or is_lead_agent(result.name):
+        if getattr(result, "is_system", False) or is_orchestrator_agent(result.name):
             continue
 
         skill_str = ", ".join(result.skills) if result.skills else "general"

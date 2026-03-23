@@ -60,10 +60,10 @@ def test_append_event_keeps_header_sections_and_appends_markdown(tmp_path: Path)
         created_at="2026-03-16T12:00:00Z",
         updated_at="2026-03-16T12:00:00Z",
         status="review",
-        assigned_agent="lead-agent",
+        assigned_agent="orchestrator-agent",
         board_name=None,
         workflow_spec=None,
-        plan_generated_by="lead-agent",
+        plan_generated_by="orchestrator-agent",
         execution_plan_markdown="1. Plan",
     )
 

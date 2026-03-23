@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useThreadInputController } from "@/features/thread/hooks/useThreadInputController";
 
 interface ThreadInputProps {
-  mode?: "default" | "lead-agent";
+  mode?: "default" | "orchestrator-agent";
   task: Doc<"tasks">;
   onMessageSent?: () => void;
 }
@@ -43,7 +43,7 @@ export function ThreadInput({ task, onMessageSent, mode = "default" }: ThreadInp
     handleTextFocus,
     isBlocked,
     isHumanDelegationThread,
-    isLeadAgentMode,
+    isOrchestratorAgentMode,
     isDragOver,
     isPlanChatMode,
     isReplyOnlyThread,
@@ -101,21 +101,22 @@ export function ThreadInput({ task, onMessageSent, mode = "default" }: ThreadInp
       <div className="border-t px-6 py-3">
         <div className={`${shellClass} space-y-2`}>
           {error && <p className="text-xs text-red-500">{error}</p>}
-          {isLeadAgentMode ? (
+          {isOrchestratorAgentMode ? (
             <>
               <div className="flex items-center gap-2">
                 <span className="inline-flex rounded-full bg-muted px-3 py-1 text-xs font-medium">
-                  Lead Agent
+                  Orchestrator Agent
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Send changes directly to the Lead Agent. Mentions and delegation are disabled here.
+                Send changes directly to the Orchestrator Agent. Mentions and delegation are
+                disabled here.
               </p>
             </>
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
-                Ask the Lead Agent to modify the plan...
+                Ask the Orchestrator Agent to modify the plan...
               </p>
             </>
           )}
@@ -140,8 +141,8 @@ export function ThreadInput({ task, onMessageSent, mode = "default" }: ThreadInp
           >
             <Textarea
               placeholder={
-                isLeadAgentMode
-                  ? "Ask the Lead Agent to change the plan..."
+                isOrchestratorAgentMode
+                  ? "Ask the Orchestrator Agent to change the plan..."
                   : "e.g. Add a step to write tests, or remove the deployment step..."
               }
               value={content}

@@ -60,8 +60,8 @@ export function AddStepForm({
 
   const agents = useSelectableAgents(board?.enabledAgents);
 
-  // Filter out lead-agent (must NEVER be assignable to steps)
-  const selectableAgents = (agents ?? []).filter((a) => a.name !== "lead-agent");
+  // Filter out orchestrator-agent (must NEVER be assignable to steps)
+  const selectableAgents = (agents ?? []).filter((a) => a.name !== "orchestrator-agent");
 
   const isValid =
     title.trim().length > 0 && description.trim().length > 0 && assignedAgent.length > 0;

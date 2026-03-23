@@ -3,13 +3,13 @@
  *
  * Pure, side-effect-free function that compiles a `workflowSpec` into an
  * execution plan compatible with the existing `ExecutionPlanInput` shape used
- * by lead-agent plans.
+ * by orchestrator-agent plans.
  *
  * Key invariants:
  * - The workflow step `id` is used directly as the `tempId` — this keeps
  *   tempIds stable across re-compilations and makes the dependency mapping
  *   trivial (dependsOn ids → blockedBy tempIds).
- * - `generatedBy` is `"workflow"` (not `"lead-agent"`) so the runtime can
+ * - `generatedBy` is `"workflow"` (not `"orchestrator-agent"`) so the runtime can
  *   distinguish plan sources.
  * - Optional workflow metadata fields (workflowStepId, workflowStepType,
  *   agentId) are attached to each step for downstream use.
@@ -91,7 +91,7 @@ export interface WorkflowExecutionPlanStep {
 export interface WorkflowExecutionPlan {
   steps: WorkflowExecutionPlanStep[];
   generatedAt: string;
-  /** Distinguishes this from lead-agent plans. */
+  /** Distinguishes this from orchestrator-agent plans. */
   generatedBy: "workflow";
   /** The workflowSpec this plan was compiled from. */
   workflowSpecId: string;

@@ -2,7 +2,7 @@
 
 Covers TaskExecutor._maybe_inject_orientation():
 1. orientation injected for non-lead agents when file exists
-2. orientation NOT injected for lead-agent
+2. orientation NOT injected for orchestrator-agent
 3. graceful no-op when orientation file is missing
 4. orientation comes before agent's own prompt
 5. orientation alone becomes prompt when agent has no config prompt
@@ -28,7 +28,7 @@ def _orientation_file_patch(tmp_path: Path):
 
 
 class TestMaybeInjectOrientation:
-    def test_orientation_injected_for_non_lead_agent(self, tmp_path):
+    def test_orientation_injected_for_non_orchestrator_agent(self, tmp_path):
         """Orientation content is prepended for non-lead agents."""
         mc_dir = tmp_path / ".nanobot" / "mc"
         mc_dir.mkdir(parents=True)
@@ -40,15 +40,17 @@ class TestMaybeInjectOrientation:
         assert "use your skills" in result
         assert "agent prompt" in result
 
-    def test_orientation_not_injected_for_lead_agent(self, tmp_path):
-        """lead-agent is exempt from the global orientation."""
+    def test_orientation_not_injected_for_orchestrator_agent(self, tmp_path):
+        """orchestrator-agent is exempt from the global orientation."""
         mc_dir = tmp_path / ".nanobot" / "mc"
         mc_dir.mkdir(parents=True)
         (mc_dir / "agent-orientation.md").write_text("use your skills", encoding="utf-8")
         executor = _make_executor()
         with _orientation_file_patch(tmp_path):
-            result = executor._maybe_inject_orientation("lead-agent", "lead-agent prompt")
-        assert result == "lead-agent prompt"
+            result = executor._maybe_inject_orientation(
+                "orchestrator-agent", "orchestrator-agent prompt"
+            )
+        assert result == "orchestrator-agent prompt"
         assert "use your skills" not in (result or "")
 
     def test_no_error_when_orientation_file_missing(self, tmp_path):

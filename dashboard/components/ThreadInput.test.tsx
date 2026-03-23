@@ -482,17 +482,17 @@ describe("ThreadInput @mention routing (Story 13.1)", () => {
     });
   });
 
-  it("uses direct lead-agent chat mode without agent selection or mention routing", async () => {
+  it("uses direct orchestrator-agent chat mode without agent selection or mention routing", async () => {
     const reviewTask = {
       ...baseTask,
       status: "review" as const,
       awaitingKickoff: true,
     };
 
-    render(<ThreadInput task={reviewTask} mode="lead-agent" />);
+    render(<ThreadInput task={reviewTask} mode="orchestrator-agent" />);
 
     expect(screen.queryByTestId("agent-select")).not.toBeInTheDocument();
-    expect(screen.getByText("Lead Agent")).toBeInTheDocument();
+    expect(screen.getByText("Orchestrator Agent")).toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId("thread-textarea"), {
       target: { value: "@reviewer please update the plan" },

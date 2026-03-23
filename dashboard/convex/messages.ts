@@ -18,7 +18,7 @@ const threadMessageTypeValidator = v.optional(
     v.literal("step_completion"),
     v.literal("user_message"),
     v.literal("system_error"),
-    v.literal("lead_agent_chat"),
+    v.literal("orchestrator_agent_chat"),
     v.literal("comment"),
   ),
 );
@@ -54,7 +54,7 @@ const planReviewValidator = v.optional(
   }),
 );
 
-const leadAgentConversationValidator = v.optional(v.boolean());
+const orchestratorAgentConversationValidator = v.optional(v.boolean());
 
 function assertTaskThreadWritable(task: { status: string; mergedIntoTaskId?: string }) {
   if (task.status === "deleted") {
@@ -186,7 +186,7 @@ export const create = internalMutation({
     artifacts: artifactsValidator,
     fileAttachments: fileAttachmentsValidator,
     planReview: planReviewValidator,
-    leadAgentConversation: leadAgentConversationValidator,
+    orchestratorAgentConversation: orchestratorAgentConversationValidator,
     idempotencyKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -206,7 +206,7 @@ export const create = internalMutation({
       artifacts: args.artifacts,
       fileAttachments: args.fileAttachments,
       planReview: args.planReview,
-      leadAgentConversation: args.leadAgentConversation,
+      orchestratorAgentConversation: args.orchestratorAgentConversation,
     });
     await storeRuntimeReceipt(ctx, {
       idempotencyKey: args.idempotencyKey,
@@ -305,13 +305,13 @@ export const postSystemError = internalMutation({
 });
 
 /**
- * Post a Lead Agent chat message to the unified task thread.
+ * Post an Orchestrator Agent chat message to the unified task thread.
  */
-export const postLeadAgentMessage = internalMutation({
+export const postOrchestratorAgentMessage = internalMutation({
   args: {
     taskId: v.id("tasks"),
     content: v.string(),
-    type: v.literal("lead_agent_chat"),
+    type: v.literal("orchestrator_agent_chat"),
     planReview: planReviewValidator,
     idempotencyKey: v.optional(v.string()),
   },
@@ -323,27 +323,27 @@ export const postLeadAgentMessage = internalMutation({
     const timestamp = new Date().toISOString();
     const messageId = await ctx.db.insert("messages", {
       taskId: args.taskId,
-      authorName: "lead-agent",
+      authorName: "orchestrator-agent",
       authorType: "system",
       content: args.content,
       messageType: "system_event", // Legacy field
       type: args.type, // New unified thread type
       planReview: args.planReview,
-      leadAgentConversation: true,
+      orchestratorAgentConversation: true,
       timestamp,
     });
 
     // Observability event via thread rules helper
     await logThreadMessageSent(ctx, {
       taskId: args.taskId,
-      agentName: "lead-agent",
-      description: "Lead agent posted chat message",
+      agentName: "orchestrator-agent",
+      description: "Orchestrator agent posted chat message",
       timestamp,
     });
 
     await storeRuntimeReceipt(ctx, {
       idempotencyKey: args.idempotencyKey,
-      scope: "messages:postLeadAgentMessage",
+      scope: "messages:postOrchestratorAgentMessage",
       entityType: "message",
       entityId: String(messageId),
       response: messageId,
@@ -358,7 +358,7 @@ export const postLeadAgentMessage = internalMutation({
  * or reopen a completed task with an execution plan back to review.
  *
  * Unlike sendThreadMessage this mutation does NOT transition the task status or
- * clear the executionPlan. It is used when the user wants to ask the Lead Agent
+ * clear the executionPlan. It is used when the user wants to ask the Orchestrator Agent
  * to modify the plan while execution is underway (Story 7.3, AC 1-2).
  *
  * Allowed task statuses: "in_progress", "review", and "done" when a plan exists.
@@ -432,13 +432,13 @@ export const postUserPlanMessage = mutation({
       type: "user_message",
       fileAttachments: args.fileAttachments,
       planReview,
-      leadAgentConversation: true,
+      orchestratorAgentConversation: true,
       timestamp,
     });
 
     await logThreadMessageSent(ctx, {
       taskId: args.taskId,
-      description: "User sent plan-chat message to Lead Agent",
+      description: "User sent plan-chat message to Orchestrator Agent",
       timestamp,
     });
 
@@ -500,7 +500,7 @@ export const postComment = mutation({
 });
 
 /**
- * Post a plain user reply to the thread without routing it to the Lead Agent
+ * Post a plain user reply to the thread without routing it to the Orchestrator Agent
  * or changing task assignment/status. Used by the default Reply composer.
  */
 export const postUserReply = mutation({

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from mc.contexts.execution.message_builder import build_task_message
 from mc.contexts.execution.session_keys import build_agent_session_key
 from mc.infrastructure.runtime_home import get_agents_dir, get_workspace_dir
-from mc.types import LeadAgentExecutionError, is_lead_agent
+from mc.types import OrchestratorAgentExecutionError, is_orchestrator_agent
 
 if TYPE_CHECKING:
     from nanobot.agent.loop import AgentLoop
@@ -117,9 +117,9 @@ async def _run_agent_on_task(
     on_progress: Any | None = None,
 ) -> tuple[AgentRunResult, str, AgentLoop]:
     """Run the nanobot agent loop on a task and return the result."""
-    if is_lead_agent(agent_name):
-        raise LeadAgentExecutionError(
-            "INVARIANT VIOLATION: Lead Agent must never be passed to "
+    if is_orchestrator_agent(agent_name):
+        raise OrchestratorAgentExecutionError(
+            "INVARIANT VIOLATION: Orchestrator Agent must never be passed to "
             "_run_agent_on_task(). Execution structurally blocked."
         )
 

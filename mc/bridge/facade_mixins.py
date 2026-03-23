@@ -269,7 +269,7 @@ class BridgeRepositoryFacadeMixin:
             idempotency_key,
         )
 
-    def post_lead_agent_message(
+    def post_orchestrator_agent_message(
         self,
         task_id: str,
         content: str,
@@ -278,7 +278,7 @@ class BridgeRepositoryFacadeMixin:
         idempotency_key: str | None = None,
     ) -> Any:
         self._ensure_repos()
-        return self._messages.post_lead_agent_message(
+        return self._messages.post_orchestrator_agent_message(
             task_id,
             content,
             msg_type,

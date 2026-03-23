@@ -71,11 +71,12 @@ describe("workModeValidator", () => {
 });
 
 describe("routingModeValidator", () => {
-  it("defines lead_agent, workflow, and human as task routing modes", () => {
+  it("keeps legacy lead_agent readable during rollout while writing orchestrator_agent going forward", () => {
     expect(routingModeValidator.kind).toBe("union");
-    expect(routingModeValidator.members).toHaveLength(3);
+    expect(routingModeValidator.members).toHaveLength(4);
     expect(routingModeValidator.members.map((m: { value?: string }) => m.value)).toEqual([
       "lead_agent",
+      "orchestrator_agent",
       "workflow",
       "human",
     ]);

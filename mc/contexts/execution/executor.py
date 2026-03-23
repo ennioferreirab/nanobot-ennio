@@ -52,7 +52,7 @@ from mc.contexts.execution.executor_routing import (
     pickup_task as _pickup_task_impl,
 )
 from mc.contexts.execution.executor_routing import (
-    reroute_lead_agent_task as _reroute_lead_agent_task_impl,
+    reroute_orchestrator_agent_task as _reroute_orchestrator_agent_task_impl,
 )
 from mc.contexts.execution.message_builder import build_task_message  # noqa: F401
 from mc.contexts.execution.output_artifacts import (  # noqa: F401
@@ -68,15 +68,15 @@ from mc.contexts.execution.provider_errors import (
     _provider_error_action as _provider_error_action_impl,
 )
 from mc.types import (
-    LEAD_AGENT_NAME,
+    ORCHESTRATOR_AGENT_NAME,
     ActivityEventType,
     AgentData,
     AuthorType,
     CCTaskResult,
-    LeadAgentExecutionError,
     MessageType,
+    OrchestratorAgentExecutionError,
     TaskStatus,
-    is_lead_agent,
+    is_orchestrator_agent,
 )
 
 if TYPE_CHECKING:
@@ -129,7 +129,7 @@ def _get_iana_timezone() -> str | None:
 def build_executor_agent_roster() -> str:
     """Build a roster of available agents for injection into executor orientation.
 
-    Reads ~/.nanobot/agents/*/config.yaml, excludes system agents and lead-agent.
+    Reads ~/.nanobot/agents/*/config.yaml, excludes system agents and orchestrator-agent.
     Returns formatted list for agent orientation interpolation.
     """
     return _build_executor_agent_roster_impl()
@@ -318,9 +318,9 @@ class TaskExecutor(CCExecutorMixin):
         """Transition assigned task to in_progress and start execution."""
         await _pickup_task_impl(self, task_data)
 
-    async def _handle_lead_agent_task(self, task_data: dict[str, Any]) -> None:
-        """Re-route lead-agent tasks through LLM delegation."""
-        await _reroute_lead_agent_task_impl(self._bridge, task_data)
+    async def _handle_orchestrator_agent_task(self, task_data: dict[str, Any]) -> None:
+        """Re-route orchestrator-agent tasks through LLM delegation."""
+        await _reroute_orchestrator_agent_task_impl(self._bridge, task_data)
 
     def _load_agent_config(
         self, agent_name: str
@@ -410,12 +410,12 @@ class TaskExecutor(CCExecutorMixin):
 
         Reads ~/.nanobot/agents/ and for each agent reads config.yaml to
         extract name, display_name, role, and skills. Returns a formatted
-        string suitable for injection into the lead-agent context.
+        string suitable for injection into the orchestrator-agent context.
         """
         return _render_agent_roster_impl()
 
     def _maybe_inject_orientation(self, agent_name: str, agent_prompt: str | None) -> str | None:
-        """Prepend global orientation for non-lead-agent MC agents."""
+        """Prepend global orientation for non-orchestrator-agent MC agents."""
         return _maybe_inject_orientation_impl(agent_name, agent_prompt)
 
     async def _execute_task(
@@ -429,10 +429,10 @@ class TaskExecutor(CCExecutorMixin):
         step_id: str | None = None,
     ) -> None:
         """Run the agent on the task and handle completion or crash."""
-        if is_lead_agent(agent_name):
-            raise LeadAgentExecutionError(
-                "INVARIANT VIOLATION: Lead Agent "
-                f"'{LEAD_AGENT_NAME}' must never enter the execution pipeline. "
+        if is_orchestrator_agent(agent_name):
+            raise OrchestratorAgentExecutionError(
+                "INVARIANT VIOLATION: Orchestrator Agent "
+                f"'{ORCHESTRATOR_AGENT_NAME}' must never enter the execution pipeline. "
                 "This is a bug - the _pickup_task guard should have intercepted "
                 "this dispatch."
             )

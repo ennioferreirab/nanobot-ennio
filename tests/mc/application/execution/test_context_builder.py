@@ -772,13 +772,13 @@ class TestBuildStepContext:
         "mc.application.execution.roster_builder.load_agent_config",
         return_value=(None, None, None),
     )
-    async def test_lead_agent_rerouted(self, mock_config: MagicMock) -> None:
+    async def test_orchestrator_agent_rerouted(self, mock_config: MagicMock) -> None:
         bridge = _make_mock_bridge()
         builder = ContextBuilder(bridge)
         step = {
             "id": "step_1",
             "title": "Test step",
-            "assigned_agent": "lead-agent",
+            "assigned_agent": "orchestrator-agent",
         }
         req = await builder.build_step_context("task_123", step)
         assert req.agent_name == "nanobot"

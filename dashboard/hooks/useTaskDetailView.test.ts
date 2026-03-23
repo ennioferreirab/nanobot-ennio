@@ -232,7 +232,7 @@ describe("useTaskDetailView", () => {
           },
         ],
         generatedAt: "2026-01-01T00:00:00Z",
-        generatedBy: "lead-agent",
+        generatedBy: "orchestrator-agent",
       },
     };
     mockUseQuery.mockReturnValue({

@@ -30,7 +30,7 @@ export interface ThreadInputController {
   handleTextFocus: () => void;
   isBlocked: boolean;
   isHumanDelegationThread: boolean;
-  isLeadAgentMode: boolean;
+  isOrchestratorAgentMode: boolean;
   isDragOver: boolean;
   isInProgress: boolean;
   isPlanChatMode: boolean;
@@ -49,7 +49,7 @@ export interface ThreadInputController {
 }
 
 interface UseThreadInputControllerArgs {
-  mode?: "default" | "lead-agent";
+  mode?: "default" | "orchestrator-agent";
   task: Doc<"tasks">;
   onMessageSent?: () => void;
 }
@@ -113,8 +113,8 @@ export function useThreadInputController({
     }
   }, [task.assignedAgent, isSubmitting]);
 
-  const isLeadAgentMode = mode === "lead-agent";
-  const isPlanChatMode = isLeadAgentMode;
+  const isOrchestratorAgentMode = mode === "orchestrator-agent";
+  const isPlanChatMode = isOrchestratorAgentMode;
   const isInProgress = task.status === "in_progress";
   const isHumanDelegationThread = task.assignedAgent === "human";
   const isReplyOnlyThread = isInProgress && !isHumanDelegationThread;
@@ -122,7 +122,7 @@ export function useThreadInputController({
   const filteredAgents = useSelectableAgents(board?.enabledAgents);
 
   const { hasMention, firstMentionedAgentName } = useMemo(() => {
-    if (isLeadAgentMode) {
+    if (isOrchestratorAgentMode) {
       return {
         firstMentionedAgentName: undefined as string | undefined,
         hasMention: false,
@@ -147,7 +147,7 @@ export function useThreadInputController({
       firstMentionedAgentName: undefined as string | undefined,
       hasMention: false,
     };
-  }, [content, filteredAgents, isLeadAgentMode]);
+  }, [content, filteredAgents, isOrchestratorAgentMode]);
 
   const canSend =
     (content.trim().length > 0 || pendingFiles.length > 0) && !isSubmitting && !isUploading;
@@ -425,7 +425,7 @@ export function useThreadInputController({
     handleTextFocus,
     isBlocked,
     isHumanDelegationThread,
-    isLeadAgentMode,
+    isOrchestratorAgentMode,
     isDragOver,
     isInProgress,
     isPlanChatMode,

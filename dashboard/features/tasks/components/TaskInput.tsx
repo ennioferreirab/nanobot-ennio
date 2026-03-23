@@ -450,10 +450,10 @@ export function TaskInput() {
                   onValueChange={(v) => setSelectedAgent(v === "auto" ? "" : v)}
                 >
                   <SelectTrigger className="h-9 w-full text-sm">
-                    <SelectValue placeholder="Auto (Lead Agent)" />
+                    <SelectValue placeholder="Auto (Orchestrator Agent)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="auto">Auto (Lead Agent)</SelectItem>
+                    <SelectItem value="auto">Auto (Orchestrator Agent)</SelectItem>
                     {selectableAgents?.map((agent) => (
                       <SelectItem
                         key={agent.name}

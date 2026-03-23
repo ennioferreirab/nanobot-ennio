@@ -376,7 +376,7 @@ class TestExecutionLoop:
         )
 
     @pytest.mark.asyncio
-    async def test_pickup_task_reroutes_lead_agent(self):
+    async def test_pickup_task_reroutes_orchestrator_agent(self):
         """Lead-agent pickup is intercepted and re-routed via LLM delegation."""
         from mc.contexts.execution.executor import TaskExecutor
 
@@ -389,7 +389,7 @@ class TestExecutionLoop:
             "id": "task_lead_reroute",
             "title": "Task routed to lead",
             "description": "reroute me",
-            "assigned_agent": "lead-agent",
+            "assigned_agent": "orchestrator-agent",
             "trust_level": "autonomous",
             "status": "assigned",
             "state_version": 1,
@@ -648,41 +648,41 @@ class TestTaskExecution:
 
 
 class TestLeadAgentExecutionGuards:
-    """Hard guards should block lead-agent from all execution paths."""
+    """Hard guards should block orchestrator-agent from all execution paths."""
 
     @pytest.mark.asyncio
-    async def test_executor_rejects_lead_agent_in_execute_task(self):
+    async def test_executor_rejects_orchestrator_agent_in_execute_task(self):
         from mc.contexts.execution.executor import TaskExecutor
-        from mc.types import LeadAgentExecutionError
+        from mc.types import OrchestratorAgentExecutionError
 
         mock_bridge = MagicMock()
         mock_bridge.get_board_by_id = MagicMock(return_value={"name": "default"})
         executor = TaskExecutor(mock_bridge)
 
         with pytest.raises(
-            LeadAgentExecutionError,
+            OrchestratorAgentExecutionError,
             match="INVARIANT VIOLATION",
         ):
             await executor._execute_task(
                 "task_lead_execute",
                 "Lead execution",
                 None,
-                "lead-agent",
+                "orchestrator-agent",
                 "autonomous",
                 task_data={"board_id": "board_001"},
             )
 
     @pytest.mark.asyncio
-    async def test_executor_rejects_lead_agent_in_run_agent_on_task(self):
+    async def test_executor_rejects_orchestrator_agent_in_run_agent_on_task(self):
         from mc.contexts.execution.executor import _run_agent_on_task
-        from mc.types import LeadAgentExecutionError
+        from mc.types import OrchestratorAgentExecutionError
 
         with pytest.raises(
-            LeadAgentExecutionError,
+            OrchestratorAgentExecutionError,
             match="must never be passed to _run_agent_on_task",
         ):
             await _run_agent_on_task(
-                agent_name="lead-agent",
+                agent_name="orchestrator-agent",
                 agent_prompt=None,
                 agent_model=None,
                 task_title="Task",

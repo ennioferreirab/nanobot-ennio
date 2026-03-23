@@ -77,7 +77,7 @@ def render_agent_roster() -> str:
 
 
 def maybe_inject_orientation(agent_name: str, agent_prompt: str | None) -> str | None:
-    """Prepend global orientation for non-lead-agent MC agents."""
+    """Prepend global orientation for non-orchestrator-agent MC agents."""
     from mc.infrastructure.orientation import load_orientation
 
     orientation = load_orientation(agent_name)

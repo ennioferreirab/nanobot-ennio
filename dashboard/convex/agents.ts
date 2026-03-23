@@ -3,6 +3,90 @@ import { ConvexError, v } from "convex/values";
 
 import { agentStatusValidator, interactiveProviderValidator } from "./schema";
 
+const LEGACY_LEAD_AGENT_NAME = "lead-agent";
+const ORCHESTRATOR_AGENT_NAME = "orchestrator-agent";
+const ORCHESTRATOR_AGENT_DISPLAY_NAME = "Orchestrator Agent";
+const ORCHESTRATOR_AGENT_ROLE = "Orchestrator Agent";
+
+function replaceLegacyText(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value
+    .replaceAll("lead_agent_chat", "orchestrator_agent_chat")
+    .replaceAll("lead_agent", "orchestrator_agent")
+    .replaceAll("lead-agent", "orchestrator-agent")
+    .replaceAll("Lead Agent", ORCHESTRATOR_AGENT_DISPLAY_NAME)
+    .replaceAll("lead agent", ORCHESTRATOR_AGENT_DISPLAY_NAME)
+    .replaceAll("Lead Orchestrator", ORCHESTRATOR_AGENT_ROLE)
+    .replaceAll("Orchestrator Agent — Orchestrator", ORCHESTRATOR_AGENT_ROLE)
+    .replaceAll("Orchestrator Agent -- Orchestrator", ORCHESTRATOR_AGENT_ROLE);
+}
+
+function normalizeAgentDisplayName(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const nextValue = replaceLegacyText(value);
+  return nextValue === undefined ? undefined : nextValue;
+}
+
+function normalizeAgentRole(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const nextValue = replaceLegacyText(value);
+  return nextValue === undefined ? undefined : nextValue;
+}
+
+function replaceLegacyAgentName(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value === LEGACY_LEAD_AGENT_NAME ? ORCHESTRATOR_AGENT_NAME : value;
+}
+
+function replaceLegacyRoutingMode(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value === "lead_agent" ? "orchestrator_agent" : value;
+}
+
+function replaceLegacyThreadType(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value === "lead_agent_chat" ? "orchestrator_agent_chat" : value;
+}
+
+function replaceLegacyStringArray(values: string[] | undefined): string[] | undefined {
+  if (!Array.isArray(values)) return undefined;
+  const updated = values.map((value) => replaceLegacyAgentName(value) ?? value);
+  return updated.some((value, index) => value !== values[index]) ? updated : undefined;
+}
+
+function normalizeExecutionPlan(
+  plan: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!plan || typeof plan !== "object") return undefined;
+  let changed = false;
+  const nextPlan: Record<string, unknown> = { ...plan };
+
+  if (plan.generatedBy === LEGACY_LEAD_AGENT_NAME) {
+    nextPlan.generatedBy = ORCHESTRATOR_AGENT_NAME;
+    changed = true;
+  }
+
+  if (Array.isArray(plan.steps)) {
+    const updatedSteps = plan.steps.map((step) => {
+      if (!step || typeof step !== "object") return step;
+      const stepRecord = step as Record<string, unknown>;
+      if (stepRecord.assignedAgent !== LEGACY_LEAD_AGENT_NAME) {
+        return step;
+      }
+      changed = true;
+      return {
+        ...stepRecord,
+        assignedAgent: ORCHESTRATOR_AGENT_NAME,
+      };
+    });
+    if (changed) {
+      nextPlan.steps = updatedSteps;
+    }
+  }
+
+  return changed ? nextPlan : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Agent metric helpers — callable from lifecycle completion paths
 // ---------------------------------------------------------------------------
@@ -580,5 +664,165 @@ export const incrementStepMetric = internalMutation({
   args: { agentName: v.string() },
   handler: async (ctx, args) => {
     await incrementAgentStepMetric(ctx.db as unknown as AgentMetricDb, args.agentName);
+  },
+});
+
+export const renameLeadAgentToOrchestrator = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun === true;
+    const changes: Record<string, number> = {
+      activities: 0,
+      agents: 0,
+      boards: 0,
+      messages: 0,
+      reviewSpecs: 0,
+      steps: 0,
+      tasks: 0,
+    };
+    const conflicts: string[] = [];
+
+    const patchDoc = async (
+      table: keyof typeof changes,
+      id: string,
+      patch: Record<string, unknown>,
+    ) => {
+      if (!Object.keys(patch).length) return;
+      changes[table] += 1;
+      if (!dryRun) {
+        await ctx.db.patch(id as never, patch);
+      }
+    };
+
+    const existingOrchestratorAgent = await ctx.db
+      .query("agents")
+      .withIndex("by_name", (q) => q.eq("name", ORCHESTRATOR_AGENT_NAME))
+      .first();
+
+    const existingLeadAgent = await ctx.db
+      .query("agents")
+      .withIndex("by_name", (q) => q.eq("name", LEGACY_LEAD_AGENT_NAME))
+      .first();
+
+    if (
+      existingLeadAgent &&
+      existingOrchestratorAgent &&
+      existingLeadAgent._id !== existingOrchestratorAgent._id
+    ) {
+      conflicts.push(
+        `agents:${String(existingLeadAgent._id)} cannot rename '${LEGACY_LEAD_AGENT_NAME}' because '${ORCHESTRATOR_AGENT_NAME}' already exists`,
+      );
+      return { dryRun, changes, conflicts };
+    }
+
+    for (const agent of await ctx.db.query("agents").collect()) {
+      const patch: Record<string, unknown> = {};
+      const nextName = replaceLegacyAgentName(agent.name);
+      if (nextName !== agent.name) patch.name = nextName;
+
+      const nextDisplayName = normalizeAgentDisplayName(agent.displayName);
+      if (nextDisplayName !== agent.displayName) patch.displayName = nextDisplayName;
+
+      const nextRole = normalizeAgentRole(agent.role);
+      if (nextRole !== agent.role) patch.role = nextRole;
+
+      const nextPrompt = replaceLegacyText(agent.prompt);
+      if (nextPrompt !== agent.prompt) patch.prompt = nextPrompt;
+
+      const nextSoul = replaceLegacyText(agent.soul);
+      if (nextSoul !== agent.soul) patch.soul = nextSoul;
+
+      await patchDoc("agents", String(agent._id), patch);
+    }
+
+    for (const board of await ctx.db.query("boards").collect()) {
+      const patch: Record<string, unknown> = {};
+      const nextEnabledAgents = replaceLegacyStringArray(board.enabledAgents);
+      if (nextEnabledAgents) patch.enabledAgents = nextEnabledAgents;
+
+      if (Array.isArray(board.agentMemoryModes)) {
+        const nextModes = board.agentMemoryModes.map((entry) => {
+          const nextAgentName = replaceLegacyAgentName(entry.agentName);
+          return nextAgentName === entry.agentName ? entry : { ...entry, agentName: nextAgentName };
+        });
+        if (nextModes.some((entry, index) => entry !== board.agentMemoryModes?.[index])) {
+          patch.agentMemoryModes = nextModes;
+        }
+      }
+
+      await patchDoc("boards", String(board._id), patch);
+    }
+
+    for (const task of await ctx.db.query("tasks").collect()) {
+      const patch: Record<string, unknown> = {};
+      const nextAssignedAgent = replaceLegacyAgentName(task.assignedAgent);
+      if (nextAssignedAgent !== task.assignedAgent) patch.assignedAgent = nextAssignedAgent;
+
+      const nextSourceAgent = replaceLegacyAgentName(task.sourceAgent);
+      if (nextSourceAgent !== task.sourceAgent) patch.sourceAgent = nextSourceAgent;
+
+      const nextRoutingMode = replaceLegacyRoutingMode(task.routingMode);
+      if (nextRoutingMode !== task.routingMode) patch.routingMode = nextRoutingMode;
+
+      const nextExecutionPlan = normalizeExecutionPlan(
+        task.executionPlan as Record<string, unknown>,
+      );
+      if (nextExecutionPlan) patch.executionPlan = nextExecutionPlan;
+
+      await patchDoc("tasks", String(task._id), patch);
+    }
+
+    for (const step of await ctx.db.query("steps").collect()) {
+      const nextAssignedAgent = replaceLegacyAgentName(step.assignedAgent);
+      if (nextAssignedAgent !== step.assignedAgent) {
+        await patchDoc("steps", String(step._id), { assignedAgent: nextAssignedAgent });
+      }
+    }
+
+    for (const message of await ctx.db.query("messages").collect()) {
+      const legacyMessage = message as Record<string, unknown>;
+      const patch: Record<string, unknown> = {};
+      const nextAuthorName = replaceLegacyAgentName(message.authorName);
+      if (nextAuthorName !== message.authorName) patch.authorName = nextAuthorName;
+
+      const nextType = replaceLegacyThreadType(message.type);
+      if (nextType !== message.type) patch.type = nextType;
+
+      if (legacyMessage.leadAgentConversation !== undefined) {
+        patch.orchestratorAgentConversation =
+          legacyMessage.orchestratorAgentConversation ?? legacyMessage.leadAgentConversation;
+        patch.leadAgentConversation = undefined;
+      }
+
+      await patchDoc("messages", String(message._id), patch);
+    }
+
+    for (const activity of await ctx.db.query("activities").collect()) {
+      const patch: Record<string, unknown> = {};
+      const nextAgentName = replaceLegacyAgentName(activity.agentName);
+      if (nextAgentName !== activity.agentName) {
+        patch.agentName = nextAgentName;
+      }
+      const nextDescription = replaceLegacyText(activity.description);
+      if (nextDescription !== activity.description) patch.description = nextDescription;
+      await patchDoc("activities", String(activity._id), patch);
+    }
+
+    for (const reviewSpec of await ctx.db.query("reviewSpecs").collect()) {
+      const patch: Record<string, unknown> = {};
+      const nextReviewerPolicy = replaceLegacyAgentName(reviewSpec.reviewerPolicy);
+      if (nextReviewerPolicy !== reviewSpec.reviewerPolicy) {
+        patch.reviewerPolicy = nextReviewerPolicy;
+      }
+      const nextRejectionRoutingPolicy = replaceLegacyAgentName(reviewSpec.rejectionRoutingPolicy);
+      if (nextRejectionRoutingPolicy !== reviewSpec.rejectionRoutingPolicy) {
+        patch.rejectionRoutingPolicy = nextRejectionRoutingPolicy;
+      }
+      await patchDoc("reviewSpecs", String(reviewSpec._id), patch);
+    }
+
+    return { dryRun, changes, conflicts };
   },
 });

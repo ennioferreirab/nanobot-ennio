@@ -134,7 +134,7 @@ class TestExecutorSkipsManualTasks:
         manual_task = {
             "id": "task_manual_assigned",
             "title": "Human task in assigned",
-            "assigned_agent": "lead-agent",
+            "assigned_agent": "orchestrator-agent",
             "trust_level": "autonomous",
             "is_manual": True,
         }

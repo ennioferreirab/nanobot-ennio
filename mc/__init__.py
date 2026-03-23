@@ -13,8 +13,8 @@ This package provides the Python-side components for Mission Control:
 
 from mc.bridge import ConvexBridge
 from mc.types import (
-    LEAD_AGENT_NAME,
     NANOBOT_AGENT_NAME,
+    ORCHESTRATOR_AGENT_NAME,
     AgentData,
     AgentStatus,
     ArtifactData,
@@ -30,25 +30,20 @@ from mc.types import (
 )
 
 __all__ = [
-    # Constants
-    "LEAD_AGENT_NAME",
     "NANOBOT_AGENT_NAME",
+    "ORCHESTRATOR_AGENT_NAME",
     "AgentData",
     "AgentStatus",
     "ArtifactData",
-    # Core
     "ConvexBridge",
     "ExecutionPlan",
     "ExecutionPlanStep",
     "MessageData",
     "MessageType",
     "StepStatus",
-    # Data classes
     "TaskData",
-    # Enums
     "TaskStatus",
     "ThreadMessageType",
     "TrustLevel",
-    # Sub-packages
     "memory",
 ]

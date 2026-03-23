@@ -57,7 +57,7 @@ use, revisit this to implement:
 
 | Name | Purpose |
 |------|---------|
-| `lead-agent` | Orchestrator — routes tasks, manages workflows |
+| `orchestrator-agent` | Orchestrator — routes tasks, manages workflows |
 | `nanobot` | Default general-purpose agent |
 | `low-agent` | System low-privilege agent |
 | `human` | Placeholder for human participants (HITL) |
@@ -307,7 +307,7 @@ Threads are the message stream for a task. All messages are stored in the Convex
 | `author_name` | `string` | Agent slug or `"user"` |
 | `author_type` | `"agent" \| "user" \| "system"` | Message origin |
 | `content` | `string` | Message body |
-| `type` | `string` | `"step_completion"`, `"user_message"`, `"system_error"`, `"lead_agent_chat"` |
+| `type` | `string` | `"step_completion"`, `"user_message"`, `"system_error"`, `"orchestrator_agent_chat"` |
 | `step_id` | `Id<"steps">` | Optional — step that generated this message |
 | `artifacts` | `array` | Modified/created files with diffs |
 | `timestamp` | `number` | Epoch milliseconds |
@@ -352,7 +352,7 @@ Squad spec fields: `squad_name`, `published_by_spec_id`, `squad_metadata`, `agen
 
 | Mode | Behavior |
 |------|----------|
-| `"lead_agent"` | Lead agent decides task assignment and orchestration |
+| `"orchestrator_agent"` | Orchestrator agent decides task assignment and orchestration |
 | `"workflow"` | Follows spec-compiled workflow steps — deterministic routing |
 | `"human"` | Human-driven (human-in-the-loop) |
 

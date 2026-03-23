@@ -239,7 +239,7 @@ Applied recursively to all nested dicts/lists. Status values are **never convert
 **Idempotency key generation** (for 6 supported mutations):
 
 ```
-messages:create, messages:postStepCompletion, messages:postLeadAgentMessage,
+messages:create, messages:postStepCompletion, messages:postOrchestratorAgentMessage,
 activities:create, tasks:transition, steps:transition
 ```
 
@@ -344,7 +344,7 @@ Subscription queries: `tasks:listByStatus` (inbox, needs full doc) and `tasks:li
 | AskUserReplyWatcher subscription | `messages:listRecentByTaskForAskUser` | internalQuery |
 | `send_message(...)` | `messages:create` | internalMutation |
 | `post_step_completion(...)` | `messages:postStepCompletion` | internalMutation |
-| `post_lead_agent_message(...)` | `messages:postLeadAgentMessage` | internalMutation |
+| `post_orchestrator_agent_message(...)` | `messages:postOrchestratorAgentMessage` | internalMutation |
 | `post_system_error(...)` | `messages:create` | internalMutation |
 
 #### Agents
@@ -935,7 +935,7 @@ Three routing modes, selected during inbox processing (`mc/runtime/workers/inbox
   3. Least-loaded agent by `tasksExecuted`
 - `inbox` → `assigned` with selected agent
 
-**Mode C: Lead Agent Planning** (default)
+**Mode C: Orchestrator Agent Planning** (default)
 - `inbox` → `planning`
 - `TaskPlanner.plan_task()` calls LLM with `NEGOTIATION_SYSTEM_PROMPT`
 - LLM returns JSON plan with steps (agent assignments, dependencies, parallel groups)
@@ -953,10 +953,10 @@ Three routing modes, selected during inbox processing (`mc/runtime/workers/inbox
 | `authorType` | `"agent"` \| `"user"` \| `"system"` | Poster type |
 | `content` | `string` | Message body |
 | `messageType` | `string` | Legacy: `work`, `review_feedback`, `approval`, `denial`, `system_event`, `user_message` |
-| `type` | `string?` | Unified: `step_completion`, `user_message`, `system_error`, `lead_agent_plan`, `lead_agent_chat`, `comment` |
+| `type` | `string?` | Unified: `step_completion`, `user_message`, `system_error`, `orchestrator_agent_chat`, `comment` |
 | `artifacts` | `[{path, action, description?, diff?}]?` | File artifacts |
 | `planReview` | `{kind, planGeneratedAt, decision?}?` | Plan review metadata |
-| `leadAgentConversation` | `boolean?` | Participates in plan negotiation |
+| `orchestratorAgentConversation` | `boolean?` | Participates in plan negotiation |
 
 ### 7.3 Mention Routing
 
@@ -1018,13 +1018,13 @@ User writes "@researcher summarize this"
    a. acquire_runtime_claim
    b. Spawn per-task start_plan_negotiation_loop()
 3. Per-task loop subscribes to messages:listByTask (2s poll):
-   a. Filters for new user messages with leadAgentConversation=true
+   a. Filters for new user messages with orchestratorAgentConversation=true
    b. Skips @mentions (MentionWatcher owns those)
    c. Calls handle_plan_negotiation():
       → LLM chat with NEGOTIATION_SYSTEM_PROMPT
       → Parses JSON response: action="update_plan" or "clarify"
       → update_plan: validates no locked steps touched, writes to Convex
-      → clarify: posts follow-up question as lead_agent_chat message
+      → clarify: posts follow-up question as orchestrator_agent_chat message
 4. Loop exits when task leaves negotiable status
 ```
 

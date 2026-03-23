@@ -464,17 +464,17 @@ describe("workflow metadata on steps", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Plan source distinguishes workflow from lead-agent
+// Plan source distinguishes workflow from orchestrator-agent
 // ---------------------------------------------------------------------------
 
 describe("plan source metadata", () => {
-  it("workflow-generated plan has generatedBy='workflow' not 'lead-agent'", () => {
+  it("workflow-generated plan has generatedBy='workflow' not 'orchestrator-agent'", () => {
     const plan = compileWorkflowExecutionPlan(MINIMAL_WORKFLOW, AGENT_REFS);
     expect(plan.generatedBy).toBe("workflow");
-    expect(plan.generatedBy).not.toBe("lead-agent");
+    expect(plan.generatedBy).not.toBe("orchestrator-agent");
   });
 
-  it("lead-agent plan shape stays compatible: still has generatedAt and steps", () => {
+  it("orchestrator-agent plan shape stays compatible: still has generatedAt and steps", () => {
     // This test verifies that the workflow plan output is structurally
     // compatible with the existing ExecutionPlanInput shape (has steps, generatedAt)
     const plan = compileWorkflowExecutionPlan(MINIMAL_WORKFLOW, AGENT_REFS);
@@ -489,7 +489,7 @@ describe("plan source metadata", () => {
 // ---------------------------------------------------------------------------
 
 describe("type exports", () => {
-  it("WorkflowExecutionPlan is compatible with lead-agent ExecutionPlanInput structure", () => {
+  it("WorkflowExecutionPlan is compatible with orchestrator-agent ExecutionPlanInput structure", () => {
     const plan: WorkflowExecutionPlan = compileWorkflowExecutionPlan(MINIMAL_WORKFLOW, AGENT_REFS);
     // Must have the shared fields
     const step: WorkflowExecutionPlanStep = plan.steps[0];

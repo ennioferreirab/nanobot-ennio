@@ -316,7 +316,7 @@ def _get_iana_timezone() -> str | None:
 def build_executor_agent_roster() -> str:
     """Build a roster of available agents for injection into executor orientation.
 
-    Reads ~/.nanobot/agents/*/config.yaml, excludes system agents and lead-agent.
+    Reads ~/.nanobot/agents/*/config.yaml, excludes system agents and orchestrator-agent.
     Returns formatted list for agent orientation interpolation.
     """
     from mc.infrastructure.orientation_helpers import build_agent_roster

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from mc.types import (
     AgentData,
-    is_lead_agent,
+    is_orchestrator_agent,
     is_tier_reference,
 )
 
@@ -176,7 +176,7 @@ def build_agent_roster() -> str:
     """Build a markdown roster of all available agents.
 
     Reads ~/.nanobot/agents/ config files. Excludes system agents
-    and lead-agent.
+    and orchestrator-agent.
     """
     from mc.infrastructure.agents.yaml_validator import validate_agent_file
     from mc.infrastructure.config import AGENTS_DIR
@@ -193,7 +193,7 @@ def build_agent_roster() -> str:
         result = validate_agent_file(config_path)
         if isinstance(result, list):
             continue
-        if getattr(result, "is_system", False) or is_lead_agent(result.name):
+        if getattr(result, "is_system", False) or is_orchestrator_agent(result.name):
             continue
         skill_str = ", ".join(result.skills) if result.skills else "—"
         line = f"- `{result.name}` ({result.display_name}) — {result.role}"

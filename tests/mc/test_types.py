@@ -224,7 +224,7 @@ class TestExecutionPlanFromDict:
                 }
             ],
             "generated_at": "2026-03-14T10:00:00Z",
-            "generated_by": "lead-agent",
+            "generated_by": "orchestrator-agent",
         }
         plan = ExecutionPlan.from_dict(data)
         step = plan.steps[0]
@@ -356,11 +356,11 @@ class TestExecutionPlanRoundTrip:
         d = plan.to_dict()
         assert d["generated_by"] == "workflow"
 
-    def test_round_trip_generated_by_lead_agent(self) -> None:
-        """generated_by='lead-agent' is always preserved in to_dict."""
-        plan = ExecutionPlan(steps=[], generated_by="lead-agent")
+    def test_round_trip_generated_by_orchestrator_agent(self) -> None:
+        """generated_by='orchestrator-agent' is always preserved in to_dict."""
+        plan = ExecutionPlan(steps=[], generated_by="orchestrator-agent")
         d = plan.to_dict()
-        assert d["generated_by"] == "lead-agent"
+        assert d["generated_by"] == "orchestrator-agent"
 
 
 class TestCCModelHelpers:

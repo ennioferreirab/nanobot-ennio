@@ -22,7 +22,7 @@ export interface CreateTaskArgs {
   autoTitle?: boolean;
   supervisionMode?: "autonomous" | "supervised";
   files?: Doc<"tasks">["files"];
-  routingMode?: "lead_agent" | "workflow" | "human";
+  routingMode?: "orchestrator_agent" | "workflow" | "human";
 }
 
 export async function createTask(

@@ -32,7 +32,7 @@ def bridge() -> MagicMock:
     b.get_task = MagicMock(return_value=None)
     b.get_task_messages = MagicMock(return_value=[])
     b.send_message = MagicMock()
-    b.post_lead_agent_message = MagicMock()
+    b.post_orchestrator_agent_message = MagicMock()
     b.create_activity = MagicMock()
     b.update_task_status = MagicMock()
     return b

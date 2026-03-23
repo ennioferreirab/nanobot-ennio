@@ -206,7 +206,7 @@ vi.mock("@/features/tasks/components/ExecutionPlanTab", () => ({
           onClick={() =>
             onLocalPlanChange({
               generatedAt: "2026-03-10T00:00:00.000Z",
-              generatedBy: "lead-agent",
+              generatedBy: "orchestrator-agent",
               steps: [
                 {
                   tempId: "step_2",
@@ -1527,7 +1527,7 @@ describe("TaskDetailSheet", () => {
       tags: ["merged"],
       executionPlan: {
         generatedAt: "2026-03-10T00:00:00.000Z",
-        generatedBy: "lead-agent",
+        generatedBy: "orchestrator-agent",
         steps: [
           {
             tempId: "merge-step",
@@ -1596,7 +1596,7 @@ describe("TaskDetailSheet", () => {
       tags: ["merged"],
       executionPlan: {
         generatedAt: "2026-03-10T00:00:00.000Z",
-        generatedBy: "lead-agent",
+        generatedBy: "orchestrator-agent",
         steps: [
           {
             tempId: "merge-step",
@@ -2431,7 +2431,7 @@ describe("TaskDetailSheet", () => {
     expect(planTab.getAttribute("data-is-paused")).toBe("true");
   });
 
-  it("defaults the execution plan view to both canvas and lead agent conversation", async () => {
+  it("defaults the execution plan view to canvas-only", async () => {
     const user = userEvent.setup();
     const executionPlan = {
       steps: [
@@ -2446,7 +2446,7 @@ describe("TaskDetailSheet", () => {
         },
       ],
       generatedAt: "2026-03-10T10:00:00Z",
-      generatedBy: "lead-agent" as const,
+      generatedBy: "orchestrator-agent" as const,
     };
     const reviewingTask = {
       ...baseTask,
@@ -2457,11 +2457,11 @@ describe("TaskDetailSheet", () => {
     const planRequestMessage = {
       ...baseMessage,
       _id: "plan-msg-default-both" as never,
-      authorName: "lead-agent",
+      authorName: "orchestrator-agent",
       authorType: "system" as const,
       content: "Plan ready for approval",
       messageType: "system_event" as const,
-      type: "lead_agent_chat" as const,
+      type: "orchestrator_agent_chat" as const,
       planReview: {
         kind: "request" as const,
         planGeneratedAt: executionPlan.generatedAt,
@@ -2491,7 +2491,7 @@ describe("TaskDetailSheet", () => {
         },
       ],
       generatedAt: "2026-03-10T10:00:00Z",
-      generatedBy: "lead-agent" as const,
+      generatedBy: "orchestrator-agent" as const,
     };
     const reviewingTask = {
       ...baseTask,
@@ -2502,11 +2502,11 @@ describe("TaskDetailSheet", () => {
     const planRequestMessage = {
       ...baseMessage,
       _id: "plan-msg-canvas-only" as never,
-      authorName: "lead-agent",
+      authorName: "orchestrator-agent",
       authorType: "system" as const,
       content: "Plan ready for approval",
       messageType: "system_event" as const,
-      type: "lead_agent_chat" as const,
+      type: "orchestrator_agent_chat" as const,
       planReview: {
         kind: "request" as const,
         planGeneratedAt: executionPlan.generatedAt,
@@ -2538,7 +2538,7 @@ describe("TaskDetailSheet", () => {
         },
       ],
       generatedAt: "2026-03-10T10:00:00Z",
-      generatedBy: "lead-agent" as const,
+      generatedBy: "orchestrator-agent" as const,
     };
     const manualReviewTask = {
       ...baseTask,

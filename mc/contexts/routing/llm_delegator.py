@@ -44,7 +44,7 @@ You MUST respond with valid JSON only, no markdown, no explanation.
 ## Rules
 
 - target_agent must be one of the agent names listed in the user message
-- NEVER select "lead-agent" — it only plans, it never executes
+- NEVER select "orchestrator-agent" — it only plans, it never executes
 - Pick the agent whose skills and role best match the task
 - When skills are equal, prefer the agent with lower workload (fewer tasks executed)
 - confidence should reflect how well the agent's capabilities match the task"""
@@ -138,7 +138,7 @@ class LLMDelegationRouter:
             agent_roster=agent_roster,
         )
 
-        # Resolve model: prefer tier:standard-low, fall back to lead-agent model
+        # Resolve model: prefer tier:standard-low, fall back to orchestrator-agent model
         model = await self._resolve_model()
 
         # Call LLM
@@ -213,11 +213,11 @@ class LLMDelegationRouter:
     async def _resolve_model(self) -> str | None:
         """Resolve the model to use for delegation LLM call.
 
-        Prefers tier:standard-low. Falls back to the lead-agent's configured model.
+        Prefers tier:standard-low. Falls back to the orchestrator-agent's configured model.
         Returns None if neither is available (factory will use config default).
         """
         from mc.infrastructure.providers.tier_resolver import TierResolver
-        from mc.types import LEAD_AGENT_NAME
+        from mc.types import ORCHESTRATOR_AGENT_NAME
 
         # Try tier:standard-low first
         try:
@@ -227,18 +227,20 @@ class LLMDelegationRouter:
                 return resolved
         except (ValueError, Exception):
             logger.debug(
-                "[llm_delegator] tier:standard-low not configured, trying lead-agent model"
+                "[llm_delegator] tier:standard-low not configured, trying orchestrator-agent model"
             )
 
-        # Fall back to lead-agent model
+        # Fall back to orchestrator-agent model
         try:
-            agent_data = await asyncio.to_thread(self._bridge.get_agent_by_name, LEAD_AGENT_NAME)
+            agent_data = await asyncio.to_thread(
+                self._bridge.get_agent_by_name, ORCHESTRATOR_AGENT_NAME
+            )
             if agent_data:
                 lead_model = agent_data.get("model")
                 if lead_model:
                     return lead_model
         except Exception:
-            logger.debug("[llm_delegator] Failed to fetch lead-agent model", exc_info=True)
+            logger.debug("[llm_delegator] Failed to fetch orchestrator-agent model", exc_info=True)
 
         return None
 

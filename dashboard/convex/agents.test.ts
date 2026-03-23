@@ -5,6 +5,7 @@ import {
   incrementAgentTaskMetric,
   listActiveRegistryView,
   publishProjection,
+  renameLeadAgentToOrchestrator,
   upsertByName,
 } from "./agents";
 
@@ -622,5 +623,187 @@ describe("agents.listActiveRegistryView", () => {
     const result = await handler(ctx, {});
     const agent = result[0] as Record<string, unknown>;
     expect(agent.enabled).toBe(true);
+  });
+});
+
+function getRenameHandler() {
+  return (
+    renameLeadAgentToOrchestrator as unknown as {
+      _handler: (
+        ctx: unknown,
+        args: Record<string, unknown>,
+      ) => Promise<{
+        dryRun: boolean;
+        changes: Record<string, number>;
+        conflicts: string[];
+      }>;
+    }
+  )._handler;
+}
+
+function makeRenameCtx() {
+  const tables = {
+    agents: [
+      {
+        _id: "agent-lead",
+        name: "lead-agent",
+        displayName: "Lead Agent",
+        role: "Lead Orchestrator",
+        prompt: "You are the lead agent for Mission Control.",
+        soul: "I am Lead Agent, a nanobot agent.",
+      },
+    ],
+    boards: [
+      {
+        _id: "board-1",
+        enabledAgents: ["lead-agent", "dev-agent"],
+        agentMemoryModes: [{ agentName: "lead-agent", mode: "clean" }],
+      },
+    ],
+    tasks: [
+      {
+        _id: "task-1",
+        assignedAgent: "lead-agent",
+        sourceAgent: "lead-agent",
+        routingMode: "lead_agent",
+        executionPlan: {
+          generatedBy: "lead-agent",
+          steps: [{ tempId: "step_1", assignedAgent: "lead-agent" }],
+        },
+      },
+    ],
+    steps: [{ _id: "step-1", assignedAgent: "lead-agent" }],
+    messages: [
+      {
+        _id: "message-1",
+        authorName: "lead-agent",
+        type: "lead_agent_chat",
+        leadAgentConversation: true,
+      },
+    ],
+    activities: [
+      {
+        _id: "activity-1",
+        agentName: "lead-agent",
+        description: "Lead Agent registered lead-agent for the board",
+      },
+    ],
+    reviewSpecs: [
+      {
+        _id: "review-1",
+        reviewerPolicy: "lead-agent",
+        rejectionRoutingPolicy: "lead-agent",
+      },
+    ],
+  };
+
+  const patches = new Map<string, Record<string, unknown>>();
+  const query = vi.fn((table: keyof typeof tables) => ({
+    collect: vi.fn(async () => tables[table]),
+    withIndex: vi.fn(
+      (_index: string, cb?: (q: { eq: (k: string, v: string) => unknown }) => unknown) => {
+        let name: string | null = null;
+        cb?.({
+          eq: (_field: string, value: string) => {
+            name = value;
+            return {};
+          },
+        });
+        return {
+          first: vi.fn(async () =>
+            table === "agents"
+              ? (tables.agents.find((agent) => agent.name === name) ?? null)
+              : null,
+          ),
+        };
+      },
+    ),
+  }));
+  const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+    patches.set(id, value);
+  });
+
+  return {
+    ctx: { db: { query, patch } },
+    patches,
+  };
+}
+
+describe("agents.renameLeadAgentToOrchestrator", () => {
+  it("backfills legacy lead-agent fields across Convex tables", async () => {
+    const handler = getRenameHandler();
+    const { ctx, patches } = makeRenameCtx();
+
+    const result = await handler(ctx, { dryRun: false });
+
+    expect(result.conflicts).toEqual([]);
+    expect(result.changes).toMatchObject({
+      agents: 1,
+      boards: 1,
+      tasks: 1,
+      steps: 1,
+      messages: 1,
+      activities: 1,
+      reviewSpecs: 1,
+    });
+    expect(patches.get("agent-lead")).toMatchObject({
+      name: "orchestrator-agent",
+      displayName: "Orchestrator Agent",
+      role: "Orchestrator Agent",
+      prompt: "You are the Orchestrator Agent for Mission Control.",
+      soul: "I am Orchestrator Agent, a nanobot agent.",
+    });
+    expect(patches.get("board-1")).toMatchObject({
+      enabledAgents: ["orchestrator-agent", "dev-agent"],
+      agentMemoryModes: [{ agentName: "orchestrator-agent", mode: "clean" }],
+    });
+    expect(patches.get("task-1")).toMatchObject({
+      assignedAgent: "orchestrator-agent",
+      sourceAgent: "orchestrator-agent",
+      routingMode: "orchestrator_agent",
+      executionPlan: {
+        generatedBy: "orchestrator-agent",
+        steps: [{ tempId: "step_1", assignedAgent: "orchestrator-agent" }],
+      },
+    });
+    expect(patches.get("message-1")).toMatchObject({
+      authorName: "orchestrator-agent",
+      type: "orchestrator_agent_chat",
+      orchestratorAgentConversation: true,
+      leadAgentConversation: undefined,
+    });
+    expect(patches.get("activity-1")).toMatchObject({
+      agentName: "orchestrator-agent",
+      description: "Orchestrator Agent registered orchestrator-agent for the board",
+    });
+  });
+
+  it("returns conflicts without patching data when both lead-agent and orchestrator-agent exist", async () => {
+    const handler = getRenameHandler();
+    const { ctx, patches } = makeRenameCtx();
+    const query = (ctx as { db: { query: typeof ctx.db.query } }).db.query;
+    const agentsTable = (await query("agents").collect()) as Array<Record<string, unknown>>;
+    agentsTable.push({
+      _id: "agent-orchestrator",
+      name: "orchestrator-agent",
+      displayName: "Orchestrator Agent",
+      role: "Orchestrator Agent",
+      prompt: "You are the Orchestrator Agent for Mission Control.",
+      soul: "I am Orchestrator Agent, a nanobot agent.",
+    });
+
+    const result = await handler(ctx, { dryRun: false });
+
+    expect(result.conflicts).toHaveLength(1);
+    expect(result.changes).toMatchObject({
+      agents: 0,
+      boards: 0,
+      tasks: 0,
+      steps: 0,
+      messages: 0,
+      activities: 0,
+      reviewSpecs: 0,
+    });
+    expect(patches.size).toBe(0);
   });
 });

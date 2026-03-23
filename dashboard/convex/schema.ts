@@ -118,7 +118,10 @@ export const workflowStepTypeValidator = v.union(
 export const workModeValidator = v.union(v.literal("direct_delegate"), v.literal("ai_workflow"));
 
 export const routingModeValidator = v.union(
+  // Transitional rollout compatibility: allow persisted legacy values until
+  // the rename migration runs on the target deployment.
   v.literal("lead_agent"),
+  v.literal("orchestrator_agent"),
   v.literal("workflow"),
   v.literal("human"),
 );
@@ -308,7 +311,9 @@ export default defineSchema({
         v.literal("step_completion"),
         v.literal("user_message"),
         v.literal("system_error"),
+        // Transitional rollout compatibility for pre-migration records.
         v.literal("lead_agent_chat"),
+        v.literal("orchestrator_agent_chat"),
         v.literal("comment"),
       ),
     ),
@@ -338,6 +343,8 @@ export default defineSchema({
         decision: v.optional(v.union(v.literal("approved"), v.literal("rejected"))),
       }),
     ),
+    orchestratorAgentConversation: v.optional(v.boolean()),
+    // Transitional rollout compatibility for pre-migration records.
     leadAgentConversation: v.optional(v.boolean()),
     timestamp: v.string(),
   })

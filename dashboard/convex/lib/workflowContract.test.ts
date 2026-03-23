@@ -69,7 +69,7 @@ describe("THREAD_MESSAGE_TYPES", () => {
     expect(THREAD_MESSAGE_TYPES).toContain("step_completion");
     expect(THREAD_MESSAGE_TYPES).toContain("user_message");
     expect(THREAD_MESSAGE_TYPES).toContain("system_error");
-    expect(THREAD_MESSAGE_TYPES).toContain("lead_agent_chat");
+    expect(THREAD_MESSAGE_TYPES).toContain("orchestrator_agent_chat");
   });
 });
 

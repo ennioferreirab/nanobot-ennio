@@ -16,5 +16,5 @@ export type EditablePlanStep = {
 export type ExecutionPlan = {
   steps: EditablePlanStep[];
   generatedAt: string;
-  generatedBy: "lead-agent";
+  generatedBy: "orchestrator-agent";
 };

@@ -9,9 +9,9 @@ from mc.infrastructure.orientation import load_orientation
 
 
 class TestLoadOrientation:
-    def test_returns_none_for_lead_agent(self) -> None:
+    def test_returns_none_for_orchestrator_agent(self) -> None:
         """Lead-agent should never receive orientation."""
-        result = load_orientation("lead-agent")
+        result = load_orientation("orchestrator-agent")
         assert result is None
 
     def test_returns_none_for_nanobot(self) -> None:

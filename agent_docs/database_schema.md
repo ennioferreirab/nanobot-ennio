@@ -66,7 +66,7 @@ Core task records with status lifecycle and execution plans.
 | `mergeLockedAt` | `v.optional(v.string())` | |
 | `files` | `taskFilesValidator` | `v.optional(v.array(taskFileMetadataValidator))` |
 | `workMode` | `v.optional(workModeValidator)` | `"direct_delegate"` or `"ai_workflow"` |
-| `routingMode` | `v.optional(routingModeValidator)` | `"lead_agent"`, `"workflow"`, or `"human"` |
+| `routingMode` | `v.optional(routingModeValidator)` | `"orchestrator_agent"`, `"workflow"`, or `"human"` |
 | `routingDecision` | `v.optional(v.any())` | |
 | `squadSpecId` | `v.optional(v.id("squadSpecs"))` | |
 | `workflowSpecId` | `v.optional(v.id("workflowSpecs"))` | |
@@ -125,11 +125,11 @@ Unified task thread for all communication.
 | `authorType` | `v.union("agent", "user", "system")` | |
 | `content` | `v.string()` | |
 | `messageType` | `v.union(...)` | Legacy: `work\|review_feedback\|approval\|denial\|system_event\|user_message\|comment` |
-| `type` | `v.optional(v.union(...))` | New: `step_completion\|user_message\|system_error\|lead_agent_plan\|lead_agent_chat\|comment` |
+| `type` | `v.optional(v.union(...))` | New: `step_completion\|user_message\|system_error\|orchestrator_agent_chat\|comment` |
 | `artifacts` | `v.optional(v.array(v.object({...})))` | `{path, action: created\|modified\|deleted, description?, diff?}` |
 | `fileAttachments` | `v.optional(v.array(v.object({...})))` | `{name, type, size}` |
 | `planReview` | `v.optional(v.object({...}))` | `{kind: request\|feedback\|decision, planGeneratedAt, decision?}` |
-| `leadAgentConversation` | `v.optional(v.boolean())` | |
+| `orchestratorAgentConversation` | `v.optional(v.boolean())` | |
 | `timestamp` | `v.string()` | |
 
 **Indexes:** `by_taskId` `["taskId"]`, `by_taskId_timestamp` `["taskId", "timestamp"]`, `by_authorType_timestamp` `["authorType", "timestamp"]`

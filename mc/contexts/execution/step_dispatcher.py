@@ -26,7 +26,7 @@ from mc.types import (
     MessageType,
     StepStatus,
     TaskStatus,
-    is_lead_agent,
+    is_orchestrator_agent,
 )
 
 if TYPE_CHECKING:
@@ -540,9 +540,9 @@ class StepDispatcher:
         step_title = (step.get("title") or "Untitled Step").strip()
 
         agent_name = (step.get("assigned_agent") or NANOBOT_AGENT_NAME).strip()
-        if is_lead_agent(agent_name):
+        if is_orchestrator_agent(agent_name):
             logger.warning(
-                "[dispatcher] Step '%s' assigned to lead-agent; rerouting to '%s'",
+                "[dispatcher] Step '%s' assigned to orchestrator-agent; rerouting to '%s'",
                 step_title,
                 NANOBOT_AGENT_NAME,
             )

@@ -27,10 +27,10 @@ def _user_message(message_id: str, content: str) -> dict[str, Any]:
 def _plan_message(message_id: str, content: str) -> dict[str, Any]:
     return {
         "_id": message_id,
-        "author_name": "lead-agent",
+        "author_name": "orchestrator-agent",
         "author_type": "system",
         "message_type": "system_event",
-        "type": "lead_agent_chat",
+        "type": "orchestrator_agent_chat",
         "timestamp": f"2026-03-16T12:01:{message_id[-1]}Z",
         "content": content,
     }

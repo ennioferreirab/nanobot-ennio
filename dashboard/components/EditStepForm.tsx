@@ -62,7 +62,7 @@ export function EditStepForm({
 
   const board = useBoardById(boardId);
   const agents = useSelectableAgents(board?.enabledAgents);
-  const selectableAgents = (agents ?? []).filter((a) => a.name !== "lead-agent");
+  const selectableAgents = (agents ?? []).filter((a) => a.name !== "orchestrator-agent");
   const selectableBlockers = existingSteps.filter((candidate) => candidate.id !== step.stepId);
 
   const isLocked = step.status !== "planned" && step.status !== "blocked";

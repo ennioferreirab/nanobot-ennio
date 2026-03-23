@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RoutingDecision:
-    """Result of lead-agent direct delegation routing."""
+    """Result of orchestrator-agent direct delegation routing."""
 
     target_agent: str
     reason: str

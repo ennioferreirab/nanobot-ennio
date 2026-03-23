@@ -303,7 +303,7 @@ describe("ExecutionPlanTab", () => {
     const plan = {
       steps: [makeStep({ stepId: "s1", description: "Step one", title: "One" })],
       generatedAt: "2026-01-01T00:00:00Z",
-      generatedBy: "lead-agent",
+      generatedBy: "orchestrator-agent",
       createdAt: "2026-01-01",
     };
     render(
@@ -659,7 +659,7 @@ describe("ExecutionPlanTab", () => {
         },
       ],
       generatedAt: "2026-01-01T00:00:00Z",
-      generatedBy: "lead-agent" as const,
+      generatedBy: "orchestrator-agent" as const,
       createdAt: "2026-01-01",
     };
     render(
@@ -775,7 +775,7 @@ describe("ExecutionPlanTab", () => {
         },
       ],
       generatedAt: "2026-01-01T00:00:00Z",
-      generatedBy: "lead-agent" as const,
+      generatedBy: "orchestrator-agent" as const,
       createdAt: "2026-01-01",
     };
 
@@ -926,7 +926,7 @@ describe("ExecutionPlanTab", () => {
           },
         ],
         generatedAt: "2026-01-01T00:00:00Z",
-        generatedBy: "lead-agent" as const,
+        generatedBy: "orchestrator-agent" as const,
         createdAt: "2026-01-01",
       };
 
@@ -983,7 +983,7 @@ describe("ExecutionPlanTab", () => {
           },
         ],
         generatedAt: "2026-01-01T00:00:00Z",
-        generatedBy: "lead-agent" as const,
+        generatedBy: "orchestrator-agent" as const,
         createdAt: "2026-01-01",
       };
 
@@ -1055,7 +1055,7 @@ describe("ExecutionPlanTab", () => {
           },
         ],
         generatedAt: "2026-01-01T00:00:00Z",
-        generatedBy: "lead-agent" as const,
+        generatedBy: "orchestrator-agent" as const,
         createdAt: "2026-01-01",
       };
 
@@ -1127,7 +1127,7 @@ describe("ExecutionPlanTab", () => {
           },
         ],
         generatedAt: "2026-01-01T00:00:00Z",
-        generatedBy: "lead-agent" as const,
+        generatedBy: "orchestrator-agent" as const,
         createdAt: "2026-01-01",
       };
 
@@ -1159,7 +1159,7 @@ describe("ExecutionPlanTab", () => {
           },
         ],
         generatedAt: "2026-01-01T00:00:00Z",
-        generatedBy: "lead-agent" as const,
+        generatedBy: "orchestrator-agent" as const,
         createdAt: "2026-01-01",
       };
 
@@ -1198,7 +1198,7 @@ describe("ExecutionPlanTab", () => {
           },
         ],
         generatedAt: "2026-01-01T00:00:00Z",
-        generatedBy: "lead-agent" as const,
+        generatedBy: "orchestrator-agent" as const,
         createdAt: "2026-01-01",
       };
 

@@ -2095,7 +2095,7 @@ describe("tasks.approveAndKickOff", () => {
       title: "Reviewed task",
       executionPlan: {
         generatedAt: "2026-03-10T10:00:00Z",
-        generatedBy: "lead-agent",
+        generatedBy: "orchestrator-agent",
         steps: [{ tempId: "step_1" }],
       },
     }));

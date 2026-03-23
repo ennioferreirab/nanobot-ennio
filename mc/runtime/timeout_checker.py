@@ -254,6 +254,6 @@ class TimeoutChecker:
             task_id,
             "System",
             AuthorType.SYSTEM,
-            f"Review timed out after {duration}. Escalating to Lead Agent for re-routing.",
+            f"Review timed out after {duration}. Escalating to Orchestrator Agent for re-routing.",
             MessageType.SYSTEM_EVENT,
         )

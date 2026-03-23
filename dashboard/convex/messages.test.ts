@@ -5,7 +5,7 @@ import {
   listRecentByTaskForAskUser,
   listRecentUserMessagesForWatcher,
   postMentionMessage,
-  postLeadAgentMessage,
+  postOrchestratorAgentMessage,
   postStepCompletion,
   postUserPlanMessage,
   postUserReply,
@@ -41,9 +41,9 @@ function getPostStepCompletionHandler() {
   )._handler;
 }
 
-function getLeadAgentHandler() {
+function getOrchestratorAgentHandler() {
   return (
-    postLeadAgentMessage as unknown as {
+    postOrchestratorAgentMessage as unknown as {
       _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<string>;
     }
   )._handler;
@@ -478,21 +478,21 @@ describe("messages idempotency receipts", () => {
     expect(inserts.filter((entry) => entry.table === "runtimeReceipts")).toHaveLength(1);
   });
 
-  it("dedupes postLeadAgentMessage writes behind one receipt", async () => {
-    const handler = getLeadAgentHandler();
+  it("dedupes postOrchestratorAgentMessage writes behind one receipt", async () => {
+    const handler = getOrchestratorAgentHandler();
     const { ctx, inserts } = makeReceiptCtx();
 
     const first = await handler(ctx, {
       taskId: "task-1",
       content: "chat v1",
-      type: "lead_agent_chat",
-      idempotencyKey: "lead-chat:1",
+      type: "orchestrator_agent_chat",
+      idempotencyKey: "orchestrator-chat:1",
     });
     const second = await handler(ctx, {
       taskId: "task-1",
       content: "chat v1",
-      type: "lead_agent_chat",
-      idempotencyKey: "lead-chat:1",
+      type: "orchestrator_agent_chat",
+      idempotencyKey: "orchestrator-chat:1",
     });
 
     expect(first).toBe("msg-1");
@@ -504,7 +504,7 @@ describe("messages idempotency receipts", () => {
 });
 
 describe("messages.postUserReply", () => {
-  it("stores a plain user_message without lead-agent routing metadata", async () => {
+  it("stores a plain user_message without orchestrator routing metadata", async () => {
     const handler = getReplyHandler();
     const { ctx, inserts, mocks } = makeCtx({
       _id: "task-1",
@@ -523,7 +523,7 @@ describe("messages.postUserReply", () => {
     expect(msgInsert?.value.authorType).toBe("user");
     expect(msgInsert?.value.messageType).toBe("user_message");
     expect(msgInsert?.value.type).toBe("user_message");
-    expect(msgInsert?.value.leadAgentConversation).toBeUndefined();
+    expect(msgInsert?.value.orchestratorAgentConversation).toBeUndefined();
     expect(mocks.patch).not.toHaveBeenCalled();
   });
 });
@@ -620,7 +620,7 @@ describe("messages.postUserPlanMessage", () => {
       awaitingKickoff: true,
       executionPlan: {
         generatedAt: "2026-03-10T10:00:00Z",
-        generatedBy: "lead-agent",
+        generatedBy: "orchestrator-agent",
         steps: [{ tempId: "step_1" }],
       },
     });
@@ -642,10 +642,10 @@ describe("messages.postUserPlanMessage", () => {
       kind: "feedback",
       planGeneratedAt: "2026-03-10T10:00:00Z",
     });
-    expect(msgInsert?.value.leadAgentConversation).toBe(true);
+    expect(msgInsert?.value.orchestratorAgentConversation).toBe(true);
   });
 
-  it("marks the first lead-agent conversation message even before a plan exists", async () => {
+  it("marks the first orchestrator conversation message even before a plan exists", async () => {
     const handler = getPlanHandler();
     const { ctx, inserts } = makeCtx({
       _id: "task-1",
@@ -663,7 +663,7 @@ describe("messages.postUserPlanMessage", () => {
     expect(msgInsert?.value.authorType).toBe("user");
     expect(msgInsert?.value.type).toBe("user_message");
     expect(msgInsert?.value.planReview).toBeUndefined();
-    expect(msgInsert?.value.leadAgentConversation).toBe(true);
+    expect(msgInsert?.value.orchestratorAgentConversation).toBe(true);
   });
 
   it("reopens a done task with an execution plan back to review before storing the message", async () => {
@@ -675,7 +675,7 @@ describe("messages.postUserPlanMessage", () => {
       stateVersion: 7,
       executionPlan: {
         generatedAt: "2026-03-11T10:00:00Z",
-        generatedBy: "lead-agent",
+        generatedBy: "orchestrator-agent",
         steps: [{ tempId: "step_1" }],
       },
     });
@@ -696,7 +696,7 @@ describe("messages.postUserPlanMessage", () => {
     );
 
     const msgInsert = inserts.find((entry) => entry.table === "messages");
-    expect(msgInsert?.value.leadAgentConversation).toBe(true);
+    expect(msgInsert?.value.orchestratorAgentConversation).toBe(true);
     expect(msgInsert?.value.planReview).toEqual({
       kind: "feedback",
       planGeneratedAt: "2026-03-11T10:00:00Z",
