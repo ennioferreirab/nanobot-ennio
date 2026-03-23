@@ -48,13 +48,35 @@ interface SquadWorkflowCanvasProps {
 }
 
 function toPlanSteps(workflow: EditableWorkflow): EditablePlanStep[] {
+  // Compute DAG depth (parallelGroup) from dependsOn graph.
+  // Steps at the same depth with no inter-dependencies are parallel.
+  const depthMap = new Map<string, number>();
+
+  function getDepth(stepKey: string): number {
+    if (depthMap.has(stepKey)) return depthMap.get(stepKey)!;
+    const step = workflow.steps.find((s) => s.key === stepKey);
+    if (!step || step.dependsOn.length === 0) {
+      depthMap.set(stepKey, 1);
+      return 1;
+    }
+    const maxBlockerDepth = Math.max(...step.dependsOn.map((dep) => getDepth(dep)));
+    const depth = maxBlockerDepth + 1;
+    depthMap.set(stepKey, depth);
+    return depth;
+  }
+
+  // Compute all depths
+  for (const step of workflow.steps) {
+    getDepth(step.key);
+  }
+
   return workflow.steps.map((step, index) => ({
     tempId: step.key,
     title: step.title,
     description: step.description ?? "",
     assignedAgent: step.agentKey ?? "nanobot",
     blockedBy: step.dependsOn,
-    parallelGroup: index + 1,
+    parallelGroup: depthMap.get(step.key) ?? index + 1,
     order: index + 1,
   }));
 }
