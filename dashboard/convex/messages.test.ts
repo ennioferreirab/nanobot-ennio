@@ -315,17 +315,22 @@ describe("messages.listRecentUserMessagesForWatcher", () => {
       expect(direction).toBe("desc");
       return { take };
     });
-    const withIndex = vi.fn((indexName: string, apply?: (q: { eq: (field: string, value: string) => unknown }) => unknown) => {
-      expect(indexName).toBe("by_authorType_timestamp");
-      apply?.({
-        eq: (field: string, value: string) => {
-          expect(field).toBe("authorType");
-          expect(value).toBe("user");
-          return {};
-        },
-      });
-      return { order };
-    });
+    const withIndex = vi.fn(
+      (
+        indexName: string,
+        apply?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+      ) => {
+        expect(indexName).toBe("by_authorType_timestamp");
+        apply?.({
+          eq: (field: string, value: string) => {
+            expect(field).toBe("authorType");
+            expect(value).toBe("user");
+            return {};
+          },
+        });
+        return { order };
+      },
+    );
     const query = vi.fn((table: string) => {
       expect(table).toBe("messages");
       return { withIndex };

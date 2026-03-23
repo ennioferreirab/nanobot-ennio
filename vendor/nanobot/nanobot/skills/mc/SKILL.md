@@ -23,7 +23,7 @@ Use `exec` tool to run `nanobot mc tasks <command>` commands.
 | `nanobot mc tasks create "Title" --agent secretary` | Assign to agent |
 | `nanobot mc tasks create "Title" --supervision-mode supervised` | Agent creates plan first |
 | `nanobot mc tasks update-status <id> <status>` | Change status (state machine) |
-| `nanobot mc tasks update-status <id> assigned --agent lead-agent` | Assign to agent |
+| `nanobot mc tasks update-status <id> assigned --agent orchestrator-agent` | Assign to agent |
 | `nanobot mc tasks send-message <id> "content"` | Post comment to thread |
 | `nanobot mc tasks update-title <id> "New Title"` | Edit title |
 | `nanobot mc tasks update-description <id> "New desc"` | Edit description |
@@ -103,7 +103,7 @@ exec("nanobot mc tasks create 'Deploy to production' --trust-level human_approve
 
 ### Create a supervised task (plan first)
 ```bash
-exec("nanobot mc tasks create 'Refactor auth module' --supervision-mode supervised --agent lead-agent")
+exec("nanobot mc tasks create 'Refactor auth module' --supervision-mode supervised --agent orchestrator-agent")
 ```
 
 ### Create a personal TODO (human task)

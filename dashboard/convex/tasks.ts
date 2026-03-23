@@ -100,11 +100,7 @@ const MERGE_CANDIDATE_WINDOW = 100;
 const MERGE_CANDIDATE_SEARCH_WINDOW = 25;
 const MERGE_CANDIDATE_LIMIT = 10;
 
-function projectMergeCandidate(task: {
-  _id: Id<"tasks">;
-  title: string;
-  description?: string;
-}) {
+function projectMergeCandidate(task: { _id: Id<"tasks">; title: string; description?: string }) {
   return {
     _id: task._id,
     title: task.title,
@@ -183,7 +179,11 @@ export const searchMergeCandidates = query({
           }
           return Array.from(deduped.values());
         })
-      : await ctx.db.query("tasks").withIndex("by_updatedAt").order("desc").take(MERGE_CANDIDATE_WINDOW);
+      : await ctx.db
+          .query("tasks")
+          .withIndex("by_updatedAt")
+          .order("desc")
+          .take(MERGE_CANDIDATE_WINDOW);
     const filtered = [];
     for (const task of tasks) {
       if (task._id === args.excludeTaskId) continue;
@@ -202,7 +202,11 @@ export const searchMergeCandidates = query({
         }
         if (hasLineageOverlap(candidateLineage, targetLineage)) continue;
       }
-      if (!normalized || task.title.toLowerCase().includes(normalized) || (task.description ?? "").toLowerCase().includes(normalized)) {
+      if (
+        !normalized ||
+        task.title.toLowerCase().includes(normalized) ||
+        (task.description ?? "").toLowerCase().includes(normalized)
+      ) {
         filtered.push(projectMergeCandidate(task));
       }
     }

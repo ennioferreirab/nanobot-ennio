@@ -90,7 +90,13 @@ class ChatHandler:
                             pending.get("message", "unknown error"),
                         )
                         break
-                    useful_pending = await self._filter_useful_pending(pending or [])
+                    if not isinstance(pending, list):
+                        logger.warning(
+                            "[chat] Ignoring unexpected pending chat payload of type %s",
+                            type(pending).__name__,
+                        )
+                        continue
+                    useful_pending = await self._filter_useful_pending(pending)
                     for msg in useful_pending:
                         self._dispatch_message(msg)
                     if useful_pending:

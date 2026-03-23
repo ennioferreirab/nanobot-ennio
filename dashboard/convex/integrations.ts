@@ -666,8 +666,10 @@ export const listRecentOutboundPendingByConfig = query({
 
     const messageWindowFull =
       messageBatches.some((batch) => batch.items.length === perTaskLimit) ||
-      messageBatches.reduce((count, batch) => count + batch.items.filter((item) => item.authorType === "user").length, 0) >
-        limit;
+      messageBatches.reduce(
+        (count, batch) => count + batch.items.filter((item) => item.authorType === "user").length,
+        0,
+      ) > limit;
     const activityWindowFull =
       activityBatches.some((batch) => batch.items.length === perTaskLimit) ||
       activityBatches.reduce((count, batch) => count + batch.items.length, 0) > limit;
@@ -679,37 +681,35 @@ export const listRecentOutboundPendingByConfig = query({
       .slice(0, limit);
     const recentActivities = activityBatches
       .flatMap((batch) => batch.items)
-      .filter((activity) => activity.taskId !== undefined && internalIds.has(String(activity.taskId)))
+      .filter(
+        (activity) => activity.taskId !== undefined && internalIds.has(String(activity.taskId)),
+      )
       .sort((left, right) => String(right.timestamp).localeCompare(String(left.timestamp)))
       .slice(0, limit);
 
     return {
-      messages: recentMessages
-        .reverse()
-        .map((message) => ({
-          message: {
-            id: message._id,
-            taskId: message.taskId,
-            authorName: message.authorName,
-            authorType: message.authorType,
-            content: message.content,
-            type: message.type,
-            timestamp: message.timestamp,
-          },
-          mapping: mappingByInternalId.get(String(message.taskId))!,
-        })),
-      activities: recentActivities
-        .reverse()
-        .map((activity) => ({
-          activity: {
-            id: activity._id,
-            taskId: activity.taskId,
-            eventType: activity.eventType,
-            description: activity.description,
-            timestamp: activity.timestamp,
-          },
-          mapping: mappingByInternalId.get(String(activity.taskId!))!,
-        })),
+      messages: recentMessages.reverse().map((message) => ({
+        message: {
+          id: message._id,
+          taskId: message.taskId,
+          authorName: message.authorName,
+          authorType: message.authorType,
+          content: message.content,
+          type: message.type,
+          timestamp: message.timestamp,
+        },
+        mapping: mappingByInternalId.get(String(message.taskId))!,
+      })),
+      activities: recentActivities.reverse().map((activity) => ({
+        activity: {
+          id: activity._id,
+          taskId: activity.taskId,
+          eventType: activity.eventType,
+          description: activity.description,
+          timestamp: activity.timestamp,
+        },
+        mapping: mappingByInternalId.get(String(activity.taskId!))!,
+      })),
       messageWindowFull,
       activityWindowFull,
     };

@@ -103,14 +103,19 @@ async function maybeAnswerPendingExecutionQuestion(
 export const listRecentUserMessages = query({
   args: { sinceTimestamp: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const query = ctx.db.query("messages").withIndex("by_authorType_timestamp", (q) =>
-      q.eq("authorType", "user").gte("timestamp", args.sinceTimestamp),
-    );
+    const query = ctx.db
+      .query("messages")
+      .withIndex("by_authorType_timestamp", (q) =>
+        q.eq("authorType", "user").gte("timestamp", args.sinceTimestamp),
+      );
     if (args.limit === undefined) {
       return await query.collect();
     }
     const limit = Math.max(1, Math.min(args.limit, 200));
-    return await query.order("desc").take(limit).then((messages) => messages.reverse());
+    return await query
+      .order("desc")
+      .take(limit)
+      .then((messages) => messages.reverse());
   },
 });
 

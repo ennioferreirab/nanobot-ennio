@@ -46,7 +46,10 @@ export function useBoardView(filters: BoardFilters): BoardViewData {
     attributeFilters: filters.hasAttributeFilters ? filters.search.attributeFilters : undefined,
   };
 
-  const boardView = useQuery(api.boards.getBoardView, boardViewArgs) as BoardViewReadModel | null | undefined;
+  const boardView = useQuery(api.boards.getBoardView, boardViewArgs) as
+    | BoardViewReadModel
+    | null
+    | undefined;
 
   const tasks = boardView?.tasks;
   const allSteps = boardView?.allSteps;

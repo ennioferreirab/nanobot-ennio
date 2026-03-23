@@ -73,12 +73,12 @@ class AskAgentTool(Tool):
         if not self._caller_agent:
             return "Error: ask_agent can only be used during MC task execution (no caller context set)."
 
-        # AC5: Lead agent protection
-        from mc.types import LEAD_AGENT_NAME, is_lead_agent
+        # AC5: Orchestrator agent protection
+        from mc.types import ORCHESTRATOR_AGENT_NAME, is_orchestrator_agent
 
-        if is_lead_agent(target_agent) or target_agent == "lead-agent":
+        if is_orchestrator_agent(target_agent):
             return (
-                "Cannot ask the Lead Agent. The Lead Agent is a pure orchestrator "
+                "Cannot ask the Orchestrator Agent. The Orchestrator Agent is a pure orchestrator "
                 "and cannot be targeted by ask_agent."
             )
 

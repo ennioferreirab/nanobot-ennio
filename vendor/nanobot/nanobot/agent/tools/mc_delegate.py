@@ -45,7 +45,7 @@ class McDelegateTool(Tool):
     def description(self) -> str:
         return (
             "Delegate a task to the Mission Control board. "
-            "Use this to assign tasks to specialized agents (e.g. secretary, lead-agent). "
+            "Use this to assign tasks to specialized agents (e.g. secretary, orchestrator-agent). "
             "Mission control will handle the execution and notify you here when it is complete. "
             "IMPORTANT: This is asynchronous. Do NOT wait for the result. Say something like 'I have delegated the task to Mission Control.' and end your turn."
         )
@@ -65,7 +65,7 @@ class McDelegateTool(Tool):
                 },
                 "assigned_agent": {
                     "type": "string",
-                    "description": "Name of the agent to assign (e.g., 'secretary', 'lead-agent'). Leave empty to let the system decide.",
+                    "description": "Name of the agent to assign (e.g., 'secretary', 'orchestrator-agent'). Leave empty to let the system decide.",
                 },
             },
             "required": ["title", "description"],
