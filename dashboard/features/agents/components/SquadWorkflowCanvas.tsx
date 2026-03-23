@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FlowStepNode, type FlowStepNodeData } from "@/components/FlowStepNode";
 import { StartNode, EndNode } from "@/components/StartEndNode";
+import { StepListView } from "@/components/StepListView";
 import { layoutWithDagre, stepsToNodesAndEdges } from "@/lib/flowLayout";
 import {
   getMergeableSiblingIds,
@@ -273,46 +274,18 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
             </div>
           </TabsContent>
 
-          <TabsContent value="steps" className="mt-0">
-            <div
-              className="overflow-hidden rounded-xl border bg-muted/10"
-              data-testid="squad-workflow-steps-list"
-            >
-              {workflow.steps.map((step, index) => {
-                const isSelected = step.key === selectedStepKey;
-                return (
-                  <button
-                    key={step.key}
-                    type="button"
-                    data-testid={`workflow-step-row-${step.key}`}
-                    className={`flex w-full items-start justify-between gap-3 border-b px-4 py-3 text-left transition-colors last:border-b-0 ${
-                      isSelected ? "bg-muted/50" : "hover:bg-muted/30"
-                    }`}
-                    onClick={() => setSelectedStepKey(step.key)}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">Step {index + 1}</Badge>
-                        <p className="text-sm font-medium truncate">{step.title || "Untitled"}</p>
-                      </div>
-                      {step.description && (
-                        <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                          {step.description}
-                        </p>
-                      )}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        {step.type}
-                      </p>
-                      {step.agentKey && (
-                        <p className="mt-1 text-xs text-muted-foreground">{step.agentKey}</p>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+          <TabsContent value="steps" className="mt-0" data-testid="squad-workflow-steps-list">
+            <StepListView
+              steps={toPlanSteps(workflow).map((ps) => ({
+                stepId: ps.tempId,
+                title: ps.title,
+                description: ps.description,
+                status: "planned",
+                assignedAgent: ps.assignedAgent === "nanobot" ? undefined : ps.assignedAgent,
+                parallelGroup: ps.parallelGroup,
+              }))}
+              onStepClick={(stepId) => setSelectedStepKey(stepId)}
+            />
           </TabsContent>
 
           <TabsContent value="criteria" className="mt-0">
