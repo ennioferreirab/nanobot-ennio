@@ -203,6 +203,7 @@ async def test_shutdown_reverse_order(dashboard_dir, project_root):
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_force_kill_after_timeout(dashboard_dir, project_root):
     """Process that doesn't exit within timeout is force-killed."""
     killed = []
@@ -251,6 +252,7 @@ async def test_force_kill_after_timeout(dashboard_dir, project_root):
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_crash_callback(dashboard_dir, project_root):
     """on_crash callback is invoked when process exits unexpectedly."""
     crash_reports = []
@@ -440,6 +442,7 @@ def test_process_config_defaults():
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_monitor_stops_restarting_after_max_attempts(dashboard_dir, project_root):
     """After max_restart_attempts consecutive failures, monitor stops restarting."""
     max_attempts = 2
@@ -520,6 +523,7 @@ async def test_monitor_stops_restarting_after_max_attempts(dashboard_dir, projec
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_successful_restart_resets_failure_counter(dashboard_dir, project_root):
     """A successful restart (process stays alive) resets the failure counter."""
     max_attempts = 2
@@ -579,6 +583,7 @@ async def test_successful_restart_resets_failure_counter(dashboard_dir, project_
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_port_cleanup_before_restart(dashboard_dir, project_root):
     """When a process with port configured crashes, port cleanup runs before restart."""
     killed_ports: list[int] = []

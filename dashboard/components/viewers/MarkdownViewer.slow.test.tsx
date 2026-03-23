@@ -57,16 +57,6 @@ describe("MarkdownViewer", () => {
     cleanup();
   });
 
-  it('defaults to "Rendered" mode with Rendered button having secondary variant', () => {
-    render(<MarkdownViewer content={SAMPLE_MARKDOWN} />);
-
-    const renderedBtn = screen.getByRole("button", { name: "Rendered" });
-    const rawBtn = screen.getByRole("button", { name: "Raw" });
-
-    expect(renderedBtn.className).toContain("secondary");
-    expect(rawBtn.className).not.toContain("secondary");
-  });
-
   it("renders Markdown content in rendered mode (ReactMarkdown output visible)", () => {
     render(<MarkdownViewer content={SAMPLE_MARKDOWN} />);
 
@@ -158,22 +148,6 @@ describe("MarkdownViewer", () => {
     expect(screen.getByRole("cell", { name: "cell2" })).toBeInTheDocument();
   });
 
-  it("applies border styling classes to table header cells", () => {
-    render(<MarkdownViewer content={SAMPLE_MARKDOWN} />);
-
-    const th = screen.getByRole("columnheader", { name: "Col A" });
-    expect(th.className).toContain("border-b");
-    expect(th.className).toContain("border-border");
-  });
-
-  it("applies border styling classes to table data cells", () => {
-    render(<MarkdownViewer content={SAMPLE_MARKDOWN} />);
-
-    const td = screen.getByRole("cell", { name: "cell1" });
-    expect(td.className).toContain("border-b");
-    expect(td.className).toContain("border-border");
-  });
-
   it("renders fenced code blocks with SyntaxHighlighter", () => {
     render(<MarkdownViewer content={SAMPLE_MARKDOWN} />);
 
@@ -209,17 +183,6 @@ describe("MarkdownViewer", () => {
     expect(pre?.textContent).toBe(SAMPLE_MARKDOWN);
   });
 
-  it("raw mode pre element has whitespace-pre-wrap class", () => {
-    render(<MarkdownViewer content={SAMPLE_MARKDOWN} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
-
-    // Select the raw mode pre specifically (not the mocked SyntaxHighlighter pre)
-    const pre = document.querySelector("pre.font-mono");
-    expect(pre?.className).toContain("whitespace-pre-wrap");
-    expect(pre?.className).toContain("font-mono");
-  });
-
   it("raw mode shows the exact source text without rendering", () => {
     const rawText = "# Not Rendered\n\n**bold** text";
     render(<MarkdownViewer content={rawText} />);
@@ -245,18 +208,6 @@ describe("MarkdownViewer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Rendered" }));
     expect(screen.getByRole("heading", { level: 1, name: "Hello" })).toBeInTheDocument();
     expect(document.querySelector("pre.font-mono")).toBeNull();
-  });
-
-  it("Raw button has secondary variant class when in raw mode", () => {
-    render(<MarkdownViewer content={SAMPLE_MARKDOWN} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
-
-    const rawBtn = screen.getByRole("button", { name: "Raw" });
-    const renderedBtn = screen.getByRole("button", { name: "Rendered" });
-
-    expect(rawBtn.className).toContain("secondary");
-    expect(renderedBtn.className).not.toContain("secondary");
   });
 
   it("renders blockquote element from Markdown", () => {

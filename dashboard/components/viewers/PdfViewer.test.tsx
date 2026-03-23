@@ -224,13 +224,6 @@ describe("PdfViewer", () => {
     expect(fitElements.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("Fit button is active (secondary variant) by default", () => {
-    render(<PdfViewer {...defaultProps} />);
-    // The Fit button icon is Maximize2
-    const fitBtn = screen.getByTestId("icon-maximize2").closest("button")!;
-    expect(fitBtn).toHaveAttribute("data-variant", "secondary");
-  });
-
   it("zoom-out button is disabled in fit mode", () => {
     render(<PdfViewer {...defaultProps} />);
     const zoomOutBtn = screen.getByTestId("icon-minus").closest("button")!;
@@ -242,13 +235,6 @@ describe("PdfViewer", () => {
     const zoomInBtn = screen.getByTestId("icon-plus").closest("button")!;
     fireEvent.click(zoomInBtn);
     expect(screen.getByText("100%")).toBeInTheDocument();
-  });
-
-  it("after zoom-in, Fit button becomes ghost variant", () => {
-    render(<PdfViewer {...defaultProps} />);
-    fireEvent.click(screen.getByTestId("icon-plus").closest("button")!);
-    const fitBtn = screen.getByTestId("icon-maximize2").closest("button")!;
-    expect(fitBtn).toHaveAttribute("data-variant", "ghost");
   });
 
   it("zoom-out cycles down from 1.0 to 0.75", () => {

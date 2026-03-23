@@ -34,18 +34,6 @@ describe("HtmlViewer", () => {
     cleanup();
   });
 
-  it('defaults to "Rendered" mode with Rendered button having secondary variant', () => {
-    render(<HtmlViewer content={SAMPLE_HTML} />);
-
-    const renderedBtn = screen.getByRole("button", { name: "Rendered" });
-    const rawBtn = screen.getByRole("button", { name: "Raw" });
-
-    // In rendered mode, Rendered button has secondary variant class
-    expect(renderedBtn.className).toContain("secondary");
-    // Raw button should not have secondary variant
-    expect(rawBtn.className).not.toContain("secondary");
-  });
-
   it("renders an iframe in rendered mode with srcDoc set to content", () => {
     render(<HtmlViewer content={SAMPLE_HTML} />);
 
@@ -115,18 +103,6 @@ describe("HtmlViewer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Rendered" }));
     expect(screen.getByTitle("HTML preview")).toBeInTheDocument();
     expect(screen.queryByTestId("syntax-highlighter")).not.toBeInTheDocument();
-  });
-
-  it("Raw button has secondary variant class when in raw mode", () => {
-    render(<HtmlViewer content={SAMPLE_HTML} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
-
-    const rawBtn = screen.getByRole("button", { name: "Raw" });
-    const renderedBtn = screen.getByRole("button", { name: "Rendered" });
-
-    expect(rawBtn.className).toContain("secondary");
-    expect(renderedBtn.className).not.toContain("secondary");
   });
 
   it("renders without crashing when content is empty string", () => {

@@ -24,15 +24,17 @@ make start      # Build image + start stack (first run ~2min, then ~5s)
 | `make start` | Start attached — logs stream to terminal, Ctrl+C to stop | Yes |
 | `make up` | Start detached — runs in background | Yes |
 | `make down` | Stop everything | Yes |
-| `make test` | Run all unit tests (Python + TypeScript) | No |
-| `make check` | Lint + typecheck + unit tests | No |
+| `make test` | Run the fast local test lane (Python + TypeScript) | No |
+| `make test-full` | Run fast + slow local tests (Python + TypeScript) | No |
+| `make check` | Fast pre-commit lane: lint + typecheck + fast tests | No |
+| `make check-full` | Full pre-merge lane: lint + typecheck + fast + slow tests | No |
 | `make docker-test` | Spin up isolated Docker test instance (auto-detects ports) | Yes |
 | `make docker-test-down` | Stop Docker test instance | Yes |
 | `make lint` | Ruff + ESLint | No |
 | `make typecheck` | Pyright + tsc | No |
 | `make format` | Format all code (Ruff + Prettier) | No |
 
-Sub-targets: `test-py`, `test-ts`, `lint-py`, `lint-ts`, `typecheck-py`, `typecheck-ts`, `format-py`, `format-ts`.
+Sub-targets: `test-py`, `test-py-full`, `test-ts`, `test-ts-full`, `lint-py`, `lint-ts`, `typecheck-py`, `typecheck-ts`, `format-py`, `format-ts`.
 
 Other useful commands (run directly):
 
@@ -113,7 +115,8 @@ make start                # Fresh start with template database
 Each worktree can use `make docker-test` for isolated instances (own Convex, own ports):
 
 ```bash
-make check              # lint, types, unit tests (no Docker needed)
+make check              # fast local lane: lint, types, fast tests (no Docker needed)
+make check-full         # full local lane: lint, types, fast + slow tests
 make docker-test        # auto-detects ports, starts isolated stack
 make docker-test-down   # stops this worktree's instance
 ```
@@ -132,7 +135,9 @@ See [`service_communication_patterns.md`](service_communication_patterns.md) for
 
 ## Baseline Checks
 
-Run `make check` before committing. This runs lint + typecheck + unit tests locally without Docker.
+Run `make check` during normal development and before small commits. This runs lint + typecheck + the fast test lane locally without Docker.
+
+Run `make check-full` before merging or when you need confidence against the slower local regression suites.
 
 For test strategy and when to write tests, see [`running_tests.md`](running_tests.md).
 

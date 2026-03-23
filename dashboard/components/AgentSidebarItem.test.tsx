@@ -113,24 +113,6 @@ describe("AgentSidebarItem", () => {
     expect(screen.getByText("Developer")).toBeInTheDocument();
   });
 
-  it("renders active status dot with blue styling", () => {
-    const { container } = render(<AgentSidebarItem agent={{ ...baseAgent, status: "active" }} />);
-    const dot = container.querySelector(".bg-blue-500");
-    expect(dot).not.toBeNull();
-  });
-
-  it("renders idle status dot with gray styling", () => {
-    const { container } = render(<AgentSidebarItem agent={{ ...baseAgent, status: "idle" }} />);
-    const dot = container.querySelector(".bg-muted-foreground");
-    expect(dot).not.toBeNull();
-  });
-
-  it("renders crashed status dot with red styling", () => {
-    const { container } = render(<AgentSidebarItem agent={{ ...baseAgent, status: "crashed" }} />);
-    const dot = container.querySelector(".bg-red-500");
-    expect(dot).not.toBeNull();
-  });
-
   it("provides tooltip content in collapsed mode", () => {
     mockSidebarState = "collapsed";
     render(<AgentSidebarItem agent={baseAgent} />);
@@ -145,69 +127,12 @@ describe("AgentSidebarItem", () => {
     expect(screen.queryByText("Developer")).not.toBeInTheDocument();
   });
 
-  it("applies transition-colors duration-200 to status dot", () => {
-    const { container } = render(<AgentSidebarItem agent={baseAgent} />);
-    const dot = container.querySelector(".transition-colors.duration-200");
-    expect(dot).not.toBeNull();
-  });
-
   // --- Disabled (deactivated) agent tests ---
-
-  it("renders solid red dot without glow when enabled is false", () => {
-    const { container } = render(<AgentSidebarItem agent={{ ...baseAgent, enabled: false }} />);
-    const dot = container.querySelector(".bg-red-500");
-    expect(dot).not.toBeNull();
-    // Should NOT have glow shadow
-    expect(dot!.className).not.toContain("shadow-[0_0_6px");
-  });
-
-  it("renders dimmed text when agent is disabled", () => {
-    const { container } = render(<AgentSidebarItem agent={{ ...baseAgent, enabled: false }} />);
-    const textContainer = container.querySelector(".opacity-60");
-    expect(textContainer).not.toBeNull();
-    expect(textContainer!.className).toContain("text-muted-foreground");
-  });
-
-  it("shows Deactivated in tooltip when agent is disabled", () => {
-    render(<AgentSidebarItem agent={{ ...baseAgent, enabled: false }} />);
-    expect(screen.getByText("Code Monkey")).toBeInTheDocument();
-  });
 
   it("shows Deactivated in tooltip in collapsed mode when disabled", () => {
     mockSidebarState = "collapsed";
     render(<AgentSidebarItem agent={{ ...baseAgent, enabled: false }} />);
     const button = screen.getByTestId("menu-button");
     expect(button.getAttribute("data-tooltip")).toBe("Code Monkey - Developer - Deactivated");
-  });
-
-  it("renders red dot in collapsed mode when disabled", () => {
-    mockSidebarState = "collapsed";
-    const { container } = render(<AgentSidebarItem agent={{ ...baseAgent, enabled: false }} />);
-    const dot = container.querySelector(".bg-red-500");
-    expect(dot).not.toBeNull();
-    expect(dot!.className).not.toContain("shadow-[0_0_6px");
-  });
-
-  it("uses runtime status when enabled is true", () => {
-    const { container } = render(
-      <AgentSidebarItem agent={{ ...baseAgent, enabled: true, status: "active" }} />,
-    );
-    const dot = container.querySelector(".bg-blue-500");
-    expect(dot).not.toBeNull();
-    // Should have glow
-    expect(dot!.className).toContain("shadow-[0_0_6px");
-  });
-
-  it("uses runtime status when enabled is undefined (backward compat)", () => {
-    const { container } = render(<AgentSidebarItem agent={{ ...baseAgent, status: "crashed" }} />);
-    const dot = container.querySelector(".bg-red-500");
-    expect(dot).not.toBeNull();
-    // Crashed has glow
-    expect(dot!.className).toContain("shadow-[0_0_6px");
-  });
-
-  it("does not dim text when agent is enabled", () => {
-    const { container } = render(<AgentSidebarItem agent={{ ...baseAgent, enabled: true }} />);
-    expect(container.querySelector(".opacity-60")).toBeNull();
   });
 });

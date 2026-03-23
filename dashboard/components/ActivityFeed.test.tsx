@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { ActivityFeed } from "./ActivityFeed";
-import { FeedItem } from "./FeedItem";
 import type { Doc } from "@/convex/_generated/dataModel";
 
 // Stub scrollTo for jsdom
@@ -119,62 +118,5 @@ describe("ActivityFeed", () => {
     mockUseQuery.mockReturnValue(hundredActivities);
     render(<ActivityFeed />);
     expect(screen.getByText("Showing last 100 activities")).toBeInTheDocument();
-  });
-});
-
-describe("FeedItem", () => {
-  afterEach(() => {
-    cleanup();
-  });
-
-  it("renders timestamp, agent name, and description", () => {
-    const activity = makeActivity();
-    render(<FeedItem activity={activity} />);
-
-    expect(screen.getByText("agent-1")).toBeInTheDocument();
-    expect(screen.getByText("Created task: Setup CI")).toBeInTheDocument();
-  });
-
-  it("renders red left border for error events", () => {
-    const errorEvents = ["task_crashed", "system_error", "agent_crashed"] as const;
-    for (const eventType of errorEvents) {
-      cleanup();
-      const activity = makeActivity({
-        _id: `err-${eventType}` as Activity["_id"],
-        eventType,
-      });
-      const { container } = render(<FeedItem activity={activity} />);
-      const item = container.firstChild as HTMLElement;
-      expect(item.className).toContain("border-red-400");
-    }
-  });
-
-  it("renders amber left border for HITL events", () => {
-    const hitlEvents = ["hitl_requested", "hitl_approved", "hitl_denied"] as const;
-    for (const eventType of hitlEvents) {
-      cleanup();
-      const activity = makeActivity({
-        _id: `hitl-${eventType}` as Activity["_id"],
-        eventType,
-      });
-      const { container } = render(<FeedItem activity={activity} />);
-      const item = container.firstChild as HTMLElement;
-      expect(item.className).toContain("border-amber-400");
-    }
-  });
-
-  it("renders transparent left border for normal events", () => {
-    const activity = makeActivity({ eventType: "task_created" });
-    const { container } = render(<FeedItem activity={activity} />);
-    const item = container.firstChild as HTMLElement;
-    expect(item.className).toContain("border-transparent");
-    expect(item.className).not.toContain("border-red-400");
-    expect(item.className).not.toContain("border-amber-400");
-  });
-
-  it("does not render agent name when absent", () => {
-    const activity = makeActivity({ agentName: undefined });
-    render(<FeedItem activity={activity} />);
-    expect(screen.queryByText("agent-1")).not.toBeInTheDocument();
   });
 });

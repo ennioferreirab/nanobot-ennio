@@ -5,6 +5,7 @@ export default defineConfig({
   ...sharedConfig,
   test: {
     ...sharedConfig.test,
-    exclude: [...commonExclude, ...slowInclude],
+    include: slowInclude,
+    exclude: [...commonExclude],
   },
 });

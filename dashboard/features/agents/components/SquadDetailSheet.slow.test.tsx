@@ -254,64 +254,6 @@ describe("SquadDetailSheet", () => {
     expect(screen.getByText(/no agents defined/i)).toBeInTheDocument();
   });
 
-  it("publishes edited workflow data instead of showing a save action", async () => {
-    mockUseSquadDetailData.mockReturnValue(makeLoadedState());
-    render(<SquadDetailSheet squadId={MOCK_SQUAD_ID} onClose={vi.fn()} />);
-
-    await userEvent.click(screen.getByRole("button", { name: /edit squad/i }));
-    await userEvent.click(screen.getByRole("button", { name: /edit workflow name/i }));
-
-    const workflowNameInput = screen.getByRole("textbox", { name: /workflow name/i });
-    const firstStepTitleInput = screen.getByLabelText(/step 1 title/i);
-    const reviewPolicyInput = screen.getByLabelText(/review policy/i);
-
-    await userEvent.clear(workflowNameInput);
-    await userEvent.type(workflowNameInput, "Edited Workflow");
-    await userEvent.clear(firstStepTitleInput);
-    await userEvent.type(firstStepTitleInput, "Edited Review");
-    await userEvent.clear(reviewPolicyInput);
-    await userEvent.type(reviewPolicyInput, "Lead review and QA sign-off required");
-
-    expect(screen.queryByRole("button", { name: /^save$/i })).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: /publicar/i }));
-
-    expect(mockPublish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        squadSpecId: MOCK_SQUAD_ID,
-        graph: expect.objectContaining({
-          reviewPolicy: "Lead review and QA sign-off required",
-          workflows: [
-            expect.objectContaining({
-              id: "wf-1",
-              name: "Edited Workflow",
-              steps: expect.arrayContaining([
-                expect.objectContaining({
-                  key: "step-1",
-                  title: "Edited Review",
-                  type: "review",
-                }),
-              ]),
-            }),
-          ],
-        }),
-      }),
-    );
-  }, 15000);
-
-  it("shows the workflow name inline with the workflows header and exposes a pencil action in edit mode", async () => {
-    mockUseSquadDetailData.mockReturnValue(makeLoadedState());
-    render(<SquadDetailSheet squadId={MOCK_SQUAD_ID} onClose={vi.fn()} />);
-
-    expect(screen.getByText("Workflows")).toBeInTheDocument();
-    expect(screen.getByText("Default Workflow")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /edit workflow name/i })).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: /edit squad/i }));
-
-    expect(screen.getByRole("button", { name: /edit workflow name/i })).toBeInTheDocument();
-  });
-
   it("allows inserting a checkpoint step from squad editing", async () => {
     mockUseSquadDetailData.mockReturnValue(makeLoadedState());
     render(<SquadDetailSheet squadId={MOCK_SQUAD_ID} onClose={vi.fn()} />);

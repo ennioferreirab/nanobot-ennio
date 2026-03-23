@@ -27,6 +27,7 @@ vi.mock("@/hooks/useBoardColumns", () => ({
 vi.mock("motion/react", () => ({
   LayoutGroup: ({ children }: React.PropsWithChildren) => <>{children}</>,
   useReducedMotion: () => false,
+  AnimatePresence: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }));
 
 // Mock motion/react-client
@@ -214,21 +215,11 @@ describe("KanbanBoard", () => {
     mockBoardView = defaultBoardView({ tasks });
     mockColumns = buildColumns(tasks);
     render(<KanbanBoard />);
-    expect(screen.getByText("Inbox")).toBeInTheDocument();
-    expect(screen.getByText("Assigned")).toBeInTheDocument();
-    expect(screen.getByText("In Progress")).toBeInTheDocument();
-    expect(screen.getByText("Review")).toBeInTheDocument();
-    expect(screen.getByText("Done")).toBeInTheDocument();
-  });
-
-  it("renders the lighter column heading treatment", () => {
-    const tasks = [makeTask()];
-    mockBoardView = defaultBoardView({ tasks });
-    mockColumns = buildColumns(tasks);
-
-    render(<KanbanBoard />);
-
-    expect(screen.getByText("Inbox")).toHaveClass("text-lg");
+    expect(screen.getByRole("heading", { level: 2, name: "Inbox" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Assigned" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "In Progress" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Review" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Done" })).toBeInTheDocument();
   });
 
   it("shows empty state message when no tasks exist", () => {
@@ -364,8 +355,14 @@ describe("KanbanBoard", () => {
     expect(screen.getByText("Step Blocked")).toBeInTheDocument();
     expect(screen.getByText("Step Crashed")).toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "Task With Steps", level: 3 })).toHaveLength(2);
-    const assignedHeaderRow = screen.getByText("Assigned").parentElement;
-    const inProgressHeaderRow = screen.getByText("In Progress").parentElement;
+    const assignedHeaderRow = screen.getByRole("heading", {
+      level: 2,
+      name: "Assigned",
+    }).parentElement;
+    const inProgressHeaderRow = screen.getByRole("heading", {
+      level: 2,
+      name: "In Progress",
+    }).parentElement;
     expect(within(assignedHeaderRow!).getByText("3")).toBeInTheDocument();
     expect(within(inProgressHeaderRow!).getByText("2")).toBeInTheDocument();
     expect(

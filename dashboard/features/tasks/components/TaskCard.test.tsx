@@ -33,6 +33,7 @@ vi.mock("motion/react-client", async (importOriginal) => {
 
 vi.mock("motion/react", () => ({
   useReducedMotion: () => false,
+  AnimatePresence: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }));
 
 function makeTask(overrides: Partial<Doc<"tasks">> = {}): Doc<"tasks"> {

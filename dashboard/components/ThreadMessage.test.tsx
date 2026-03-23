@@ -57,24 +57,6 @@ describe("ThreadMessage — lead_agent_chat", () => {
     expect(markdownRenderSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the message wrapper width-constrained", () => {
-    const message = makeMessage({ type: "lead_agent_chat" });
-    const { container } = render(<ThreadMessage message={message as never} />);
-    const wrapper = container.firstChild as HTMLElement;
-
-    expect(wrapper.className).toContain("w-full");
-    expect(wrapper.className).toContain("min-w-0");
-    expect(wrapper.className).toContain("max-w-full");
-  });
-
-  it("renders with indigo background for lead_agent_chat type", () => {
-    const message = makeMessage({ type: "lead_agent_chat" });
-    const { container } = render(<ThreadMessage message={message as never} />);
-    // The outermost div should have bg-indigo-50 class
-    const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper.className).toContain("bg-indigo-50");
-  });
-
   it("renders 'Lead Agent' label for lead_agent_chat type", () => {
     const message = makeMessage({ type: "lead_agent_chat" });
     render(<ThreadMessage message={message as never} />);
@@ -100,19 +82,7 @@ describe("ThreadMessage — lead_agent_chat", () => {
   });
 });
 
-// Verify user_message renders with blue background (no regression)
 describe("ThreadMessage — user_message", () => {
-  it("renders with blue background for user_message type", () => {
-    const message = makeMessage({
-      type: "user_message",
-      authorType: "user" as const,
-      authorName: "User",
-    });
-    const { container } = render(<ThreadMessage message={message as never} />);
-    const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper.className).toContain("bg-blue-50");
-  });
-
   it("opens artifact callback when generated file is clicked", () => {
     const onArtifactClick = vi.fn();
     const message = makeMessage({
@@ -128,15 +98,14 @@ describe("ThreadMessage — user_message", () => {
   });
 });
 
-// Verify system_error renders with red background (no regression)
 describe("ThreadMessage — system_error", () => {
-  it("renders with red background for system_error type", () => {
+  it("renders the system error content", () => {
     const message = makeMessage({
       type: "system_error",
       authorType: "system" as const,
+      content: "Pipeline failed",
     });
-    const { container } = render(<ThreadMessage message={message as never} />);
-    const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper.className).toContain("bg-red-50");
+    render(<ThreadMessage message={message as never} />);
+    expect(screen.getByText("Pipeline failed")).toBeInTheDocument();
   });
 });

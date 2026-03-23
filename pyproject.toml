@@ -63,9 +63,10 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 timeout = 60
 timeout_method = "thread"
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not slow'"
 markers = [
     "integration: tests requiring external services (Convex backend)",
+    "slow: tests intentionally excluded from the fast local lane",
 ]
 
 [dependency-groups]

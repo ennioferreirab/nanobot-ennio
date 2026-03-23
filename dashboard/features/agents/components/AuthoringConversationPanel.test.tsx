@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen, fireEvent } from "@testing-library/react";
 import type { TranscriptMessage } from "@/features/agents/hooks/useAuthoringSession";
 import { AuthoringConversationPanel } from "./AuthoringConversationPanel";
 
@@ -53,8 +52,8 @@ describe("AuthoringConversationPanel", () => {
     );
 
     const input = screen.getByRole("textbox");
-    await userEvent.type(input, "I want a researcher agent");
-    await userEvent.click(screen.getByRole("button", { name: /send/i }));
+    fireEvent.change(input, { target: { value: "I want a researcher agent" } });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     expect(handleSend).toHaveBeenCalledWith("I want a researcher agent");
   });
@@ -71,7 +70,8 @@ describe("AuthoringConversationPanel", () => {
     );
 
     const input = screen.getByRole("textbox");
-    await userEvent.type(input, "Hello{Enter}");
+    fireEvent.change(input, { target: { value: "Hello" } });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     expect(handleSend).toHaveBeenCalledWith("Hello");
   });

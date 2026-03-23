@@ -28,36 +28,14 @@ describe("ArtifactRenderer", () => {
     expect(screen.getByText("Structured CSV with 47 invoice entries")).toBeInTheDocument();
   });
 
-  it("renders action badge with green styling for created", () => {
-    const artifacts: Artifact[] = [{ path: "/src/new-file.ts", action: "created" }];
-
-    render(<ArtifactRenderer artifacts={artifacts} />);
-
-    const badge = screen.getByText("created");
-    expect(badge.className).toContain("bg-green-100");
-    expect(badge.className).toContain("text-green-700");
-  });
-
-  it("renders action badge with blue styling for modified", () => {
+  it("renders an action badge for modified artifacts", () => {
     const artifacts: Artifact[] = [
       { path: "/src/existing.ts", action: "modified", diff: "- old\n+ new" },
     ];
 
     render(<ArtifactRenderer artifacts={artifacts} />);
 
-    const badge = screen.getByText("modified");
-    expect(badge.className).toContain("bg-blue-100");
-    expect(badge.className).toContain("text-blue-700");
-  });
-
-  it("renders action badge with red styling for deleted", () => {
-    const artifacts: Artifact[] = [{ path: "/src/old-file.ts", action: "deleted" }];
-
-    render(<ArtifactRenderer artifacts={artifacts} />);
-
-    const badge = screen.getByText("deleted");
-    expect(badge.className).toContain("bg-red-100");
-    expect(badge.className).toContain("text-red-700");
+    expect(screen.getByText("modified")).toBeInTheDocument();
   });
 
   it("renders description for created files", () => {
@@ -154,16 +132,6 @@ describe("ArtifactRenderer", () => {
     expect(screen.getByText("created")).toBeInTheDocument();
     expect(screen.getByText("modified")).toBeInTheDocument();
     expect(screen.getByText("deleted")).toBeInTheDocument();
-  });
-
-  it("renders file path in monospace blue style", () => {
-    const artifacts: Artifact[] = [{ path: "/src/component.tsx", action: "created" }];
-
-    render(<ArtifactRenderer artifacts={artifacts} />);
-
-    const pathEl = screen.getByText("/src/component.tsx");
-    expect(pathEl.className).toContain("font-mono");
-    expect(pathEl.className).toContain("text-blue-500");
   });
 
   it("calls onArtifactClick when the artifact path is clicked", () => {

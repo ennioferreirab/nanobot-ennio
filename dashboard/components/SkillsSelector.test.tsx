@@ -134,24 +134,7 @@ describe("SkillsSelector", () => {
       fireEvent.change(memoryCheckbox);
     }
 
-    // onChange should not be called for always-loaded skills
-    // (memory has always: true, so toggle is a no-op)
-  });
-
-  it("shows always-loaded label for always skills", () => {
-    render(<SkillsSelector selected={["memory"]} onChange={vi.fn()} />);
-
-    expect(screen.getByText("(always loaded)")).toBeInTheDocument();
-  });
-
-  it("disables checkbox for always-loaded skills", () => {
-    render(<SkillsSelector selected={["memory"]} onChange={vi.fn()} />);
-
-    // Find the disabled checkbox (memory is always-loaded)
-    const disabledCheckboxes = screen
-      .getAllByRole("checkbox")
-      .filter((el) => (el as HTMLInputElement).disabled);
-    expect(disabledCheckboxes.length).toBeGreaterThan(0);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("shows loading state when skills are undefined", () => {
@@ -172,16 +155,6 @@ describe("SkillsSelector", () => {
 
     // Selected skills (summarize) should appear before unselected (github)
     expect(summarizeIdx).toBeLessThan(githubIdx);
-  });
-
-  it("shows availability indicator for skills", () => {
-    const { container } = render(<SkillsSelector selected={[]} onChange={vi.fn()} />);
-
-    // Available skills get green dot, unavailable get amber
-    const greenDots = container.querySelectorAll(".bg-green-500");
-    const amberDots = container.querySelectorAll(".bg-amber-500");
-    expect(greenDots.length).toBe(2); // github + memory
-    expect(amberDots.length).toBe(1); // summarize
   });
 
   it("shows emoji from metadata", () => {

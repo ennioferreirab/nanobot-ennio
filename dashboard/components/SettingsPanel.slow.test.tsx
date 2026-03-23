@@ -47,7 +47,6 @@ describe("SettingsPanel", () => {
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.getByText("Task Timeout (minutes)")).toBeInTheDocument();
     expect(screen.getByText("Inter-Agent Review Timeout (minutes)")).toBeInTheDocument();
-    expect(screen.getByText("Default LLM Model")).toBeInTheDocument();
 
     const inputs = screen.getAllByRole("spinbutton");
     expect(inputs[0]).toHaveValue(30);
@@ -140,14 +139,15 @@ describe("SettingsPanel", () => {
   it("calls set mutation immediately when changing LLM model select", async () => {
     render(<SettingsPanel />);
 
+    fireEvent.click(screen.getByRole("button", { name: "Models" }));
+
     // Open the select and pick a model
-    const trigger = screen.getAllByRole("combobox")[0];
+    const [trigger] = screen.getAllByRole("combobox");
     fireEvent.click(trigger);
 
-    const option = screen.getAllByRole("option", { name: "High" })[0];
-    fireEvent.click(option);
-
+    const option = screen.getByRole("option", { name: "High" });
     await act(async () => {
+      fireEvent.click(option);
       await Promise.resolve();
     });
 

@@ -72,7 +72,7 @@ describe("SquadWorkflowCanvas", () => {
     } as never,
   ];
 
-  it("renders the workflow in a canvas shell and opens step editing from node click", async () => {
+  it("renders the workflow in a canvas shell and opens step editing from node click", () => {
     const onChange = vi.fn();
 
     render(
@@ -88,7 +88,7 @@ describe("SquadWorkflowCanvas", () => {
 
     expect(screen.getByTestId("squad-workflow-react-flow")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByTestId("workflow-node-step-1"));
+    fireEvent.click(screen.getByTestId("workflow-node-step-1"));
 
     expect(screen.getByTestId("squad-workflow-step-editor")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Review")).toBeInTheDocument();
@@ -112,7 +112,7 @@ describe("SquadWorkflowCanvas", () => {
     expect(screen.getByRole("tab", { name: "Criteria" })).toBeInTheDocument();
     expect(screen.queryByText(/^step-1$/i)).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByTestId("workflow-node-step-2"));
+    fireEvent.click(screen.getByTestId("workflow-node-step-2"));
 
     expect(screen.getByLabelText(/step 2 title/i)).toHaveValue("Revise");
     expect(screen.getByLabelText(/step 2 title/i)).toBeDisabled();

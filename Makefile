@@ -4,8 +4,10 @@
 # make up          Start detached — runs in background
 # make down        Stop everything
 #
-# make test        Unit tests only (no Convex needed, worktree-safe)
-# make check       Lint + typecheck + unit tests (worktree-safe)
+# make test        Fast unit tests only (no Convex needed, worktree-safe)
+# make test-full   Fast + slow unit tests (no Convex needed, worktree-safe)
+# make check       Fast lint + typecheck + tests (worktree-safe)
+# make check-full  Full lint + typecheck + tests (worktree-safe)
 #
 # make docker-test       Spin up isolated test instance (auto-detects ports)
 # make docker-test-down  Stop the test instance
@@ -16,8 +18,8 @@
 # make format       Format all code
 # ──────────────────────────────────────────────────────────────────
 
-.PHONY: install start up down test check \
-        test-py test-ts lint lint-py lint-ts typecheck typecheck-py typecheck-ts \
+.PHONY: install start up down test test-full check check-full \
+        test-py test-py-full test-ts test-ts-full lint lint-py lint-ts typecheck typecheck-py typecheck-ts \
         format format-py format-ts \
         docker-test docker-test-down
 
@@ -44,16 +46,26 @@ down:
 
 test: test-py test-ts
 
+test-full: test-py-full test-ts-full
+
 test-py:
 	uv run pytest
 
+test-py-full:
+	uv run pytest -o addopts="-m 'not integration'"
+
 test-ts:
 	cd dashboard && npm run test
+
+test-ts-full:
+	cd dashboard && npm run test:full
 
 # ─── Validation (pre-commit / pre-merge) ─────────────────────────
 # Runs everything that doesn't need a running stack.
 
 check: lint typecheck test
+
+check-full: lint typecheck test-full
 
 # ─── Linting ──────────────────────────────────────────────────────
 

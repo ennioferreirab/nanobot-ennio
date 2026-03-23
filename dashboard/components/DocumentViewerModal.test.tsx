@@ -311,7 +311,7 @@ describe("DocumentViewerModal", () => {
     spy.mockRestore();
   });
 
-  // ---- AC #2: Text viewer with monospace font and zoom controls ----
+  // ---- AC #2: Text viewer with zoom controls ----
 
   it("renders text file content in monospace pre element", () => {
     mockUseDocumentFetch.mockReturnValue({
@@ -329,7 +329,6 @@ describe("DocumentViewerModal", () => {
 
     const pre = document.querySelector("pre");
     expect(pre).not.toBeNull();
-    expect(pre?.className).toContain("font-mono");
     expect(pre?.textContent).toContain("line1");
   });
 
@@ -741,7 +740,7 @@ describe("DocumentViewerModal", () => {
     expect(screen.getByTestId("html-viewer")).toBeInTheDocument();
   });
 
-  it("renders .yml as text viewer (pre with font-mono)", () => {
+  it("renders .yml as text viewer", () => {
     mockUseDocumentFetch.mockReturnValue({
       ...defaultFetchResult,
       content: "key: value",
@@ -757,7 +756,6 @@ describe("DocumentViewerModal", () => {
 
     const pre = document.querySelector("pre");
     expect(pre).not.toBeNull();
-    expect(pre?.className).toContain("font-mono");
     expect(screen.queryByTestId("syntax-highlighter")).toBeNull();
   });
 

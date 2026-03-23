@@ -130,25 +130,41 @@ The Convex mutation that saves the title? The React hook that fetches it? Don't 
 
 ## Running Tests
 
+The project now has **two local lanes**:
+
+- **Fast lane** — default for day-to-day development. Excludes Python tests marked `slow` and frontend files named `*.slow.test.ts(x)`.
+- **Full lane** — runs both the fast lane and the slower local regression suites before merge.
+
 ### Commands
 
 | Scope | Command |
 |-------|---------|
 | All Python | `uv run pytest` |
+| Full Python local lane | `uv run pytest -o addopts="-m 'not integration'"` |
 | Specific Python file | `uv run pytest tests/mc/test_executor.py` |
 | Specific Python test | `uv run pytest tests/mc/test_executor.py::TestHumanSize::test_bytes_below_mb` |
 | All TypeScript | `cd dashboard && npm run test` |
+| Slow TypeScript lane | `cd dashboard && npm run test:slow` |
+| Full TypeScript local lane | `cd dashboard && npm run test:full` |
 | Specific TS file | `cd dashboard && npx vitest run path/to/file.test.ts` |
 | Architecture only | `cd dashboard && npm run test:architecture` |
 | E2E | `cd dashboard && npm run test:e2e` |
+| Fast `make` lane | `make check` |
+| Full `make` lane | `make check-full` |
+
+### Slow Test Conventions
+
+- Python tests that use real backoff, long polling, subprocess coordination, or deliberate timeout behavior belong behind `@pytest.mark.slow`.
+- Frontend tests that are intentionally expensive should live in `*.slow.test.ts` or `*.slow.test.tsx`.
+- A slow test is still a real test. Move it out of the fast lane only when the behavior is valuable but too expensive for the default loop.
 
 ### When to Run
 
 | Moment | What to run |
 |--------|-------------|
 | During development | Only the tests you're touching |
-| Before committing | All tests in the affected layer (Python OR TypeScript) |
-| Before merging | Full suite: `uv run pytest && cd dashboard && npm run test` |
+| Before committing | `make check` or the affected fast layer command |
+| Before merging | `make check-full` |
 | Architecture tests | Always — these gate the PR |
 
 ---

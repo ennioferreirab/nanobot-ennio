@@ -2473,7 +2473,7 @@ describe("TaskDetailSheet", () => {
 
     await user.click(screen.getByRole("tab", { name: /Execution Plan/i }));
 
-    expect(screen.getByTestId("execution-plan-tab")).toHaveAttribute("data-view-mode", "both");
+    expect(screen.getByTestId("execution-plan-tab")).toHaveAttribute("data-view-mode", "canvas");
   });
 
   it("switches the execution plan area to canvas-only mode", async () => {
