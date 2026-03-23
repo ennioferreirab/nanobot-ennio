@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-import {
-  AgentSidebarItem,
-  getInitials,
-  getAvatarColor,
-} from "@/features/agents/components/AgentSidebarItem";
+import { AgentSidebarItem } from "@/features/agents/components/AgentSidebarItem";
+import { getInitials, getAvatarColor } from "@/lib/agentUtils";
 import type { AgentSidebarItemStateData } from "@/features/agents/hooks/useAgentSidebarItemState";
 
 const defaultHookData: AgentSidebarItemStateData = {

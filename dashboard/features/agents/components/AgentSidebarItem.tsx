@@ -8,6 +8,7 @@ import { RotateCcw, Terminal } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { AgentStatus } from "@/lib/constants";
 import { useBoard } from "@/components/BoardContext";
+import { getInitials, getAvatarColor } from "@/lib/agentUtils";
 
 const STATUS_DOT_STYLES: Record<AgentStatus, string> = {
   active: "bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.5)]",
@@ -16,34 +17,6 @@ const STATUS_DOT_STYLES: Record<AgentStatus, string> = {
 };
 
 const DISABLED_DOT_STYLE = "bg-red-500";
-
-const AVATAR_COLORS = [
-  "bg-blue-500",
-  "bg-emerald-500",
-  "bg-violet-500",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-cyan-500",
-  "bg-indigo-500",
-  "bg-teal-500",
-];
-
-export function getAvatarColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
-
-export function getInitials(displayName: string): string {
-  const words = displayName.trim().split(/\s+/);
-  const first = (s: string) => [...s][0] ?? "";
-  if (words.length >= 2) {
-    return (first(words[0]) + first(words[1])).toUpperCase();
-  }
-  return [...displayName].slice(0, 2).join("").toUpperCase();
-}
 
 interface AgentSidebarItemProps {
   agent: Doc<"agents">;

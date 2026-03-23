@@ -40,7 +40,7 @@ import { SkillsSelector } from "@/components/SkillsSelector";
 import { SkillDetailDialog } from "@/features/agents/components/SkillDetailDialog";
 import { PromptEditModal, type PromptVariable } from "@/components/PromptEditModal";
 import { AgentTextViewerModal } from "@/components/AgentTextViewerModal";
-import { getAvatarColor, getInitials } from "@/features/agents/components/AgentSidebarItem";
+import { getAvatarColor, getInitials } from "@/lib/agentUtils";
 import { useAgentConfigSheetData } from "@/features/agents/hooks/useAgentConfigSheetData";
 import { useActiveSquadsForAgent } from "@/features/agents/hooks/useActiveSquadsForAgent";
 import type { AgentStatus } from "@/lib/constants";
@@ -482,21 +482,22 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
         >
           {isLoaded ? (
             <>
-              <SheetHeader className="px-6 pt-6 pb-4">
-                <div className="flex items-center gap-3">
+              <SheetHeader className="px-6 pt-6 pb-5">
+                <div className="flex items-center gap-4">
                   <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-medium text-white ${getAvatarColor(agent.name)}`}
+                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-medium text-white ${getAvatarColor(agent.name)}`}
                   >
                     {getInitials(agent.displayName)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <SheetTitle className="text-lg font-semibold">{agent.displayName}</SheetTitle>
+                    <SheetTitle className="text-title">{agent.displayName}</SheetTitle>
                     <SheetDescription asChild>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-caption text-muted-foreground">@{agent.name}</span>
                         <span
-                          className={`h-2 w-2 rounded-full ${agent.enabled === false ? "bg-red-500" : STATUS_DOT_STYLES[agent.status as AgentStatus] || STATUS_DOT_STYLES.idle}`}
+                          className={`h-1.5 w-1.5 rounded-full ${agent.enabled === false ? "bg-red-500" : STATUS_DOT_STYLES[agent.status as AgentStatus] || STATUS_DOT_STYLES.idle}`}
                         />
-                        <span className="text-xs">
+                        <span className="text-caption text-muted-foreground">
                           {agent.enabled === false ? "Deactivated" : agent.status}
                         </span>
                       </div>
@@ -507,7 +508,7 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
 
               <Separator />
 
-              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-4 space-y-4">
+              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-6 space-y-8">
                 {saveError && (
                   <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
                     <p className="text-sm text-destructive">{saveError}</p>
@@ -515,10 +516,13 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                 )}
 
                 {/* Active toggle */}
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label htmlFor="agent-enabled-toggle" className="text-sm font-medium">
-                      {isSystemAgent ? "Active (System)" : enabled ? "Active" : "Deactivated"}
+                    <label
+                      htmlFor="agent-enabled-toggle"
+                      className="text-caption text-muted-foreground"
+                    >
+                      {isSystemAgent ? "ACTIVE (SYSTEM)" : enabled ? "ACTIVE" : "DEACTIVATED"}
                     </label>
                     <Switch
                       id="agent-enabled-toggle"
@@ -539,8 +543,8 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                 </div>
 
                 {/* Name (read-only) */}
-                <div className="space-y-1">
-                  <label className="text-sm font-medium flex items-center gap-1.5">
+                <div className="space-y-2">
+                  <label className="text-caption text-muted-foreground flex items-center gap-1.5 uppercase tracking-wider">
                     Name
                     <Lock className="h-3 w-3 text-muted-foreground" />
                   </label>
@@ -548,14 +552,18 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                 </div>
 
                 {/* Display Name */}
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Display Name</label>
+                <div className="space-y-2">
+                  <label className="text-caption text-muted-foreground uppercase tracking-wider">
+                    Display Name
+                  </label>
                   <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
                 </div>
 
                 {/* Role */}
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Role</label>
+                <div className="space-y-2">
+                  <label className="text-caption text-muted-foreground uppercase tracking-wider">
+                    Role
+                  </label>
                   <Input
                     value={role}
                     onChange={(e) => {
@@ -572,11 +580,11 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                 </div>
 
                 {/* Prompt */}
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label htmlFor="agent-prompt" className="text-sm font-medium">
-                      Prompt
-                    </label>
+                    <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
+                      SYSTEM PROMPT
+                    </h3>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -628,9 +636,11 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                 </div>
 
                 {/* Soul */}
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">Soul</label>
+                    <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
+                      SOUL
+                    </h3>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -654,8 +664,10 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                 </div>
 
                 {/* Model */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Model</label>
+                <div className="space-y-3">
+                  <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
+                    MODEL CONFIGURATION
+                  </h3>
                   <Select
                     value={
                       modelMode === "default"
@@ -711,8 +723,10 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                   </Select>
 
                   {modelMode === "custom" && (
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">Reasoning</label>
+                    <div className="space-y-2">
+                      <label className="text-caption text-muted-foreground uppercase tracking-wider">
+                        Reasoning
+                      </label>
                       <Select
                         value={reasoningLevel || "__off__"}
                         onValueChange={(val) => setReasoningLevel(val === "__off__" ? "" : val)}
@@ -808,11 +822,15 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                 </div>
 
                 {modelMode === "cc" && (
-                  <div className="space-y-3 border-t pt-3">
-                    <label className="text-sm font-semibold">Claude Code Settings</label>
+                  <div className="space-y-4 border-t pt-6">
+                    <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
+                      CLAUDE CODE SETTINGS
+                    </h3>
 
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">CC Model</label>
+                    <div className="space-y-2">
+                      <label className="text-caption text-muted-foreground uppercase tracking-wider">
+                        CC Model
+                      </label>
                       <Select
                         value={customModel || "__none__"}
                         onValueChange={(value) => {
@@ -835,8 +853,10 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                       </Select>
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">Permission Mode</label>
+                    <div className="space-y-2">
+                      <label className="text-caption text-muted-foreground uppercase tracking-wider">
+                        Permission Mode
+                      </label>
                       <Select value={ccPermissionMode} onValueChange={setCcPermissionMode}>
                         <SelectTrigger>
                           <SelectValue />
@@ -855,8 +875,10 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                       </Select>
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">Max Budget (USD)</label>
+                    <div className="space-y-2">
+                      <label className="text-caption text-muted-foreground uppercase tracking-wider">
+                        Max Budget (USD)
+                      </label>
                       <Input
                         type="number"
                         min={0}
@@ -867,8 +889,10 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                       />
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">Max Turns</label>
+                    <div className="space-y-2">
+                      <label className="text-caption text-muted-foreground uppercase tracking-wider">
+                        Max Turns
+                      </label>
                       <Input
                         type="number"
                         min={1}
@@ -890,8 +914,10 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
 
                 {/* Active Squads */}
                 {activeSquads.length > 0 && (
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">Active Squads</label>
+                  <div className="space-y-3">
+                    <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
+                      ACTIVE SQUADS
+                    </h3>
                     <div className="space-y-1">
                       {activeSquads.map((squad) => (
                         <button
@@ -907,9 +933,11 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                 )}
 
                 {/* Memory */}
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">Memory</label>
+                    <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
+                      MEMORY
+                    </h3>
                     <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
@@ -947,9 +975,11 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                 </div>
 
                 {/* History */}
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">History</label>
+                    <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
+                      HISTORY
+                    </h3>
                     <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"

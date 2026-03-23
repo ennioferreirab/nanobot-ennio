@@ -5,22 +5,16 @@ import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import {
   ArrowRight,
   CheckCircle,
-  CheckCircle2,
-  Circle,
-  CircleDot,
   GitMerge,
   Loader2,
-  Lock,
   RefreshCw,
   Square,
   Trash2,
-  User,
-  XCircle,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { STATUS_COLORS } from "@/lib/constants";
 import type { EditablePlanStep } from "@/lib/types";
+import { getInitials, getAvatarColor } from "@/lib/agentUtils";
 
 /* ── Status helpers (shared with ExecutionPlanTab) ── */
 
@@ -115,24 +109,46 @@ export function getStatusMeta(status: string): StepStatusMeta {
   }
 }
 
-function StepStatusIcon({ meta }: { meta: StepStatusMeta }) {
-  const cls = cn("h-3.5 w-3.5", meta.iconColorClass, meta.icon === "running" && "animate-spin");
+/* ── Status dot indicator ── */
+
+function StatusDot({ meta }: { meta: StepStatusMeta }) {
   switch (meta.icon) {
     case "completed":
-      return <CheckCircle2 className={cls} />;
+      return <span className="inline-block w-2 h-2 rounded-full bg-green-500 shrink-0" />;
     case "running":
-      return <Loader2 className={cls} />;
+      return (
+        <span className="relative inline-flex shrink-0 w-2 h-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+          <span className="relative inline-flex rounded-full w-2 h-2 bg-blue-500" />
+        </span>
+      );
     case "failed":
-      return <XCircle className={cls} />;
+      return <span className="inline-block w-2 h-2 rounded-full bg-red-500 shrink-0" />;
     case "blocked":
-      return <Lock className={cls} />;
-    case "assigned":
-      return <CircleDot className={cls} />;
     case "waiting_human":
-      return <User className={cls} />;
+      return <span className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0" />;
     default:
-      return <Circle className={cls} />;
+      // planned / pending / assigned — gray outline dot
+      return (
+        <span className="inline-block w-2 h-2 rounded-full border border-muted-foreground/40 shrink-0" />
+      );
   }
+}
+
+/* ── Border color mapping ── */
+
+function getBorderColorClass(avatarBgClass: string): string {
+  const map: Record<string, string> = {
+    "bg-blue-500": "border-l-blue-500",
+    "bg-emerald-500": "border-l-emerald-500",
+    "bg-violet-500": "border-l-violet-500",
+    "bg-amber-500": "border-l-amber-500",
+    "bg-rose-500": "border-l-rose-500",
+    "bg-cyan-500": "border-l-cyan-500",
+    "bg-indigo-500": "border-l-indigo-500",
+    "bg-teal-500": "border-l-teal-500",
+  };
+  return map[avatarBgClass] ?? "border-l-border";
 }
 
 /* ── Node data type ── */
@@ -198,6 +214,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
     isPaused,
     stepErrorMessage,
   } = data;
+
   const resolvedStatus = status ?? "planned";
   const meta = isVisualOnly
     ? {
@@ -207,10 +224,18 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
         icon: "pending" as const,
       }
     : getStatusMeta(resolvedStatus);
+
   const normalizedStatus = normalizeStatus(resolvedStatus);
   const isWaitingHuman = normalizedStatus === "waiting_human";
   const isRunningHuman = normalizedStatus === "running" && step.assignedAgent === "human";
-  const agentDisplay = isVisualOnly || step.assignedAgent === "human" ? null : step.assignedAgent;
+  const agentName =
+    isVisualOnly || !step.assignedAgent || step.assignedAgent === "human"
+      ? null
+      : step.assignedAgent;
+
+  const avatarBgClass = agentName ? getAvatarColor(agentName) : "bg-muted";
+  const borderColorClass = agentName ? getBorderColorClass(avatarBgClass) : "border-l-border";
+
   const showRetryButton =
     (!isEditMode || isPaused) &&
     !!onRetry &&
@@ -228,8 +253,9 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
       <div
         data-testid={`flow-step-node-${step.tempId}`}
         className={cn(
-          "relative rounded-lg border bg-background px-3 py-2 shadow-sm w-[220px]",
-          selected ? "border-blue-500 ring-1 ring-blue-500/30" : "border-border",
+          "relative rounded-lg border border-l-2 bg-background px-3 py-2 shadow-sm w-[220px]",
+          borderColorClass,
+          selected ? "ring-1 ring-primary/40" : "border-border",
           meta.runningPulse && "motion-safe:animate-pulse",
           onStepClick && "cursor-pointer hover:border-primary/50 transition-colors",
         )}
@@ -250,22 +276,37 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           className="!opacity-0 !pointer-events-none !w-2 !h-2"
         />
 
-        {/* Header: status icon + title */}
-        <div className="flex items-center gap-1.5 min-w-0">
-          <StepStatusIcon meta={meta} />
-          <span className="text-xs font-medium truncate flex-1">{step.title || "Untitled"}</span>
-          <Badge
-            variant="secondary"
-            className={cn("text-[9px] font-medium shrink-0 px-1.5 py-0", meta.badgeClass)}
-          >
-            {meta.badgeText}
-          </Badge>
+        {/* Row 1: Agent avatar + agent name */}
+        <div className="flex items-center gap-1.5 min-w-0 mb-1">
+          {agentName ? (
+            <span
+              className={cn(
+                "inline-flex items-center justify-center w-6 h-6 rounded-full text-white shrink-0",
+                "text-[9px] font-semibold leading-none",
+                avatarBgClass,
+              )}
+              aria-hidden="true"
+            >
+              {getInitials(agentName)}
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-muted shrink-0"
+              aria-hidden="true"
+            />
+          )}
+          <span className="text-[11px] text-muted-foreground truncate flex-1">
+            {agentName ?? (isVisualOnly ? "merged" : "unassigned")}
+          </span>
         </div>
 
-        {/* Agent badge */}
-        {agentDisplay && (
-          <p className="text-[10px] text-muted-foreground mt-1 truncate">{agentDisplay}</p>
-        )}
+        {/* Row 2: Status dot + step title + duration placeholder */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <StatusDot meta={meta} />
+          <span className="text-[13px] font-medium truncate flex-1 leading-tight">
+            {step.title || "Untitled"}
+          </span>
+        </div>
 
         {isLiveStep && onOpenLive && !isEditMode && (
           <div className="mt-1">

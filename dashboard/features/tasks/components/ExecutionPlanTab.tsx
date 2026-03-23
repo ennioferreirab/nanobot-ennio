@@ -19,6 +19,7 @@ import {
   getMergeableSiblingIds,
 } from "@/lib/planUtils";
 import { useExecutionPlanActions } from "@/features/tasks/hooks/useExecutionPlanActions";
+import { StepListView } from "@/components/StepListView";
 
 const nodeTypes = { flowStep: FlowStepNode, start: StartNode, end: EndNode };
 
@@ -954,6 +955,26 @@ export function ExecutionPlanTab({
             <Background color="hsl(var(--border))" gap={15} size={1} />
             <Controls />
           </ReactFlow>
+        </div>
+      ) : null}
+
+      {viewMode === "steps" ? (
+        <div className="flex-1 overflow-y-auto p-4">
+          <StepListView
+            steps={displaySteps.map((s) => ({
+              stepId: s.stepId,
+              title: s.title,
+              description: s.description,
+              status: s.status,
+              assignedAgent: s.assignedAgent,
+              parallelGroup: s.parallelGroup,
+              errorMessage: s.errorMessage,
+              isLiveStep: !!s.liveId,
+            }))}
+            onStepClick={(stepId) => {
+              handleStepClick(stepId);
+            }}
+          />
         </div>
       ) : null}
     </div>
