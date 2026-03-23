@@ -240,7 +240,19 @@ function DashboardContent({ isXl }: { isXl: boolean }) {
         }}
       />
       <CommandPalette isOpen={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
-      <MobileTabBar activeTab={mobileTab} onTabChange={setMobileTab} />
+      <MobileTabBar
+        activeTab={mobileTab}
+        onTabChange={(tab) => {
+          setMobileTab(tab);
+          if (tab === "search") {
+            setMobileSearchOpen((prev) => !prev);
+          } else if (tab === "activity") {
+            setActivityPanelCollapsed((prev) => !prev);
+          } else if (tab === "settings") {
+            setSettingsOpen(true);
+          }
+        }}
+      />
     </SidebarProvider>
   );
 }
