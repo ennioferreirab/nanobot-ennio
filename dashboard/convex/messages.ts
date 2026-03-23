@@ -1,4 +1,4 @@
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v, ConvexError } from "convex/values";
@@ -114,7 +114,7 @@ export const listRecentUserMessages = query({
   },
 });
 
-export const listRecentUserMessagesForWatcher = internalQuery({
+export const listRecentUserMessagesForWatcher = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = Math.max(1, Math.min(args.limit ?? 50, 200));
@@ -134,7 +134,7 @@ export const listRecentUserMessagesForWatcher = internalQuery({
   },
 });
 
-export const listRecentByTaskForAskUser = internalQuery({
+export const listRecentByTaskForAskUser = query({
   args: { taskId: v.id("tasks"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = Math.max(1, Math.min(args.limit ?? 50, 200));

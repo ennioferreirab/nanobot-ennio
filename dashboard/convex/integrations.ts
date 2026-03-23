@@ -122,7 +122,7 @@ export const getConfigsByPlatform = internalQuery({
  * `enabled` exists; the compound `by_platform_enabled` index requires a
  * platform prefix.
  */
-export const getEnabledConfigs = internalQuery({
+export const getEnabledConfigs = query({
   args: {},
   handler: async (ctx) => {
     const all = await ctx.db.query("integrationConfigs").collect();
@@ -611,7 +611,7 @@ export const getOutboundPending = internalQuery({
   },
 });
 
-export const listRecentOutboundPendingByConfig = internalQuery({
+export const listRecentOutboundPendingByConfig = query({
   args: {
     configId: v.id("integrationConfigs"),
     limit: v.optional(v.number()),
@@ -643,7 +643,9 @@ export const listRecentOutboundPendingByConfig = internalQuery({
           internalId: mapping.internalId,
           items: await ctx.db
             .query("messages")
-            .withIndex("by_taskId_timestamp", (q) => q.eq("taskId", mapping.internalId))
+            .withIndex("by_taskId_timestamp", (q) =>
+              q.eq("taskId", mapping.internalId as Id<"tasks">),
+            )
             .order("desc")
             .take(perTaskLimit),
         })),
@@ -653,7 +655,9 @@ export const listRecentOutboundPendingByConfig = internalQuery({
           internalId: mapping.internalId,
           items: await ctx.db
             .query("activities")
-            .withIndex("by_taskId_timestamp", (q) => q.eq("taskId", mapping.internalId))
+            .withIndex("by_taskId_timestamp", (q) =>
+              q.eq("taskId", mapping.internalId as Id<"tasks">),
+            )
             .order("desc")
             .take(perTaskLimit),
         })),
