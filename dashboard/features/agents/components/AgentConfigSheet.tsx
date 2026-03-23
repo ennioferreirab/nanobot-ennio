@@ -29,29 +29,24 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  SelectGroup,
-  SelectLabel,
-  SelectSeparator,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
-import { Check, Lock, Pencil, Trash2 } from "lucide-react";
+import { Check, Lock, Pencil, Trash2, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SkillsSelector } from "@/components/SkillsSelector";
 import { SkillDetailDialog } from "@/features/agents/components/SkillDetailDialog";
 import { PromptEditModal, type PromptVariable } from "@/components/PromptEditModal";
 import { AgentTextViewerModal } from "@/components/AgentTextViewerModal";
 import { getAvatarColor, getInitials } from "@/lib/agentUtils";
+import { cn } from "@/lib/utils";
 import { useAgentConfigSheetData } from "@/features/agents/hooks/useAgentConfigSheetData";
 import { useActiveSquadsForAgent } from "@/features/agents/hooks/useActiveSquadsForAgent";
 import type { AgentStatus } from "@/lib/constants";
 import { SYSTEM_AGENT_NAMES } from "@/lib/constants";
 import type { Id } from "@/convex/_generated/dataModel";
 
-const STATUS_DOT_STYLES: Record<string, string> = {
-  active: "bg-blue-500",
-  idle: "bg-muted-foreground",
-  crashed: "bg-red-500",
-};
+const SQUAD_COLORS = ["bg-violet-500", "bg-teal-500", "bg-amber-500", "bg-rose-500"];
 
 type ModelMode = "default" | "tier" | "cc" | "custom";
 
@@ -152,6 +147,7 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
   const [showPromptModal, setShowPromptModal] = useState(false);
   const [showSoulModal, setShowSoulModal] = useState(false);
   const [viewingSkillName, setViewingSkillName] = useState<string | null>(null);
+  const [showSkillsPicker, setShowSkillsPicker] = useState(false);
 
   // Memory/history state (read-only, not part of form dirty state)
   const [memory, setMemory] = useState<string | null>(null);
@@ -478,7 +474,7 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
       <Sheet open={!!agentName} onOpenChange={(open) => !open && handleClose()}>
         <SheetContent
           side="right"
-          className="w-full sm:w-[480px] flex flex-col p-0 overflow-hidden"
+          className="w-full md:w-[50vw] lg:w-[720px] flex flex-col p-0 overflow-hidden"
         >
           {isLoaded ? (
             <>
@@ -494,12 +490,27 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                     <SheetDescription asChild>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-caption text-muted-foreground">@{agent.name}</span>
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${agent.enabled === false ? "bg-red-500" : STATUS_DOT_STYLES[agent.status as AgentStatus] || STATUS_DOT_STYLES.idle}`}
-                        />
-                        <span className="text-caption text-muted-foreground">
-                          {agent.enabled === false ? "Deactivated" : agent.status}
-                        </span>
+                        {agent.enabled === false ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 px-2.5 py-0.5 text-xs font-medium text-red-500">
+                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                            Deactivated
+                          </span>
+                        ) : (agent.status as AgentStatus) === "active" ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-0.5 text-xs font-medium text-green-500">
+                            <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                            Active
+                          </span>
+                        ) : (agent.status as AgentStatus) === "crashed" ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 px-2.5 py-0.5 text-xs font-medium text-red-500">
+                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                            Crashed
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                            {agent.status ?? "Idle"}
+                          </span>
+                        )}
                       </div>
                     </SheetDescription>
                   </div>
@@ -508,7 +519,7 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
 
               <Separator />
 
-              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-6 space-y-8">
+              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-8 py-6 space-y-8">
                 {saveError && (
                   <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
                     <p className="text-sm text-destructive">{saveError}</p>
@@ -581,21 +592,9 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
 
                 {/* Prompt */}
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
-                      SYSTEM PROMPT
-                    </h3>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label="Edit prompt"
-                      className="h-6 px-2 text-xs gap-1"
-                      onClick={() => setShowPromptModal(true)}
-                    >
-                      <Pencil className="h-3 w-3" />
-                      Edit
-                    </Button>
-                  </div>
+                  <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
+                    SYSTEM PROMPT
+                  </h3>
                   <Textarea
                     id="agent-prompt"
                     value={prompt}
@@ -611,6 +610,13 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                     rows={6}
                   />
                   {errors.prompt && <p className="text-xs text-red-500">{errors.prompt}</p>}
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline mt-1"
+                    onClick={() => setShowPromptModal(true)}
+                  >
+                    Edit in full screen
+                  </button>
                   {variables.length > 0 && (
                     <TooltipProvider>
                       <div className="flex flex-wrap gap-1 mt-1">
@@ -668,59 +674,75 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                   <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
                     MODEL CONFIGURATION
                   </h3>
-                  <Select
-                    value={
-                      modelMode === "default"
-                        ? "__default__"
-                        : modelMode === "cc"
-                          ? "__cc__"
-                          : modelMode === "tier"
-                            ? tierLevel || "__default__"
-                            : "__custom__"
-                    }
-                    onValueChange={(value) => {
-                      if (value === "__default__") {
-                        setModelMode("default");
-                        setTierLevel("");
-                        setCustomModel("");
-                      } else if (value === "__custom__") {
-                        setModelMode("custom");
-                        setTierLevel("");
-                      } else if (value === "__cc__") {
-                        setModelMode("cc");
-                        setTierLevel("");
-                        setReasoningLevel("");
-                        setCustomModel("claude-sonnet-4-6");
-                        setCcPermissionMode("bypassPermissions");
-                      } else {
-                        // Must be a tier level value (low/medium/high)
-                        setModelMode("tier");
-                        setTierLevel(value);
-                        setReasoningLevel("");
-                        setCustomModel("");
-                      }
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select model configuration" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__default__">System Default</SelectItem>
-                      <SelectSeparator />
-                      <SelectGroup>
-                        <SelectLabel>Tier Presets</SelectLabel>
-                        {TIER_LEVEL_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                      <SelectSeparator />
-                      <SelectItem value="__cc__">Claude Code...</SelectItem>
-                      <SelectSeparator />
-                      <SelectItem value="__custom__">Custom...</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="inline-flex items-center rounded-full border border-border p-1 gap-0.5">
+                    {(
+                      [
+                        { value: "default", label: "Default" },
+                        { value: "tier", label: "Tier" },
+                        { value: "cc", label: "Claude Code" },
+                        { value: "custom", label: "Custom" },
+                      ] as { value: ModelMode; label: string }[]
+                    ).map((mode) => (
+                      <button
+                        key={mode.value}
+                        type="button"
+                        onClick={() => {
+                          if (mode.value === "default") {
+                            setModelMode("default");
+                            setTierLevel("");
+                            setCustomModel("");
+                          } else if (mode.value === "custom") {
+                            setModelMode("custom");
+                            setTierLevel("");
+                          } else if (mode.value === "cc") {
+                            setModelMode("cc");
+                            setTierLevel("");
+                            setReasoningLevel("");
+                            setCustomModel("claude-sonnet-4-6");
+                            setCcPermissionMode("bypassPermissions");
+                          } else {
+                            // tier — keep existing tierLevel or reset
+                            setModelMode("tier");
+                            setReasoningLevel("");
+                            setCustomModel("");
+                          }
+                        }}
+                        className={cn(
+                          "h-8 rounded-full px-4 text-xs font-medium transition-colors",
+                          modelMode === mode.value
+                            ? "bg-secondary text-foreground border border-primary"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {modelMode === "tier" && (
+                    <div className="space-y-2">
+                      <label className="text-caption text-muted-foreground uppercase tracking-wider">
+                        Tier Level
+                      </label>
+                      <Select
+                        value={tierLevel || "__none__"}
+                        onValueChange={(value) => {
+                          setTierLevel(value === "__none__" ? "" : value);
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select tier level" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TIER_LEVEL_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   {modelMode === "custom" && (
                     <div className="space-y-2">
@@ -906,11 +928,52 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                 )}
 
                 {/* Skills */}
-                <SkillsSelector
-                  selected={skills}
-                  onChange={setSkills}
-                  onViewSkill={setViewingSkillName}
-                />
+                <div className="space-y-3">
+                  <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
+                    SKILLS
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {skills.map((skill) => (
+                      <span
+                        key={skill}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-foreground"
+                      >
+                        <button
+                          type="button"
+                          className="hover:underline text-left"
+                          onClick={() => setViewingSkillName(skill)}
+                        >
+                          {skill}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSkills(skills.filter((s) => s !== skill))}
+                          className="ml-0.5 rounded-full opacity-60 hover:opacity-100"
+                          aria-label={`Remove skill ${skill}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                    <Popover open={showSkillsPicker} onOpenChange={setShowSkillsPicker}>
+                      <PopoverTrigger asChild>
+                        <button type="button" className="text-xs text-primary hover:underline">
+                          + Add skill...
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-80 p-2" align="start">
+                        <SkillsSelector
+                          selected={skills}
+                          onChange={setSkills}
+                          onViewSkill={(name) => {
+                            setShowSkillsPicker(false);
+                            setViewingSkillName(name);
+                          }}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
 
                 {/* Active Squads */}
                 {activeSquads.length > 0 && (
@@ -918,15 +981,25 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                     <h3 className="text-micro uppercase tracking-wider text-muted-foreground">
                       ACTIVE SQUADS
                     </h3>
-                    <div className="space-y-1">
-                      {activeSquads.map((squad) => (
-                        <button
-                          key={squad._id}
-                          onClick={() => onOpenSquad?.(squad._id)}
-                          className="w-full text-left rounded-md border bg-muted/30 px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
-                        >
-                          {squad.displayName}
-                        </button>
+                    <div className="divide-y divide-border">
+                      {activeSquads.map((squad, i) => (
+                        <div key={squad._id} className="flex items-center justify-between py-2">
+                          <button
+                            onClick={() => onOpenSquad?.(squad._id)}
+                            className="flex items-center gap-2 text-sm hover:underline text-left"
+                          >
+                            <span
+                              className={cn(
+                                "h-2.5 w-2.5 rounded-full shrink-0",
+                                SQUAD_COLORS[i % SQUAD_COLORS.length],
+                              )}
+                            />
+                            {squad.displayName}
+                          </button>
+                          <span className="text-caption text-muted-foreground">
+                            {"role" in squad && squad.role ? String(squad.role) : "Member"}
+                          </span>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1015,6 +1088,30 @@ export function AgentConfigSheet({ agentName, onClose, onOpenSquad }: AgentConfi
                     <p className="text-xs text-muted-foreground italic">No history yet.</p>
                   )}
                 </div>
+
+                {/* Danger Zone */}
+                {!isSystemAgent && (
+                  <div className="border-t border-destructive/20 pt-6 mt-4">
+                    <h3 className="text-micro uppercase tracking-wider text-destructive/70 mb-3">
+                      DANGER ZONE
+                    </h3>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-destructive text-destructive hover:bg-destructive/10"
+                      onClick={() => {
+                        // TODO: wire up delete handler when backend supports it
+                        window.alert("Delete agent: not yet implemented");
+                      }}
+                    >
+                      Delete Agent
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      This action cannot be undone. All agent memory and configuration will be
+                      permanently deleted.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <Separator />
