@@ -254,24 +254,31 @@ export function StepListView({ steps, onStepClick, className }: StepListViewProp
     return <p className="text-sm text-muted-foreground text-center py-8">No execution steps</p>;
   }
 
-  // Build render elements: handle parallel groups
+  // Group steps by parallelGroup, preserving order within each group.
+  // Steps with the same parallelGroup run in parallel (side by side).
+  // Groups are rendered sequentially (top to bottom) ordered by their parallelGroup value.
+  const groupMap = new Map<string | number, StepListStep[]>();
+  const groupOrder: (string | number)[] = [];
+
+  for (const step of steps) {
+    const pg = step.parallelGroup ?? step.stepId; // fallback to unique key if no group
+    if (!groupMap.has(pg)) {
+      groupMap.set(pg, []);
+      groupOrder.push(pg);
+    }
+    groupMap.get(pg)!.push(step);
+  }
+
+  // Build render elements
   const elements: React.ReactNode[] = [];
-  let i = 0;
 
-  while (i < steps.length) {
-    const step = steps[i];
-    const pg = step.parallelGroup;
+  for (const pg of groupOrder) {
+    const groupSteps = groupMap.get(pg)!;
 
-    if (pg !== undefined && pg !== null && steps[i + 1]?.parallelGroup === pg) {
-      // Collect the full parallel group
-      const groupSteps: StepListStep[] = [];
-      while (i < steps.length && steps[i].parallelGroup === pg) {
-        groupSteps.push(steps[i]);
-        i++;
-      }
-
+    if (groupSteps.length > 1) {
+      // Parallel group — show PARALLEL label + side-by-side cards
       elements.push(
-        <div key={`parallel-group-${pg}-${i}`}>
+        <div key={`parallel-group-${pg}`}>
           <ParallelLabel />
           <div className="flex gap-3">
             {groupSteps.map((gs) => (
@@ -283,21 +290,25 @@ export function StepListView({ steps, onStepClick, className }: StepListViewProp
         </div>,
       );
     } else {
-      elements.push(<StepCard key={step.stepId} step={step} onClick={onStepClick} />);
-      i++;
+      // Single step
+      elements.push(
+        <StepCard key={groupSteps[0].stepId} step={groupSteps[0]} onClick={onStepClick} />,
+      );
     }
   }
 
-  // Interleave connectors between elements
+  // Interleave connectors between elements using groupOrder for status resolution
   const withConnectors: React.ReactNode[] = [];
-  for (let j = 0; j < elements.length; j++) {
+  for (let j = 0; j < groupOrder.length; j++) {
     withConnectors.push(elements[j]);
-    if (j < elements.length - 1) {
+    if (j < groupOrder.length - 1) {
+      const currentGroup = groupMap.get(groupOrder[j])!;
+      const nextGroup = groupMap.get(groupOrder[j + 1])!;
       withConnectors.push(
         <Connector
           key={`connector-${j}`}
-          currentStatus={getLastStatusInGroup(steps, elements, j)}
-          nextStatus={getFirstStatusInGroup(steps, elements, j + 1)}
+          currentStatus={resolveGroupStatus(currentGroup)}
+          nextStatus={resolveGroupStatus(nextGroup)}
         />,
       );
     }
@@ -306,72 +317,10 @@ export function StepListView({ steps, onStepClick, className }: StepListViewProp
   return <div className={cn("flex flex-col", className)}>{withConnectors}</div>;
 }
 
-/* ── Helpers for connector status resolution ── */
-
-/**
- * Given an element index, find the step index it corresponds to in the steps array.
- * For parallel groups the element spans multiple steps; returns the index of the first.
- */
-function resolveIndexForElement(
-  steps: StepListStep[],
-  elements: React.ReactNode[],
-  elementIndex: number,
-): number {
-  // Walk through elements counting steps consumed
-  let consumed = 0;
-  for (let k = 0; k < elementIndex; k++) {
-    consumed += countStepsInElement(steps, consumed);
-  }
-  return consumed;
-}
-
-function countStepsInElement(steps: StepListStep[], startIdx: number): number {
-  if (startIdx >= steps.length) return 1;
-  const pg = steps[startIdx].parallelGroup;
-  if (pg === undefined || pg === null) return 1;
-  // Count consecutive steps with same parallelGroup
-  let count = 0;
-  let i = startIdx;
-  while (i < steps.length && steps[i].parallelGroup === pg) {
-    count++;
-    i++;
-  }
-  return count > 1 ? count : 1;
-}
-
-/**
- * Get the last step's status for a given element (for parallel groups: use the
- * status of any completed step, else the running step, else the first).
- */
-function getLastStatusInGroup(
-  steps: StepListStep[],
-  elements: React.ReactNode[],
-  elementIndex: number,
-): string | undefined {
-  const startIdx = resolveIndexForElement(steps, elements, elementIndex);
-  const count = countStepsInElement(steps, startIdx);
-  const groupSteps = steps.slice(startIdx, startIdx + count);
-  // For single step
-  if (groupSteps.length === 1) return groupSteps[0].status;
-  // For parallel: completed if all completed, else running if any running
-  if (groupSteps.every((s) => s.status === "completed")) return "completed";
-  if (groupSteps.some((s) => s.status === "running" || s.status === "in_progress"))
-    return "running";
-  return groupSteps[0].status;
-}
-
-function getFirstStatusInGroup(
-  steps: StepListStep[],
-  elements: React.ReactNode[],
-  elementIndex: number,
-): string | undefined {
-  const startIdx = resolveIndexForElement(steps, elements, elementIndex);
-  if (startIdx >= steps.length) return undefined;
-  const count = countStepsInElement(steps, startIdx);
-  const groupSteps = steps.slice(startIdx, startIdx + count);
-  if (groupSteps.length === 1) return groupSteps[0].status;
-  if (groupSteps.some((s) => s.status === "running" || s.status === "in_progress"))
-    return "running";
-  if (groupSteps.every((s) => s.status === "completed")) return "completed";
-  return groupSteps[0].status;
+/** Resolve a group's aggregate status for connector coloring. */
+function resolveGroupStatus(group: StepListStep[]): string | undefined {
+  if (group.length === 1) return group[0].status;
+  if (group.every((s) => s.status === "completed")) return "completed";
+  if (group.some((s) => s.status === "running" || s.status === "in_progress")) return "running";
+  return group[0].status;
 }
