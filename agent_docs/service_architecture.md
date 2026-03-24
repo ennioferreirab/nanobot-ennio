@@ -383,11 +383,33 @@ The dashboard provides REST endpoints for operations that need server-side logic
 | `POST /api/authoring/agent-wizard` | Agent wizard (spawns Python subprocess) |
 | `GET /api/specs/agent` | Agent specification schema |
 | `GET /api/specs/squad` | Squad specification schema |
+| `GET /api/specs/workflow/context` | Workflow authoring context (published squads + agents + existing workflows + review specs + models) |
+| `POST /api/specs/workflow` | Publish a standalone workflow via `workflowSpecs:publishStandalone` |
 | `GET/POST /api/cron` | Cron job listing/creation |
 | `GET/POST/DELETE /api/cron/[jobId]` | Individual cron job management |
 | `GET/POST /api/settings/*` | Global settings |
 | `GET/POST /api/boards/[name]/artifacts` | Board artifact storage |
 | `/api/channels/*` | Channel integrations |
+
+### Workflow-First Creation Paradigm
+
+**Conceptual model:**
+- **Squad** — reusable agent roster defining team composition. Once published, a squad is stable and can be linked to many workflows.
+- **Workflow** — execution plan that references a squad's agents (by name) to define step sequences. `workflowSpecs.squadSpecId` links every workflow to its parent squad.
+
+**Two creation paths:**
+
+| Path | Skill | Mutation | When to use |
+|------|-------|----------|-------------|
+| Squad-first | `/create-squad-mc` | `squadSpecs:publishGraph` | Creating a new team from scratch — creates squad + agents + default workflow atomically |
+| Workflow-first | `/create-workflow-mc` | `workflowSpecs:publishStandalone` | Adding a new workflow to an existing published squad |
+
+**Agent reuse emphasis:** When creating squads with `/create-squad-mc`, Phase 4 (Agent Design) enforces a mandatory Reuse Assessment. Existing agents are preferred over new ones — a match of 60%+ fit triggers a reuse recommendation. Creating 3+ new agents requires explicit user confirmation.
+
+**Data flow for standalone workflow creation:**
+1. `GET /api/specs/workflow/context` — fetch published squads with their agents and existing workflows
+2. User selects a squad and designs steps using agent names (keys) from the roster
+3. `POST /api/specs/workflow` — calls `workflowSpecs:publishStandalone`, which resolves agent names to `agentId`s and inserts a published `workflowSpecs` record linked to the squad
 
 ### Authentication
 

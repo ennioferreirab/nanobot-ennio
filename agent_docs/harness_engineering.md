@@ -366,6 +366,13 @@ Squad spec fields: `squad_name`, `published_by_spec_id`, `squad_metadata`, `agen
 
 Squad graph publication: `publish_squad_graph(graph)` in `mc/bridge/repositories/specs.py`. Graph structure: `{squad: {...}, agents: [...], workflows: [...], reviewPolicy: {...}}`.
 
+### Creation Skills
+
+| Skill | Trigger | API dependencies | Notes |
+|-------|---------|-----------------|-------|
+| `/create-squad-mc` | User wants a new multi-agent team | `GET /api/specs/squad/context`, `POST /api/specs/squad` | 6 phases: Intent → Capabilities → Skill Resolution → Agent Design → Workflow Design → Publish. Phase 4 (Agent Design) enforces a mandatory Reuse Assessment — existing agents must be evaluated before creating new ones (60%+ fit → reuse, 3+ new agents → explicit user confirmation required). |
+| `/create-workflow-mc` | User wants to add a workflow to an existing squad | `GET /api/specs/workflow/context`, `POST /api/specs/workflow` | 4 phases: Intent & Squad Selection → Agent Roster Review → Step Design → Review & Publish. Can invoke `/create-squad-mc` inline when the user needs a new squad before designing the workflow. Publishes via `workflowSpecs:publishStandalone`. |
+
 ---
 
 ## Key Files Reference

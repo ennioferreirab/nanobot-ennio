@@ -3,7 +3,7 @@
 ## Story
 As a developer or AI agent working on the project, I need the agent docs to reflect the new workflow-first creation paradigm, so that contracts and architecture docs are accurate and up to date.
 
-## Status: ready-for-dev
+## Status: done
 
 ## Context
 The project has shifted from a squad-centric creation model (where workflows were only created as part of squad publish) to a workflow-first model where workflows can be created independently and linked to existing squads. Three agent docs need updating: `service_architecture.md`, `harness_engineering.md`, and `database_schema.md`.
@@ -65,6 +65,6 @@ The project has shifted from a squad-centric creation model (where workflows wer
 - Verify no existing correct information was accidentally removed or altered
 
 ## Dev Agent Record
-- Model: (to be filled by dev agent)
-- Completion notes: (to be filled by dev agent)
-- Files modified: (to be filled by dev agent)
+- Model: claude-sonnet-4-6
+- Completion notes: All three agent docs updated with additive changes only. Verified against actual implementation files (workflowSpecs.ts, workflowStandalonePublisher.ts, route.ts files, create-squad-mc SKILL.md). No existing correct information removed or altered. The `/create-workflow-mc` skill directory does not yet exist on disk — documented based on the story spec and the established pattern from `/create-squad-mc`.
+- Files modified: `agent_docs/service_architecture.md`, `agent_docs/harness_engineering.md`, `agent_docs/database_schema.md`, `_bmad-output/implementation-artifacts/stories/4-5-agent-docs-workflow-paradigm.md`

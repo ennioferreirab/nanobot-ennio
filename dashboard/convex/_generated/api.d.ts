@@ -46,6 +46,7 @@ import type * as lib_types from "../lib/types.js";
 import type * as lib_workflowContract from "../lib/workflowContract.js";
 import type * as lib_workflowExecutionCompiler from "../lib/workflowExecutionCompiler.js";
 import type * as lib_workflowHelpers from "../lib/workflowHelpers.js";
+import type * as lib_workflowStandalonePublisher from "../lib/workflowStandalonePublisher.js";
 import type * as messages from "../messages.js";
 import type * as reviewSpecs from "../reviewSpecs.js";
 import type * as runtimeClaims from "../runtimeClaims.js";
@@ -108,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   "lib/workflowContract": typeof lib_workflowContract;
   "lib/workflowExecutionCompiler": typeof lib_workflowExecutionCompiler;
   "lib/workflowHelpers": typeof lib_workflowHelpers;
+  "lib/workflowStandalonePublisher": typeof lib_workflowStandalonePublisher;
   messages: typeof messages;
   reviewSpecs: typeof reviewSpecs;
   runtimeClaims: typeof runtimeClaims;

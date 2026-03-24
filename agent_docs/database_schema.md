@@ -528,6 +528,30 @@ Workflow templates defining step sequences with dependencies.
 
 **Indexes:** `by_squadSpecId` `["squadSpecId"]`, `by_status` `["status"]`
 
+#### Mutations
+
+**`squadSpecs:publishGraph`** — primary path. Creates squad + agents + workflows atomically. Called by `/create-squad-mc`. Accepts agent `key` references resolved internally.
+
+**`workflowSpecs:publishStandalone`** — standalone workflow creation. Creates a published `workflowSpecs` record linked to an existing published squad without touching the squad or its agents.
+
+| Arg | Type | Notes |
+|-----|------|-------|
+| `squadSpecId` | `v.id("squadSpecs")` | Must reference a published squad |
+| `workflow.name` | `v.string()` | |
+| `workflow.steps` | `v.array(...)` | Step objects with `agentKey` (agent name string, resolved to `agentId` at publish time) |
+| `workflow.exitCriteria` | `v.optional(v.string())` | |
+
+Validation: squad must be published; `agent` and `review` steps require `agentKey`; `agentKey` must resolve to a member of the squad's agent roster; `review` steps require `reviewSpecId` (must exist) and `onReject`. Inserts with `status: "published"` directly — no draft/publish two-step.
+
+Implemented in `dashboard/convex/lib/workflowStandalonePublisher.ts` (`publishWorkflowStandalone`).
+
+#### API Endpoints
+
+| Route | Purpose |
+|-------|---------|
+| `GET /api/specs/workflow/context` | Returns published squads with resolved agents and existing workflows, published review specs, and connected models. Used by `/create-workflow-mc` to populate authoring context. |
+| `POST /api/specs/workflow` | Calls `workflowSpecs:publishStandalone`. Body: `{squadSpecId, workflow}`. Returns `{success: true, workflowSpecId}`. |
+
 ---
 
 ### `reviewSpecs`
