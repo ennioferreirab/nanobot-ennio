@@ -93,6 +93,7 @@ Collect:
 
 - `workflow.name` — required slug: `^[a-z0-9]+(-[a-z0-9]+)*$`
 - `workflow.description` — optional
+  If the user has not provided a clear description, ask: "Can you summarize the workflow's purpose in one sentence?"
 - `squadSpecId` — the squad this workflow belongs to
 
 Start with:
@@ -275,7 +276,7 @@ Report the created `workflowSpecId` and offer next steps, such as testing the wo
 ## Contract Rules
 
 - Workflow name must be a slug: `^[a-z0-9]+(-[a-z0-9]+)*$`
-- Step keys must be unique slugs within the workflow
+- Step keys must be unique slugs within the workflow, matching `^[a-z0-9]+(-[a-z0-9]+)*$`
 - `agent` and `review` steps must reference a valid `agentKey` from the selected squad's roster
 - `review` steps must include `reviewSpecId` taken from `availableReviewSpecs`
 - `review` steps must include `onReject` pointing to a valid step key
