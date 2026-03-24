@@ -530,9 +530,9 @@ Workflow templates defining step sequences with dependencies.
 
 #### Mutations
 
-**`squadSpecs:publishGraph`** — primary path. Creates squad + agents + workflows atomically. Called by `/create-squad-mc`. Accepts agent `key` references resolved internally.
+**`squadSpecs:publishGraph`** — primary path. Creates squad + agents + workflows atomically. Called by `/create-squad-mc`. Accepts agent `key` references resolved internally. See `dashboard/convex/lib/squadGraphPublisher.ts` for full implementation. Args: `{ graph: { squad, agents, workflows, reviewPolicy } }`.
 
-**`workflowSpecs:publishStandalone`** — standalone workflow creation. Creates a published `workflowSpecs` record linked to an existing published squad without touching the squad or its agents.
+**`workflowSpecs:publishStandalone`** — standalone workflow creation. Creates a published `workflowSpecs` record linked to an existing published squad without touching the squad or its agents. Returns: `workflowSpecId` (`Id<'workflowSpecs'>`).
 
 | Arg | Type | Notes |
 |-----|------|-------|
