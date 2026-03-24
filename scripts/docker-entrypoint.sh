@@ -1,7 +1,7 @@
 #!/bin/bash
 # Container entrypoint for Open Control.
-# Generates .env.local files and initializes Convex from the baked template
-# if this is a fresh start (no existing database volume).
+# Generates .env.local files and initializes Convex — from baked template
+# (runtime image) or from schema (dev image with bind-mounted source).
 set -e
 
 # Allow overrides via environment variables, default to container-local Convex
@@ -23,17 +23,21 @@ CONVEX_URL=${CONVEX_URL}
 CONVEX_SITE_URL=${CONVEX_SITE_URL}
 EOF
 
-# Initialize Convex from baked template if fresh start
+# Initialize Convex if no database exists yet
 if [ ! -f /app/dashboard/.convex/local/default/convex_local_backend.sqlite3 ]; then
-    echo "[entrypoint] Initializing fresh Convex from template..."
-    mkdir -p /app/dashboard/.convex/local
-    cp -r /app/.convex-template/local/default /app/dashboard/.convex/local/default
+    if [ -d /app/.convex-template/local ]; then
+        # Runtime image: restore from baked template (fast)
+        echo "[entrypoint] Initializing fresh Convex from template..."
+        mkdir -p /app/dashboard/.convex/local
+        cp -r /app/.convex-template/local/default /app/dashboard/.convex/local/default
+    else
+        # Dev image: no template, initialize from schema (first run only)
+        echo "[entrypoint] No template found, initializing Convex from schema..."
+        cd /app/dashboard
+        npx convex dev --local --once
+        cd /app
+    fi
 fi
-
-# Persist Claude Code auth across container restarts via the claude-auth volume.
-# /root/.claude.json is a symlink into the volume, so `claude login` writes
-# directly to persistent storage.
-ln -sf /root/.claude-auth/claude.json /root/.claude.json
 
 # Remove stale PID file from previous container run
 rm -f /root/.nanobot/mc.pid

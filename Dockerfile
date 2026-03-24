@@ -56,7 +56,23 @@ COPY dashboard/package.json dashboard/package-lock.json dashboard/
 RUN cd dashboard && npm ci
 
 # ---------------------------------------------------------------------------
-# Stage 4: runtime — Full application + Convex initialization
+# Stage: dev — Dependencies + CLI tools (source code bind-mounted at runtime)
+# ---------------------------------------------------------------------------
+FROM node-deps AS dev
+
+# Install Claude Code CLI — required by provider-cli strategy to spawn agent sessions
+RUN npm install -g @anthropic-ai/claude-code
+
+# Create config directory
+RUN mkdir -p /root/.nanobot
+
+# Ports: Next.js(3000) Convex(3210) ConvexSite(3211) Interactive(8765) Nanobot(18790)
+EXPOSE 3000 3210 3211 8765 18790
+
+# No ENTRYPOINT — source/scripts are bind-mounted; entrypoint set in docker-compose.yml
+
+# ---------------------------------------------------------------------------
+# Stage: runtime — Full application + Convex initialization (CI / production)
 # ---------------------------------------------------------------------------
 FROM node-deps AS runtime
 

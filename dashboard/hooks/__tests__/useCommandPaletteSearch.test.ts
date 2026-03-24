@@ -14,14 +14,31 @@ const SAMPLE_TASKS = [
 ];
 
 const SAMPLE_AGENTS = [
-  { _id: "agent1", name: "code-agent", displayName: "Code Agent" },
-  { _id: "agent2", name: "orchestrator-agent", displayName: "Orchestrator Agent" }, // system — should be excluded
-  { _id: "agent3", name: "review-agent", displayName: "Review Agent" },
+  { _id: "agent1", name: "code-agent", displayName: "Code Agent", enabled: true },
+  { _id: "agent2", name: "orchestrator-agent", displayName: "Orchestrator Agent", enabled: true }, // system — should be excluded
+  { _id: "agent3", name: "review-agent", displayName: "Review Agent", enabled: true },
+  { _id: "agent4", name: "disabled-agent", displayName: "Disabled Agent", enabled: false }, // disabled — should be excluded
 ];
 
 const SAMPLE_SQUADS = [
-  { _id: "squad1" as unknown as Id<"squadSpecs">, name: "dev-squad", displayName: "Dev Squad" },
-  { _id: "squad2" as unknown as Id<"squadSpecs">, name: "ops-squad", displayName: "Ops Squad" },
+  {
+    _id: "squad1" as unknown as Id<"squadSpecs">,
+    name: "dev-squad",
+    displayName: "Dev Squad",
+    status: "published",
+  },
+  {
+    _id: "squad2" as unknown as Id<"squadSpecs">,
+    name: "ops-squad",
+    displayName: "Ops Squad",
+    status: "published",
+  },
+  {
+    _id: "squad3" as unknown as Id<"squadSpecs">,
+    name: "old-squad",
+    displayName: "Old Squad",
+    status: "archived",
+  }, // archived — should be excluded
 ];
 
 vi.mock("convex/react", () => ({
@@ -165,6 +182,26 @@ describe("useCommandPaletteSearch", () => {
 
     const total = result.current.groups.reduce((sum, g) => sum + g.results.length, 0);
     expect(result.current.flatResults).toHaveLength(total);
+  });
+
+  it("excludes archived squads from results", () => {
+    const { result } = renderHook(() => useCommandPaletteSearch("squad", "all"));
+
+    const squadGroup = result.current.groups.find((g) => g.category === "squad");
+    expect(squadGroup).toBeDefined();
+    // Only published squads should appear (dev-squad, ops-squad), not old-squad (archived)
+    expect(squadGroup!.results).toHaveLength(2);
+    expect(squadGroup!.results.every((r) => r.title !== "Old Squad")).toBe(true);
+  });
+
+  it("excludes disabled agents from results", () => {
+    const { result } = renderHook(() => useCommandPaletteSearch("agent", "all"));
+
+    const agentGroup = result.current.groups.find((g) => g.category === "agent");
+    // disabled-agent should not appear (nor orchestrator-agent which is system)
+    if (agentGroup) {
+      expect(agentGroup.results.every((r) => r.title !== "Disabled Agent")).toBe(true);
+    }
   });
 
   it("returns filtered results when query is provided", () => {

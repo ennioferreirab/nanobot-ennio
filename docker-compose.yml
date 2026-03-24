@@ -1,7 +1,10 @@
 services:
   mc:
-    build: .
+    build:
+      context: .
+      target: dev
     container_name: open-mc
+    entrypoint: ["/app/scripts/docker-entrypoint.sh"]
     ports:
       - "${NEXT_PORT:-3000}:3000"
       - "${CONVEX_PORT:-3210}:3210"
@@ -9,44 +12,54 @@ services:
       - "${INTERACTIVE_PORT:-8765}:8765"
       - "${NANOBOT_PORT:-18790}:18790"
     volumes:
-      - ~/.nanobot:/root/.nanobot          # Agent workspaces, config, memory
-      - ~/.claude:/root/.claude            # Claude Code settings
-      - claude-auth:/root/.claude-auth     # Container-local Claude Code login (persists across restarts)
-      - convex-data:/app/dashboard/.convex/local  # Persist Convex across restarts
+      # Source code — bind-mounted for live editing (no rebuild needed)
+      - ./mc:/app/mc
+      - ./tmux_claude_control:/app/tmux_claude_control
+      - ./boot.py:/app/boot.py
+      - ./shared:/app/shared
+      - ./vendor:/app/vendor
+      - ./dashboard:/app/dashboard
+      - ./agent_docs:/app/agent_docs
+      - ./scripts:/app/scripts
+      - ./Makefile:/app/Makefile
+      # Preserve Linux node_modules from image (host bind mount hides it)
+      - node-modules:/app/dashboard/node_modules
+      # Persistent state
+      - ~/.nanobot:/root/.nanobot
+      - convex-data:/app/dashboard/.convex/local
     environment:
       - MC_LOG_LEVEL=${MC_LOG_LEVEL:-INFO}
       - ANTHROPIC_API_KEY
       - OPENAI_API_KEY
       - OPENROUTER_API_KEY
       - MC_ACCESS_TOKEN
-      - CLAUDE_CODE_BUBBLEWRAP=1           # Allow --permission-mode bypassPermissions as root (container is the sandbox)
+      - CLAUDE_CODE_BUBBLEWRAP=1 # Allow --permission-mode bypassPermissions as root (container is the sandbox)
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -sf http://localhost:3000 && curl -sf http://localhost:3210/version"]
+      test: [ "CMD", "sh", "-c", "curl -sf http://localhost:3000 && curl -sf http://localhost:3210/version" ]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
     restart: unless-stopped
 
-  # Isolated test instance — different ports, no shared Convex volume.
-  # Each test container gets fresh Convex from the baked template.
+  # Isolated test instance — uses full runtime image (baked Convex template).
   mc-test:
     build: .
-    profiles: [test]
+    profiles: [ test ]
     ports:
       - "${TEST_NEXT_PORT:-3001}:3000"
       - "${TEST_CONVEX_PORT:-3220}:3210"
     volumes:
       - ~/.nanobot:/root/.nanobot:ro
-      - ~/.claude:/root/.claude:ro
-      - claude-auth:/root/.claude-auth:ro
       - convex-data-test:/app/dashboard/.convex/local
     environment:
       - MC_LOG_LEVEL=${MC_LOG_LEVEL:-INFO}
       - ANTHROPIC_API_KEY
       - CLAUDE_CODE_BUBBLEWRAP=1
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
 
 volumes:
   convex-data:
   convex-data-test:
-  claude-auth:
+  node-modules:

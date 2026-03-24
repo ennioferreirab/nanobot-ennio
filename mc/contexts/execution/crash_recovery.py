@@ -74,12 +74,14 @@ def _build_crash_message(error_msg: str) -> str:
     if any(kw in error_lower for kw in _AUTH_KEYWORDS):
         return (
             "**Claude Code is not authenticated inside the container.**\n\n"
-            "Run the following command in your terminal to log in:\n"
+            "Set `CLAUDE_CODE_OAUTH_TOKEN` in your `.env` file and restart:\n"
             "```\n"
-            "docker exec -it open-mc claude login\n"
+            "# On your host machine (where a browser is available):\n"
+            "claude setup-token\n"
+            "# Then add to .env:\n"
+            "CLAUDE_CODE_OAUTH_TOKEN=<your-token>\n"
             "```\n"
-            "Follow the instructions to authenticate with your subscription, "
-            "then retry the task."
+            "Then restart the container and retry the task."
         )
 
     return (

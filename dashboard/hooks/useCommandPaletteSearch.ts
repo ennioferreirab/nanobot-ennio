@@ -192,7 +192,10 @@ export function useCommandPaletteSearch(
   const isLoading = tasks === undefined || agents === undefined || squads === undefined;
 
   const groups = useMemo(() => {
-    return filterResults(query, categoryFilter, tasks ?? [], agents ?? [], squads ?? []);
+    // Exclude archived squads and disabled agents from search
+    const activeSquads = (squads ?? []).filter((s) => s.status !== "archived");
+    const activeAgents = (agents ?? []).filter((a) => a.enabled !== false);
+    return filterResults(query, categoryFilter, tasks ?? [], activeAgents, activeSquads);
   }, [query, categoryFilter, tasks, agents, squads]);
 
   const flatResults = useMemo(() => groups.flatMap((g) => g.results), [groups]);

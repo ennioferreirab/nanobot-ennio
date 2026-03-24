@@ -1,5 +1,6 @@
 # ─── Open Control ────────────────────────────────────────────────
 #
+# make build       Build the dev image (only needed when deps change)
 # make start       Start attached — logs stream to terminal (Ctrl+C to stop)
 # make up          Start detached — runs in background
 # make down        Stop everything
@@ -18,7 +19,7 @@
 # make format       Format all code
 # ──────────────────────────────────────────────────────────────────
 
-.PHONY: install start up down test test-full check check-full \
+.PHONY: install build start up down test test-full check check-full \
         test-py test-py-full test-ts test-ts-full lint lint-py lint-ts typecheck typecheck-py typecheck-ts \
         format format-py format-ts \
         docker-test docker-test-down
@@ -31,11 +32,14 @@ install:
 
 # ─── Stack lifecycle (Docker Compose) ────────────────────────────
 
+build:
+	@docker compose build
+
 start:
-	@docker compose up --build
+	@docker compose up
 
 up:
-	@docker compose up --build -d
+	@docker compose up -d
 
 down:
 	@docker compose down
