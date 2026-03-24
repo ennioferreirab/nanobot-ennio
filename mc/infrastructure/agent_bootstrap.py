@@ -55,7 +55,11 @@ prompt: |
   workspace files — do NOT invent a new persona.
 
   Focus on completing the delegated task using your tools and knowledge.
-skills: []
+skills:
+  - mc
+  - create-agent
+  - create-squad
+  - create-workflow-mc
 """
 
 

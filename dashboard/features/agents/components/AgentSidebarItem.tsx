@@ -122,58 +122,32 @@ export function AgentSidebarItem({
   return (
     <SidebarMenuItem className="flex items-center">
       <SidebarMenuButton
-        size="lg"
+        size="default"
         onClick={handleClick}
-        className={`!h-auto flex-1 ${isDeletedItem ? "opacity-50 cursor-default" : "cursor-pointer"} ${isTerminalOpen ? "bg-accent" : ""}`}
+        className={`!h-8 flex-1 ${isDeletedItem ? "opacity-50 cursor-default" : "cursor-pointer"} ${isTerminalOpen ? "bg-accent" : ""}`}
       >
         {isNanobot ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src="/bento.png"
             alt="Bento"
-            className="h-8 w-8 shrink-0 rounded-full object-cover"
+            className="h-5 w-5 shrink-0 rounded-full object-cover"
           />
         ) : (
           <div
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white ${avatarColor}`}
+            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white ${avatarColor}`}
           >
-            {isRemoteTerminal ? <Terminal className="h-4 w-4" /> : initials}
+            {isRemoteTerminal ? <Terminal className="h-3 w-3" /> : initials}
           </div>
         )}
-        <div
-          className={`flex flex-1 flex-col overflow-hidden ${isDisabled ? "text-muted-foreground opacity-60" : ""}`}
+        <span
+          className={`truncate text-xs ${isDisabled ? "text-muted-foreground opacity-60" : isRemoteTerminal ? "font-mono text-sidebar-foreground/70" : "text-sidebar-foreground"}`}
         >
-          {isRemoteTerminal ? (
-            <>
-              <span
-                className={`truncate text-xs font-mono ${isDisabled ? "" : "text-sidebar-foreground/70"}`}
-              >
-                {ipAddress || agent.displayName}
-              </span>
-              <span
-                className={`truncate text-xs ${isDisabled ? "" : "text-sidebar-foreground/50"}`}
-              >
-                {agent.displayName}
-              </span>
-            </>
-          ) : (
-            <>
-              <span
-                className={`truncate text-[13px] font-medium ${isDisabled ? "" : "text-sidebar-foreground"}`}
-              >
-                {agent.displayName}
-              </span>
-              <span
-                className={`truncate text-caption ${isDisabled ? "" : "text-muted-foreground"}`}
-              >
-                {agent.role}
-              </span>
-            </>
-          )}
-        </div>
+          {isRemoteTerminal ? ipAddress || agent.displayName : agent.displayName}
+        </span>
         {!selectable && !onRestore && (
           <span
-            className={`h-2 w-2 shrink-0 rounded-full transition-colors duration-200 ${statusStyle}`}
+            className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-200 ${statusStyle}`}
           />
         )}
       </SidebarMenuButton>

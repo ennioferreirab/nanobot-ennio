@@ -60,28 +60,21 @@ export function SquadSidebarSection({
           {filteredSquads.map((squad) => (
             <SidebarMenuItem key={squad._id} className="flex items-center">
               <SidebarMenuButton
-                size="lg"
+                size="default"
                 onClick={() =>
                   deleteMode
                     ? onToggleSquadSelect?.(squad._id, squad.displayName)
                     : onSelectSquad(squad._id)
                 }
-                className="!h-auto cursor-pointer"
+                className="!h-8 cursor-pointer"
                 tooltip={`${squad.displayName}${squad.description ? ` — ${squad.description}` : ""}`}
               >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-500 text-xs font-medium text-white">
+                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-500 text-[10px] font-medium text-white">
                   {getSquadInitials(squad.displayName)}
                 </div>
-                <div className="flex flex-1 flex-col overflow-hidden">
-                  <span className="truncate text-sm font-medium text-sidebar-foreground">
-                    {squad.displayName}
-                  </span>
-                  {squad.description && (
-                    <span className="truncate text-xs text-sidebar-foreground/70">
-                      {squad.description}
-                    </span>
-                  )}
-                </div>
+                <span className="truncate text-xs text-sidebar-foreground">
+                  {squad.displayName}
+                </span>
               </SidebarMenuButton>
               {deleteMode && (
                 <div className="shrink-0 px-2">

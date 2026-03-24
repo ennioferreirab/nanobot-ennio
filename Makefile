@@ -10,8 +10,8 @@
 # make check       Fast lint + typecheck + tests (worktree-safe)
 # make check-full  Full lint + typecheck + tests (worktree-safe)
 #
-# make docker-test       Spin up isolated test instance (auto-detects ports)
-# make docker-test-down  Stop the test instance
+# make test-up PORT=3100 Spin up isolated test instance on given port
+# make test-down         Stop the test instance
 #
 # make install      Install local dependencies (for make check)
 # make lint         Ruff + ESLint
@@ -22,7 +22,7 @@
 .PHONY: install build start up down test test-full check check-full \
         test-py test-py-full test-ts test-ts-full lint lint-py lint-ts typecheck typecheck-py typecheck-ts \
         format format-py format-ts \
-        docker-test docker-test-down
+        test-up test-down
 
 # ─── Setup ───────────────────────────────────────────────────────
 
@@ -103,10 +103,20 @@ format-py:
 format-ts:
 	cd dashboard && npm run format
 
-# ─── Docker (isolated test instances) ────────────────────────────
+# ─── Docker (isolated test instance via Compose) ────────────────
+# Usage: make test-up PORT=3100
+#   Dashboard: http://localhost:$(PORT)
+#   Convex:    http://localhost:$(PORT + 210)
 
-docker-test:
-	@bash scripts/docker-test.sh
+PORT ?= 3100
+TEST_CONVEX_PORT ?= $(shell echo $$(($(PORT) + 210)))
 
-docker-test-down:
-	@bash scripts/docker-test.sh down
+test-up:
+	@echo "[test] Starting mc-test on port $(PORT) (Convex: $(TEST_CONVEX_PORT))..."
+	@TEST_PORT=$(PORT) TEST_CONVEX_PORT=$(TEST_CONVEX_PORT) docker compose --profile test up -d mc-test
+	@echo "[test] Dashboard: http://localhost:$(PORT)"
+	@echo "[test] Convex:    http://localhost:$(TEST_CONVEX_PORT)"
+
+test-down:
+	@docker compose --profile test down
+	@echo "[test] Stopped."

@@ -73,7 +73,8 @@ export function AgentTerminal({
       params.set("prompt", prompt);
     }
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const url = `${protocol}://${window.location.hostname}:8765/interactive?${params}`;
+    const wsPort = process.env.NEXT_PUBLIC_INTERACTIVE_PORT || "8765";
+    const url = `${protocol}://${window.location.hostname}:${wsPort}/interactive?${params}`;
     const socket = new WebSocket(url);
     socket.binaryType = "arraybuffer";
 

@@ -51,8 +51,8 @@ All code, comments, commit messages, and docstrings in **English**.
 | Stop stack | `make down` |
 | Restart (Python changes) | `docker compose restart mc` |
 | Pre-commit validation | `make check` |
-| Isolated test instance (auto ports) | `make docker-test` |
-| Stop test instance | `make docker-test-down` |
+| Isolated test instance | `make test-up PORT=3100` |
+| Stop test instance | `make test-down` |
 | Python tests | `uv run pytest` |
 | TypeScript tests | `cd dashboard && npm run test` |
 | Single TS test file | `cd dashboard && npx vitest run path/to/file.test.ts` |

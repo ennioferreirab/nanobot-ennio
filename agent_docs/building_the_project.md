@@ -28,8 +28,8 @@ make start      # Build image + start stack (first run ~2min, then ~5s)
 | `make test-full` | Run fast + slow local tests (Python + TypeScript) | No |
 | `make check` | Fast pre-commit lane: lint + typecheck + fast tests | No |
 | `make check-full` | Full pre-merge lane: lint + typecheck + fast + slow tests | No |
-| `make docker-test` | Spin up isolated Docker test instance (auto-detects ports) | Yes |
-| `make docker-test-down` | Stop Docker test instance | Yes |
+| `make test-up PORT=3100` | Spin up isolated Docker test instance on given port | Yes |
+| `make test-down` | Stop Docker test instance | Yes |
 | `make lint` | Ruff + ESLint | No |
 | `make typecheck` | Pyright + tsc | No |
 | `make format` | Format all code (Ruff + Prettier) | No |
@@ -112,13 +112,13 @@ make start                # Fresh start with template database
 
 ### Worktree Workflow
 
-Each worktree can use `make docker-test` for isolated instances (own Convex, own ports):
+Each worktree can use `make test-up` for isolated instances (own Convex, own ports):
 
 ```bash
 make check              # fast local lane: lint, types, fast tests (no Docker needed)
 make check-full         # full local lane: lint, types, fast + slow tests
-make docker-test        # auto-detects ports, starts isolated stack
-make docker-test-down   # stops this worktree's instance
+make test-up PORT=3100  # starts isolated stack on port 3100 (Convex: 3310)
+make test-down          # stops the test instance
 ```
 
 ## Environment Variables

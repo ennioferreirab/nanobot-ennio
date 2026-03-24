@@ -43,23 +43,62 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  # Isolated test instance — uses full runtime image (baked Convex template).
+  # Isolated test instance — same dev image with source bind-mounted.
+  # Usage: TEST_PORT=3100 docker compose --profile test up -d mc-test
   mc-test:
-    build: .
+    build:
+      context: .
+      target: dev
     profiles: [ test ]
+    container_name: open-mc-test
+    entrypoint: ["/app/scripts/docker-entrypoint-dev.sh"]
     ports:
-      - "${TEST_NEXT_PORT:-3001}:3000"
-      - "${TEST_CONVEX_PORT:-3220}:3210"
+      - "${TEST_PORT:-3100}:3000"
+      - "${TEST_CONVEX_PORT:-3310}:3210"
+      - "${TEST_INTERACTIVE_PORT:-8865}:8765"
     volumes:
-      - ~/.nanobot:/root/.nanobot:ro
+      # Source code — bind-mounted for live editing (same as mc service)
+      - ./mc:/app/mc
+      - ./tmux_claude_control:/app/tmux_claude_control
+      - ./boot.py:/app/boot.py
+      - ./shared:/app/shared
+      - ./vendor:/app/vendor
+      - ./dashboard:/app/dashboard
+      - ./agent_docs:/app/agent_docs
+      - ./scripts:/app/scripts
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
+      # Mask host node_modules with container's named volume
+      - node-modules-test:/app/dashboard/node_modules
+      # Separate persistent state (no conflict with dev instance)
       - convex-data-test:/app/dashboard/.convex/local
+      - ~/.nanobot:/root/.nanobot
+      - ~/.claude:/root/.claude
+      - ~/.claude.json:/root/.host-claude.json:ro
     environment:
       - MC_LOG_LEVEL=${MC_LOG_LEVEL:-INFO}
       - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - OPENROUTER_API_KEY
+      - MC_ACCESS_TOKEN
       - CLAUDE_CODE_BUBBLEWRAP=1
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
+      - CONVEX_URL=http://127.0.0.1:3210
+      - NEXT_PUBLIC_CONVEX_URL=http://127.0.0.1:${TEST_CONVEX_PORT:-3310}
+      - NEXT_PUBLIC_INTERACTIVE_PORT=${TEST_INTERACTIVE_PORT:-8865}
+      - INTERACTIVE_HOST=0.0.0.0
+      - CLAUDE_CODE_SETTING_SOURCES=project
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+    healthcheck:
+      test: [ "CMD", "sh", "-c", "curl -sf http://localhost:3000 && curl -sf http://localhost:3210/version" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
 
 volumes:
   convex-data:
   convex-data-test:
   node-modules:
+  node-modules-test:

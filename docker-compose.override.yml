@@ -24,6 +24,7 @@ services:
     environment:
       - WATCHPACK_POLLING=true
       - CHOKIDAR_USEPOLLING=true
+      - CLAUDE_CODE_SETTING_SOURCES=project
 
 volumes:
   node_modules:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -138,8 +139,12 @@ class ClaudeCodeInteractiveAdapter:
     ) -> list[str]:
         cmd = [self._cli_path]
 
-        # Isolate agent sessions from host user settings (plugins, hooks, MCPs).
-        cmd.extend(["--setting-sources", "project"])
+        # Isolate agent sessions from host user settings (plugins, hooks, MCPs)
+        # unless CLAUDE_CODE_SETTING_SOURCES is explicitly set (e.g. to empty
+        # string to inherit user auth/settings inside Docker).
+        setting_sources = os.environ.get("CLAUDE_CODE_SETTING_SOURCES", "project")
+        if setting_sources:
+            cmd.extend(["--setting-sources", setting_sources])
         cmd.extend(["--strict-mcp-config"])
         cmd.extend(["--mcp-config", str(workspace_ctx.mcp_config)])
 

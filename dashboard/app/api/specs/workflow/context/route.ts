@@ -7,7 +7,9 @@ type AdminConvexClient = ConvexHttpClient & {
 };
 
 function getClient(): AdminConvexClient {
-  const client = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!) as AdminConvexClient;
+  const client = new ConvexHttpClient(
+    process.env.CONVEX_URL || process.env.NEXT_PUBLIC_CONVEX_URL!,
+  ) as AdminConvexClient;
   client.setAdminAuth(process.env.CONVEX_ADMIN_KEY!);
   return client;
 }

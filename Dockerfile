@@ -12,7 +12,7 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS base
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        curl ca-certificates gnupg git lsof && \
+        curl ca-certificates gnupg git lsof tmux && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
         | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
@@ -61,7 +61,10 @@ RUN cd dashboard && npm ci
 FROM node-deps AS dev
 
 # Install Claude Code CLI — required by provider-cli strategy to spawn agent sessions
-RUN npm install -g @anthropic-ai/claude-code
+# Symlink to /root/.local/bin so the native-install check passes inside containers
+RUN npm install -g @anthropic-ai/claude-code && \
+    mkdir -p /root/.local/bin && \
+    ln -sf $(which claude) /root/.local/bin/claude
 
 # Create config directory
 RUN mkdir -p /root/.nanobot

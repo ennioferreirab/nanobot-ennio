@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -169,8 +170,8 @@ class InteractiveSocketServer:
 def build_interactive_runtime(
     bridge: Any,
     *,
-    host: str = "127.0.0.1",
-    port: int = 8765,
+    host: str = os.environ.get("INTERACTIVE_HOST", "127.0.0.1"),
+    port: int = int(os.environ.get("INTERACTIVE_PORT", "8765")),
     bus: Any | None = None,
     cron_service: Any | None = None,
 ) -> InteractiveRuntime:

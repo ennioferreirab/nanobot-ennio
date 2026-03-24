@@ -83,6 +83,6 @@ The `CreateAuthoringDialog` currently offers "Create Agent" and "Create Squad". 
 - Functional verification: click Create Workflow, verify terminal opens with correct prompt
 
 ## Dev Agent Record
-- Model: (to be filled by dev agent)
-- Completion notes: (to be filled by dev agent)
-- Files modified: (to be filled by dev agent)
+- Model: claude-sonnet-4-6
+- Completion notes: All acceptance criteria implemented. WorkflowAuthoringWizard created as a near-identical copy of SquadAuthoringWizard with title "Create Workflow", scopeId prefix "create-workflow:", and prompt "/create-workflow-mc". CreateAuthoringDialog updated with GitBranch icon, onSelectWorkflow prop, grid-cols-3, sm:max-w-lg, updated description, and new Workflow button with indigo-500 color. AgentSidebar updated with showWorkflowWizard state, onSelectWorkflow prop passed to dialog, WorkflowAuthoringWizard rendered, and tooltip/aria-label updated to "Create". TypeScript errors found in tsc output are all pre-existing issues in test/config files unrelated to this story.
+- Files modified: dashboard/features/agents/components/WorkflowAuthoringWizard.tsx (created), dashboard/features/agents/components/CreateAuthoringDialog.tsx (modified), dashboard/features/agents/components/AgentSidebar.tsx (modified)
