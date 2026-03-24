@@ -2,6 +2,7 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 import { ConvexError, v } from "convex/values";
 
 import { specStatusValidator, workflowStepTypeValidator } from "./schema";
+import { publishWorkflowStandalone } from "./lib/workflowStandalonePublisher";
 
 type WorkflowStepRecord = {
   id: string;
@@ -165,7 +166,7 @@ export const publishStandalone = mutation({
           title: v.string(),
           type: workflowStepTypeValidator,
           agentKey: v.optional(v.string()),
-          reviewSpecId: v.optional(v.string()),
+          reviewSpecId: v.optional(v.id("reviewSpecs")),
           inputs: v.optional(v.array(v.string())),
           outputs: v.optional(v.array(v.string())),
           dependsOn: v.optional(v.array(v.string())),
@@ -177,114 +178,6 @@ export const publishStandalone = mutation({
     }),
   },
   handler: async (ctx, args) => {
-    // Step 1: Load squad and verify it is published
-    const squad = await ctx.db.get(args.squadSpecId);
-    if (!squad) {
-      throw new ConvexError(`Squad spec not found: ${args.squadSpecId}`);
-    }
-    if (squad.status !== "published") {
-      throw new ConvexError(
-        `Squad spec must be published to add a workflow. Current status: ${squad.status}`,
-      );
-    }
-
-    // Step 2: Load all agents from squad's agentIds, build agentName -> agentId map
-    const agentIds = (squad.agentIds ?? []) as string[];
-    const agentNameToId = new Map<string, string>();
-
-    for (const agentId of agentIds) {
-      const agent = await ctx.db.get(agentId as never);
-      if (agent && !agent.deletedAt) {
-        agentNameToId.set(agent.name as string, agentId);
-      }
-    }
-
-    // Step 3: Validate each step's agentKey resolves to an agent in the squad
-    for (const step of args.workflow.steps) {
-      if ((step.type === "agent" || step.type === "review") && step.agentKey !== undefined) {
-        if (!agentNameToId.has(step.agentKey)) {
-          throw new ConvexError(
-            `Step "${step.id ?? step.title}" references agentKey "${step.agentKey}" which is not a member of this squad`,
-          );
-        }
-      }
-    }
-
-    // Step 4: Validate review steps have reviewSpecId (verify it exists in DB) and onReject
-    for (const step of args.workflow.steps) {
-      if (step.type !== "review") {
-        continue;
-      }
-      if (!step.reviewSpecId) {
-        throw new ConvexError(`Review step "${step.id ?? step.title}" requires reviewSpecId`);
-      }
-      const reviewSpec = await ctx.db.get(step.reviewSpecId as never);
-      if (!reviewSpec) {
-        throw new ConvexError(
-          `Review step "${step.id ?? step.title}" references reviewSpecId "${step.reviewSpecId}" which does not exist`,
-        );
-      }
-      if (!step.onReject) {
-        throw new ConvexError(`Review step "${step.id ?? step.title}" requires onReject`);
-      }
-    }
-
-    // Step 5: Transform steps — replace agentKey with resolved agentId, generate step id if not provided
-    let stepCounter = 0;
-    const resolvedSteps = args.workflow.steps.map((step) => {
-      stepCounter += 1;
-      const stepId = step.id ?? `step-${stepCounter}`;
-
-      const resolved: Record<string, unknown> = {
-        id: stepId,
-        title: step.title,
-        type: step.type,
-      };
-
-      if (step.agentKey !== undefined) {
-        const resolvedAgentId = agentNameToId.get(step.agentKey);
-        if (resolvedAgentId !== undefined) {
-          resolved.agentId = resolvedAgentId;
-        }
-      }
-
-      if (step.reviewSpecId !== undefined) {
-        resolved.reviewSpecId = step.reviewSpecId;
-      }
-      if (step.onReject !== undefined) {
-        resolved.onReject = step.onReject;
-      }
-      if (step.description !== undefined) {
-        resolved.description = step.description;
-      }
-      if (step.inputs !== undefined) {
-        resolved.inputs = step.inputs;
-      }
-      if (step.outputs !== undefined) {
-        resolved.outputs = step.outputs;
-      }
-      if (step.dependsOn !== undefined && step.dependsOn.length > 0) {
-        resolved.dependsOn = step.dependsOn;
-      }
-
-      return resolved;
-    });
-
-    // Step 6: Insert workflowSpec
-    const now = new Date().toISOString();
-    const workflowSpecId = await ctx.db.insert("workflowSpecs", {
-      squadSpecId: args.squadSpecId,
-      name: args.workflow.name,
-      steps: resolvedSteps as never,
-      exitCriteria: args.workflow.exitCriteria,
-      status: "published",
-      version: 1,
-      publishedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Step 7: Return the new workflowSpecId
-    return workflowSpecId;
+    return await publishWorkflowStandalone(ctx, args.squadSpecId, args.workflow);
   },
 });
