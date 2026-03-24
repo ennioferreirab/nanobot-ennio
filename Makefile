@@ -32,11 +32,9 @@ install:
 # ─── Stack lifecycle (Docker Compose) ────────────────────────────
 
 start:
-	@bash scripts/extract-claude-credentials.sh 2>/dev/null || true
 	@docker compose up --build
 
 up:
-	@bash scripts/extract-claude-credentials.sh 2>/dev/null || true
 	@docker compose up --build -d
 
 down:

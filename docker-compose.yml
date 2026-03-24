@@ -2,9 +2,6 @@ services:
   mc:
     build: .
     container_name: open-mc
-    env_file:
-      - path: .env.claude                  # OAuth tokens extracted from macOS Keychain
-        required: false
     ports:
       - "${NEXT_PORT:-3000}:3000"
       - "${CONVEX_PORT:-3210}:3210"
@@ -14,7 +11,7 @@ services:
     volumes:
       - ~/.nanobot:/root/.nanobot          # Agent workspaces, config, memory
       - ~/.claude:/root/.claude            # Claude Code settings
-      - ~/.claude.json:/root/.claude.json:ro  # Claude Code config (read-only to prevent corruption)
+      - claude-auth:/root/.claude-auth     # Container-local Claude Code login (persists across restarts)
       - convex-data:/app/dashboard/.convex/local  # Persist Convex across restarts
     environment:
       - MC_LOG_LEVEL=${MC_LOG_LEVEL:-INFO}
@@ -36,16 +33,13 @@ services:
   mc-test:
     build: .
     profiles: [test]
-    env_file:
-      - path: .env.claude
-        required: false
     ports:
       - "${TEST_NEXT_PORT:-3001}:3000"
       - "${TEST_CONVEX_PORT:-3220}:3210"
     volumes:
       - ~/.nanobot:/root/.nanobot:ro
       - ~/.claude:/root/.claude:ro
-      - ~/.claude.json:/root/.claude.json:ro
+      - claude-auth:/root/.claude-auth:ro
       - convex-data-test:/app/dashboard/.convex/local
     environment:
       - MC_LOG_LEVEL=${MC_LOG_LEVEL:-INFO}
@@ -55,3 +49,4 @@ services:
 volumes:
   convex-data:
   convex-data-test:
+  claude-auth:

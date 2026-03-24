@@ -1,7 +1,6 @@
 .assets
 .DS_Store
 .env
-.env.claude
 *.pyc
 dist/
 build/

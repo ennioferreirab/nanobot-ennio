@@ -38,6 +38,7 @@ class AgentGateway:
             error: The exception that caused the crash.
         """
         error_msg = f"{type(error).__name__}: {error}"
+        user_message = _build_crash_message(error_msg)
 
         logger.error(
             "[gateway] Agent '%s' crashed on task %s — marking as crashed.",
@@ -58,12 +59,33 @@ class AgentGateway:
             task_id,
             "System",
             "system",
-            (
-                f"Agent crash:\n```\n{error_msg}\n```\n"
-                "Task marked as crashed. Use 'Retry from Beginning' to try again."
-            ),
+            user_message,
             "system_event",
         )
+
+
+_AUTH_KEYWORDS = ("not logged in", "please run /login", "configuration file not found")
+
+
+def _build_crash_message(error_msg: str) -> str:
+    """Build a user-facing crash message, with actionable hints for known issues."""
+    error_lower = error_msg.lower()
+
+    if any(kw in error_lower for kw in _AUTH_KEYWORDS):
+        return (
+            "**Claude Code is not authenticated inside the container.**\n\n"
+            "Run the following command in your terminal to log in:\n"
+            "```\n"
+            "docker exec -it open-mc claude login\n"
+            "```\n"
+            "Follow the instructions to authenticate with your subscription, "
+            "then retry the task."
+        )
+
+    return (
+        f"Agent crash:\n```\n{error_msg}\n```\n"
+        "Task marked as crashed. Use 'Retry from Beginning' to try again."
+    )
 
 
 CrashRecoveryService = AgentGateway

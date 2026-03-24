@@ -30,6 +30,13 @@ if [ ! -f /app/dashboard/.convex/local/default/convex_local_backend.sqlite3 ]; t
     cp -r /app/.convex-template/local/default /app/dashboard/.convex/local/default
 fi
 
+# Symlink persisted Claude Code auth into the expected location.
+# The claude-auth volume keeps /root/.claude-auth/claude.json across restarts.
+# If the user has run `docker exec -it open-mc claude login`, the token persists here.
+if [ -f /root/.claude-auth/claude.json ]; then
+    ln -sf /root/.claude-auth/claude.json /root/.claude.json
+fi
+
 # Remove stale PID file from previous container run
 rm -f /root/.nanobot/mc.pid
 
