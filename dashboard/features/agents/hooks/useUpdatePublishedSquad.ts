@@ -8,7 +8,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 type UpdatePublishedSquadStep = {
   key: string;
   title: string;
-  type: "agent" | "human" | "checkpoint" | "review" | "system";
+  type: "agent" | "human" | "review" | "system";
   description?: string;
   agentKey?: string;
   reviewSpecId?: string;

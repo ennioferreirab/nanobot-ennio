@@ -438,7 +438,7 @@ describe("manualMoveStep", () => {
     )._handler;
   }
 
-  it("allows completing a workflow checkpoint gate even when assigned to a non-human agent", async () => {
+  it("allows completing a workflow human gate even when assigned to a non-human agent", async () => {
     const handler = getHandler();
     const patchedById: Record<string, Record<string, unknown>> = {};
 
@@ -453,7 +453,7 @@ describe("manualMoveStep", () => {
             title: "Final approval gate",
             description: "Wait for the workflow owner to approve",
             assignedAgent: "nanobot",
-            workflowStepType: "checkpoint",
+            workflowStepType: "human",
             blockedBy: [],
             parallelGroup: 1,
             order: 1,
@@ -469,7 +469,7 @@ describe("manualMoveStep", () => {
       title: "Final approval gate",
       status: "running",
       assignedAgent: "nanobot",
-      workflowStepType: "checkpoint",
+      workflowStepType: "human",
       order: 1,
     };
 
@@ -1041,7 +1041,7 @@ describe("updateStatus", () => {
           },
           {
             tempId: "step_2",
-            title: "Checkpoint",
+            title: "Human Gate",
             description: "Wait here",
             assignedAgent: "human",
             blockedBy: [],
@@ -1066,11 +1066,11 @@ describe("updateStatus", () => {
     const genericReviewStep = {
       _id: "step-2",
       taskId: "task-1",
-      title: "Checkpoint",
+      title: "Human Gate",
       description: "Wait here",
       status: "review",
       assignedAgent: "human",
-      workflowStepType: "checkpoint",
+      workflowStepType: "human",
       order: 2,
       stateVersion: 5,
     };

@@ -21,6 +21,7 @@ services:
       # Runtime data
       - ~/.nanobot:/root/.nanobot
       - ~/.claude:/root/.claude
+      - ~/.claude.json:/root/.host-claude.json:ro
     environment:
       - WATCHPACK_POLLING=true
       - CHOKIDAR_USEPOLLING=true

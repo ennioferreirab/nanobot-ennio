@@ -79,7 +79,7 @@ fi
 # Ensures functions are available when the gateway queries Convex.
 # --once starts an embedded backend, pushes functions, then exits.
 echo "[dev] Deploying Convex functions..."
-cd /app/dashboard && npx convex dev --local --once 2>&1 | tail -5
+cd /app/dashboard && npx convex dev --local --local-force-upgrade --once 2>&1 | tail -5
 cd /app
 
 # ─── Inject Convex admin key into dashboard .env.local ─────────────

@@ -9,7 +9,7 @@ import type { DbWriter } from "./types";
 export interface WorkflowStandaloneStepInput {
   id?: string;
   title: string;
-  type: "agent" | "human" | "checkpoint" | "review" | "system";
+  type: "agent" | "human" | "review" | "system";
   agentKey?: string;
   reviewSpecId?: Id<"reviewSpecs">;
   inputs?: string[];
@@ -32,7 +32,7 @@ export interface WorkflowStandaloneInput {
 export type ResolvedStep = {
   id: string;
   title: string;
-  type: "agent" | "human" | "checkpoint" | "review" | "system";
+  type: "agent" | "human" | "review" | "system";
   agentId?: Id<"agents">;
   reviewSpecId?: Id<"reviewSpecs">;
   description?: string;

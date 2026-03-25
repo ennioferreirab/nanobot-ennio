@@ -46,6 +46,17 @@ Collect through natural conversation:
 
 Confirm the behavioral summary.
 
+## Load Available Skills
+
+Before assigning skills, fetch the catalog:
+
+```bash
+curl -s http://localhost:3000/api/specs/skills?available=true
+```
+
+Use the returned `skills` array to present valid options. Do not invent skill
+names — only assign skills that exist in the catalog.
+
 ## Phase 3: Guardrails & Config (condensed — skip if not needed)
 
 Ask: "Do you want to configure quality rules, policies, or model selection? These are optional — I can use sensible defaults."
@@ -58,7 +69,7 @@ If yes, collect any of these the user cares about:
 - **Memory Policy** — context/memory handling
 - **Execution Policy** — how tasks are executed
 - **Model** — `claude-haiku-4-5` (fast), `claude-sonnet-4-6` (default), `claude-opus-4-6` (complex)
-- **Skills** — from: coding, debugging, code-review, testing, research, summarization, writing, data-analysis, etc.
+- **Skills** — from the skills catalog fetched above (use real names only)
 - **Review Policy Ref** — reference to a review policy
 
 ## Phase 4: Review & Publish

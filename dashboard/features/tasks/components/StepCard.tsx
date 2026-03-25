@@ -39,8 +39,7 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
   const colors = STEP_STATUS_COLORS[step.status as StepStatus] ?? STEP_STATUS_COLORS.assigned;
   const assignedAgentName = step.assignedAgent ?? "Unassigned";
   const isHuman = step.assignedAgent === "human";
-  const isWorkflowGate =
-    step.workflowStepType === "human" || step.workflowStepType === "checkpoint";
+  const isWorkflowGate = step.workflowStepType === "human";
   const isWaitingHuman = step.status === "waiting_human";
   const isRunningGateStep = step.status === "running" && (isHuman || isWorkflowGate);
   const assignedAgentInitials = step.assignedAgent

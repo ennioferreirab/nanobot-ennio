@@ -384,7 +384,6 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
               >
                 <option value="agent">agent</option>
                 <option value="human">human</option>
-                <option value="checkpoint">checkpoint</option>
                 <option value="review">review</option>
                 <option value="system">system</option>
               </select>

@@ -28,6 +28,15 @@ Before deep discovery, fetch the current squad-authoring context:
 curl -s http://localhost:3000/api/specs/squad/context
 ```
 
+For skills-only queries (e.g., checking if a skill exists, verifying after sync),
+use the dedicated skills endpoint instead — it is lighter and more focused:
+
+```bash
+curl -s http://localhost:3000/api/specs/skills
+# or filter to available only:
+curl -s http://localhost:3000/api/specs/skills?available=true
+```
+
 Expected shape:
 
 ```json
@@ -94,14 +103,13 @@ How to use it:
   provider this squad will run on.
 - Use `availableModels` for every new agent.
 
-If you create a missing skill during the flow, run:
+If you create a missing skill during the flow, verify it was registered:
 
 ```bash
-uv run nanobot mc sync
-curl -s http://localhost:3000/api/specs/squad/context
+curl -s http://localhost:3000/api/specs/skills
 ```
 
-Then continue with the refreshed context.
+Then continue with the refreshed skills catalog.
 
 ## Phase 1: Intent
 
@@ -206,11 +214,10 @@ Do you want me to create these N skills now? I'll use /create-skill-mc for each.
 ```
 
 On confirmation, invoke `/create-skill-mc` for each missing skill. After all
-skills are created, sync and refresh context before continuing:
+skills are created, refresh the skills catalog to confirm registration:
 
 ```bash
-uv run nanobot mc sync
-curl -s http://localhost:3000/api/specs/squad/context
+curl -s http://localhost:3000/api/specs/skills
 ```
 
 Provider compatibility rule:
@@ -361,7 +368,7 @@ Design the workflow after the roster is stable.
 Each workflow step needs:
 
 - `key`
-- `type`: `agent`, `human`, `checkpoint`, `review`, or `system`
+- `type`: `agent`, `human`, `review`, or `system`
 - `agentKey` when type is `agent` or `review`
 - `title`
 - `dependsOn` when needed
@@ -384,9 +391,84 @@ Review-step rule:
   `availableReviewSpecs`
 - show the chosen review spec by name when presenting the workflow
 - if no suitable `availableReviewSpecs` exist, stop and ask the user whether to:
-  - switch the step to `checkpoint` or `human`, or
-  - create/select a review spec before publish
+  - switch the step to `human`, or
+  - create a new review spec (see "Creating a Review Spec" below)
 - never fabricate identifiers like `brief-quality-check` as `reviewSpecId`
+
+### Creating a Review Spec
+
+When no existing review spec fits the workflow's needs, create one via the API.
+
+First, collaborate with the user to define:
+
+- **name** — slug-safe identifier (e.g., `content-quality-check`)
+- **scope** — `agent`, `workflow`, or `execution`
+- **criteria** — at least one criterion with `id`, `label`, `weight` (0-1),
+  and optional `description`
+- **approvalThreshold** — number between 0 and 1 (e.g., 0.8 means 80% score
+  required to pass)
+- **vetoConditions** (optional) — conditions that auto-reject regardless of score
+- **feedbackContract** (optional) — description of expected feedback format
+- **reviewerPolicy** (optional) — who performs the review (e.g., `"lead-agent"`)
+- **rejectionRoutingPolicy** (optional) — what happens on rejection
+
+Present the review spec before creating:
+
+```text
+═══════════════════════════════════════
+  New Review Spec
+═══════════════════════════════════════
+Name: content-quality-check
+Scope: workflow
+Approval threshold: 0.8
+
+Criteria:
+  1. accuracy (weight: 0.4) — Factual correctness of all claims
+  2. clarity (weight: 0.3) — Clear and understandable writing
+  3. completeness (weight: 0.3) — All required sections present
+
+Veto conditions:
+  - Plagiarized content detected
+
+Reviewer policy: lead-agent
+═══════════════════════════════════════
+```
+
+On user confirmation, create via:
+
+```bash
+curl -s -X POST http://localhost:3000/api/specs/review-spec \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "content-quality-check",
+    "scope": "workflow",
+    "criteria": [
+      { "id": "accuracy", "label": "Accuracy", "weight": 0.4, "description": "Factual correctness of all claims" },
+      { "id": "clarity", "label": "Clarity", "weight": 0.3, "description": "Clear and understandable writing" },
+      { "id": "completeness", "label": "Completeness", "weight": 0.3, "description": "All required sections present" }
+    ],
+    "approvalThreshold": 0.8,
+    "vetoConditions": ["Plagiarized content detected"],
+    "reviewerPolicy": "lead-agent"
+  }'
+```
+
+MCP agents can also use the `create_review_spec` tool directly with the same
+fields.
+
+Success response:
+
+```json
+{"success": true, "specId": "k57a2dz1..."}
+```
+
+After creation, refresh context to get the new review spec ID:
+
+```bash
+curl -s http://localhost:3000/api/specs/squad/context
+```
+
+Use the returned `specId` as the `reviewSpecId` for the review step.
 
 Present the workflow in sequence:
 
@@ -461,21 +543,21 @@ Summary: 2 issue(s) found
   - **Capability gap:** identify which skill would fill the gap — reuse from
     `availableSkills` or create a new one.
   - **Missing reviewSpecId:** select a real ID from `availableReviewSpecs`. If
-    none is suitable, ask the user whether to switch to `checkpoint`/`human` or
-    create a review spec first.
+    none is suitable, create a new review spec using the procedure in Phase 5
+    ("Creating a Review Spec"), then re-fetch context and use the new ID.
   - **Missing onReject:** define the routing policy — which step to return to on
     rejection (e.g., `"return_to_step:draft"`).
 
 Do NOT proceed to publish until the audit shows zero issues. Re-run the audit
 after every resolution to confirm the fix.
 
-After all issues are resolved, re-fetch context one final time:
+After all issues are resolved, re-fetch skills one final time:
 
 ```bash
-curl -s http://localhost:3000/api/specs/squad/context
+curl -s http://localhost:3000/api/specs/skills?available=true
 ```
 
-Confirm all agent skills appear in `availableSkills` before moving on.
+Confirm all agent skills appear in the returned list before moving on.
 
 ## Phase 7: Review and Publish
 

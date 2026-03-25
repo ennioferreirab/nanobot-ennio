@@ -110,7 +110,6 @@ export const reviewScopeValidator = v.union(
 export const workflowStepTypeValidator = v.union(
   v.literal("agent"),
   v.literal("human"),
-  v.literal("checkpoint"),
   v.literal("review"),
   v.literal("system"),
 );
@@ -521,6 +520,8 @@ export default defineSchema({
     reviewPolicyRef: v.optional(v.string()),
     skills: v.optional(v.array(v.string())),
     model: v.optional(v.string()),
+    prompt: v.optional(v.string()),
+    soul: v.optional(v.string()),
     status: v.union(v.literal("draft"), v.literal("published"), v.literal("archived")),
     version: v.number(),
     compiledAgentId: v.optional(v.id("agents")),
@@ -562,7 +563,6 @@ export default defineSchema({
         type: v.union(
           v.literal("agent"),
           v.literal("human"),
-          v.literal("checkpoint"),
           v.literal("review"),
           v.literal("system"),
         ),

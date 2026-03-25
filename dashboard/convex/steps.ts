@@ -421,8 +421,7 @@ export const manualMoveStep = mutation({
     if (!step) {
       throw new ConvexError("Step not found");
     }
-    const isWorkflowGate =
-      step.workflowStepType === "human" || step.workflowStepType === "checkpoint";
+    const isWorkflowGate = step.workflowStepType === "human";
     if (step.assignedAgent !== "human" && !isWorkflowGate) {
       throw new ConvexError("Only human-assigned steps or workflow gates can be manually moved");
     }

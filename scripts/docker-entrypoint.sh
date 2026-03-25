@@ -35,7 +35,7 @@ if [ ! -f /app/dashboard/.convex/local/default/convex_local_backend.sqlite3 ]; t
         # Dev image: no template, initialize from schema (first run only)
         echo "[entrypoint] No template found, initializing Convex from schema..."
         cd /app/dashboard
-        npx convex dev --local --once
+        npx convex dev --local --local-force-upgrade --once
         cd /app
     fi
 fi

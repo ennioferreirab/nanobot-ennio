@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 export type EditableWorkflowStep = {
   key: string;
   title: string;
-  type: "agent" | "human" | "checkpoint" | "review" | "system";
+  type: "agent" | "human" | "review" | "system";
   description?: string;
   agentKey?: string;
   reviewSpecId?: string;
@@ -213,7 +213,6 @@ export function SquadWorkflowEditor({
                     >
                       <option value="agent">agent</option>
                       <option value="human">human</option>
-                      <option value="checkpoint">checkpoint</option>
                       <option value="review">review</option>
                       <option value="system">system</option>
                     </select>

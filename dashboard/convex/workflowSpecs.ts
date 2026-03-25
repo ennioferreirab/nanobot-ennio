@@ -6,7 +6,7 @@ import { publishWorkflowStandalone } from "./lib/workflowStandalonePublisher";
 
 type WorkflowStepRecord = {
   id: string;
-  type: "agent" | "human" | "checkpoint" | "review" | "system";
+  type: "agent" | "human" | "review" | "system";
   agentId?: string;
   reviewSpecId?: string;
   onReject?: string;
@@ -179,5 +179,18 @@ export const publishStandalone = mutation({
   },
   handler: async (ctx, args) => {
     return await publishWorkflowStandalone(ctx, args.squadSpecId, args.workflow);
+  },
+});
+
+export const archiveWorkflow = mutation({
+  args: { workflowSpecId: v.id("workflowSpecs") },
+  handler: async (ctx, args) => {
+    const spec = await ctx.db.get(args.workflowSpecId);
+    if (!spec) throw new ConvexError("Workflow not found");
+    if (spec.status === "archived") throw new ConvexError("Already archived");
+    await ctx.db.patch(args.workflowSpecId, {
+      status: "archived",
+      updatedAt: new Date().toISOString(),
+    });
   },
 });

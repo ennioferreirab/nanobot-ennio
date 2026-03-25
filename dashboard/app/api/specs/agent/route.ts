@@ -46,3 +46,33 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { name, ...updates } = body;
+
+    if (!name || typeof name !== "string") {
+      return NextResponse.json({ error: "name is required" }, { status: 400 });
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json(
+        { error: "At least one field to update is required" },
+        { status: 400 },
+      );
+    }
+
+    const convex = getClient();
+
+    await convex.mutation("agents:updateConfig", { name, ...updates });
+
+    return NextResponse.json({ success: true, name });
+  } catch (error) {
+    console.error("Agent update failed:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to update agent" },
+      { status: 500 },
+    );
+  }
+}

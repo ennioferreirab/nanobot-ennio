@@ -232,7 +232,7 @@ class ProcessManager:
         venv_python = self._get_venv_python()
         convex_args = ["run", "dev:backend"]
         if self._convex_mode == "local":
-            convex_args.extend(["--", "--local"])
+            convex_args.extend(["--", "--local", "--local-force-upgrade"])
         configs = [
             ProcessConfig(
                 label="convex",

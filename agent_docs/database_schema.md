@@ -104,7 +104,7 @@ Sub-steps within tasks, with dependencies and parallel groups.
 | `errorMessage` | `v.optional(v.string())` | |
 | `attachedFiles` | `v.optional(v.array(v.string()))` | |
 | `workflowStepId` | `v.optional(v.string())` | Ref to workflow spec step |
-| `workflowStepType` | `v.optional(workflowStepTypeValidator)` | `agent\|human\|checkpoint\|review\|system` |
+| `workflowStepType` | `v.optional(workflowStepTypeValidator)` | `agent\|human\|review\|system` |
 | `agentId` | `v.optional(v.id("agents"))` | |
 | `reviewSpecId` | `v.optional(v.id("reviewSpecs"))` | |
 | `onRejectStepId` | `v.optional(v.string())` | Fallback on rejection |

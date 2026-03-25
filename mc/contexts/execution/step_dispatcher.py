@@ -77,7 +77,7 @@ def _coerce_step_run_result(value: Any) -> tuple[str, bool, str | None]:
 
 
 def _is_workflow_gate_step(step_type: str | None) -> bool:
-    return step_type in ("human", "checkpoint")
+    return step_type == "human"
 
 
 def _maybe_inject_orientation(
