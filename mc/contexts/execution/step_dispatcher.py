@@ -652,6 +652,8 @@ class StepDispatcher:
                 )
                 raise
 
+            req.session_boundary_reason = "step_completion"
+
             # Unpack unified request into local variables
             agent_prompt = req.agent_prompt
             agent_model = req.agent_model
