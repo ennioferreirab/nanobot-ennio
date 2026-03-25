@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 
 function getClient(): ConvexHttpClient {
   const client = new ConvexHttpClient(
@@ -53,9 +54,7 @@ export async function DELETE(request: NextRequest) {
     const convex = getClient();
 
     await convex.mutation(api.workflowSpecs.archiveWorkflow, {
-      workflowSpecId: workflowSpecId as Parameters<
-        typeof api.workflowSpecs.archiveWorkflow
-      >[0]["workflowSpecId"],
+      workflowSpecId: workflowSpecId as Id<"workflowSpecs">,
     });
 
     return NextResponse.json({ success: true, workflowSpecId });

@@ -19,6 +19,7 @@
  * and call ordering without requiring a running Convex backend.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 // ---------------------------------------------------------------------------
 // Convex mock — tracks all mutations and queries in order
@@ -150,10 +151,10 @@ import { POST as postReviewSpec } from "./review-spec/route";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function req(url: string, method: string = "GET", body?: Record<string, unknown>): Request {
+function req(url: string, method: string = "GET", body?: Record<string, unknown>): NextRequest {
   const init: RequestInit = { method, headers: { "Content-Type": "application/json" } };
   if (body) init.body = JSON.stringify(body);
-  return new Request(url, init) as never;
+  return new Request(url, init) as unknown as NextRequest;
 }
 
 // ---------------------------------------------------------------------------

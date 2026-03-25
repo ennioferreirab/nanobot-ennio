@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 
 function getClient(): ConvexHttpClient {
   const client = new ConvexHttpClient(
@@ -55,7 +56,7 @@ export async function DELETE(request: NextRequest) {
     const convex = getClient();
 
     await convex.mutation(api.squadSpecs.archiveSquad, {
-      squadSpecId: squadSpecId as Parameters<typeof api.squadSpecs.archiveSquad>[0]["squadSpecId"],
+      squadSpecId: squadSpecId as Id<"squadSpecs">,
     });
 
     return NextResponse.json({ success: true, squadSpecId });
