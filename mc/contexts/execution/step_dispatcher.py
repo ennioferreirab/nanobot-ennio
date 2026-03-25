@@ -14,10 +14,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from mc.application.execution.completion_status import (
-    resolve_completion_review_phase,
-    resolve_completion_status,
-)
+from mc.application.execution.completion_status import resolve_completion_status
 from mc.application.execution.interactive_mode import resolve_step_runner_type
 from mc.types import (
     NANOBOT_AGENT_NAME,
@@ -350,12 +347,13 @@ class StepDispatcher:
                     )
                     has_blocked = any(s.get("status") == StepStatus.BLOCKED for s in steps)
                     if has_human_pending and has_blocked:
-                        logger.debug(
-                            "[dispatcher] Waiting for human step resolution on task %s",
+                        logger.info(
+                            "[dispatcher] Waiting for human step resolution on task %s via subscription",
                             task_id,
                         )
-                        await asyncio.sleep(5)
-                        continue
+                        resolved = await self._wait_for_human_step_resolution(task_id)
+                        if resolved:
+                            continue
                     break
 
                 groups = self._group_by_parallel_group(assigned_steps)
@@ -399,13 +397,12 @@ class StepDispatcher:
                     "tasks:getById",
                     {"task_id": task_id},
                 )
-                final_status = resolve_completion_status(task_data)
+                final_status = resolve_completion_status()
                 transition_result = await _transition_task_from_snapshot(
                     self._bridge,
                     task_data,
                     final_status,
                     reason=f"All {step_count} steps completed",
-                    review_phase=resolve_completion_review_phase(task_data),
                 )
                 if not isinstance(transition_result, dict) or transition_result.get("kind") not in {
                     "applied",
@@ -443,6 +440,38 @@ class StepDispatcher:
                     "[dispatcher] Failed to post dispatch failure message",
                     exc_info=True,
                 )
+
+    async def _wait_for_human_step_resolution(self, task_id: str) -> bool:
+        """Wait indefinitely for step changes via Convex subscription (WebSocket).
+
+        Human gate steps are approval checkpoints — no timeout.
+        The workflow stays paused until the human acts.
+
+        Returns True if new assigned steps appeared (human approved),
+        False if the task left the waiting state (paused, cancelled, etc.).
+        """
+        queue = self._bridge.async_subscribe(
+            "steps:getByTask",
+            {"task_id": task_id},
+        )
+        while True:
+            steps_snapshot = await queue.get()
+            if not isinstance(steps_snapshot, list):
+                continue
+
+            has_assigned = any(s.get("status") == StepStatus.ASSIGNED for s in steps_snapshot)
+            if has_assigned:
+                return True
+
+            # If no longer waiting on human + blocked, stop watching
+            has_human_pending = any(
+                s.get("status") in (StepStatus.WAITING_HUMAN, StepStatus.RUNNING)
+                for s in steps_snapshot
+                if s.get("workflow_step_type") == "human" or s.get("assigned_agent") == "human"
+            )
+            has_blocked = any(s.get("status") == StepStatus.BLOCKED for s in steps_snapshot)
+            if not (has_human_pending and has_blocked):
+                return False
 
     @staticmethod
     def _group_by_parallel_group(steps: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
