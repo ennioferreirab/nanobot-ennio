@@ -180,9 +180,9 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
   const shouldReduceMotion = useReducedMotion();
   const [viewerFile, setViewerFile] = useState<{
     name: string;
-    type: string;
-    size: number;
-    subfolder: string;
+    type?: string;
+    size?: number;
+    subfolder?: string;
     sourceTaskId?: Id<"tasks">;
     sourceLabel?: string;
     sourceTaskTitle?: string;
@@ -730,6 +730,8 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
         <DocumentViewerModal
           taskId={viewerFile?.sourceTaskId ?? task!._id}
           file={viewerFile}
+          files={displayFiles}
+          onNavigate={setViewerFile}
           onClose={() => setViewerFile(null)}
         />
       )}
