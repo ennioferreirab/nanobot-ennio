@@ -306,7 +306,6 @@ export const createMergedTask = mutation({
   args: {
     primaryTaskId: v.id("tasks"),
     secondaryTaskId: v.id("tasks"),
-    mode: v.union(v.literal("plan"), v.literal("manual")),
   },
   handler: async (ctx, args) => {
     if (args.primaryTaskId === args.secondaryTaskId) {
@@ -333,7 +332,7 @@ export const createMergedTask = mutation({
       status: "inbox",
       awaitingKickoff: undefined,
       reviewPhase: undefined,
-      isManual: args.mode === "manual" ? true : undefined,
+      isManual: true,
       trustLevel,
       boardId: primaryTask.boardId ?? secondaryTask.boardId,
       tags: dedupeTags(

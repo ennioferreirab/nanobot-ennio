@@ -91,7 +91,6 @@ export interface TaskDetailActionsResult {
   createMergedTask: (
     primaryTaskId: Id<"tasks">,
     secondaryTaskId: Id<"tasks">,
-    mode: "plan" | "manual",
   ) => Promise<Id<"tasks">>;
   isCreatingMergeTask: boolean;
   createMergeTaskError: string;
@@ -356,11 +355,11 @@ export function useTaskDetailActions(): TaskDetailActionsResult {
   );
 
   const createMergedTask = useCallback(
-    async (primaryTaskId: Id<"tasks">, secondaryTaskId: Id<"tasks">, mode: "plan" | "manual") => {
+    async (primaryTaskId: Id<"tasks">, secondaryTaskId: Id<"tasks">) => {
       setIsCreatingMergeTask(true);
       setCreateMergeTaskError("");
       try {
-        return await createMergedTaskMutation({ primaryTaskId, secondaryTaskId, mode });
+        return await createMergedTaskMutation({ primaryTaskId, secondaryTaskId });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         setCreateMergeTaskError(`Merge failed: ${message}`);

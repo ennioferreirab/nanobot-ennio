@@ -36,7 +36,7 @@ interface TaskDetailConfigTabProps {
   onAddMergeSource: () => void | Promise<void>;
   addMergeSourceError: string;
   isMergeLockedSource: boolean;
-  onCreateMergeTask: (mode: "plan" | "manual") => void | Promise<void>;
+  onCreateMergeTask: () => void | Promise<void>;
   isCreatingMergeTask: boolean;
   createMergeTaskError: string;
   tagColorMap: Record<string, string>;
@@ -213,8 +213,8 @@ export function TaskDetailConfigTab({
                   Merge With Another Task
                 </h4>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Create a new task C from this task and another source task. Then choose whether C
-                  should enter review with a generated plan or stay manual in review.
+                  Create a new task from this task and another source task. The merged task will
+                  enter review.
                 </p>
               </div>
               <Input
@@ -249,23 +249,13 @@ export function TaskDetailConfigTab({
                   ))
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => void onCreateMergeTask("plan")}
-                  disabled={!selectedMergeTaskId || isCreatingMergeTask || isMergeLockedSource}
-                >
-                  {isCreatingMergeTask ? "Creating..." : "Generate Plan Then Send To Review"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void onCreateMergeTask("manual")}
-                  disabled={!selectedMergeTaskId || isCreatingMergeTask || isMergeLockedSource}
-                >
-                  {isCreatingMergeTask ? "Creating..." : "Create Manual Review Task"}
-                </Button>
-              </div>
+              <Button
+                size="sm"
+                onClick={() => void onCreateMergeTask()}
+                disabled={!selectedMergeTaskId || isCreatingMergeTask || isMergeLockedSource}
+              >
+                {isCreatingMergeTask ? "Creating..." : "Merge and Send To Review"}
+              </Button>
               {createMergeTaskError && (
                 <p className="text-xs text-red-500">{createMergeTaskError}</p>
               )}

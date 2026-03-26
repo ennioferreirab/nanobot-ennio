@@ -1670,13 +1670,12 @@ describe("TaskDetailSheet", () => {
     await user.click(screen.getByRole("tab", { name: /Config/i }));
     expect(screen.getByPlaceholderText("Search task to merge...")).toBeInTheDocument();
     await user.click(screen.getByText("Merge target"));
-    await user.click(screen.getByRole("button", { name: /Generate Plan Then Send To Review/i }));
+    await user.click(screen.getByRole("button", { name: /Merge and Send To Review/i }));
 
     await waitFor(() => {
       expect(mutate).toHaveBeenCalledWith({
         primaryTaskId: "task1",
         secondaryTaskId: "task-merge-target",
-        mode: "plan",
       });
     });
   });

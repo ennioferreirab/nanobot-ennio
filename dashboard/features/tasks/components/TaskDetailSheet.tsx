@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useReducedMotion } from "motion/react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -76,7 +76,14 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
   const [selectedLiveStepId, setSelectedLiveStepId] = useState<string | null>(null);
   // --- Feature hooks ---
   const view = useTaskDetailView(taskId, { mergeQuery });
-  const liveSession = useTaskInteractiveSession(taskId, selectedLiveStepId);
+  const interactiveData = useMemo(
+    () => ({
+      steps: view.liveSteps,
+      assignedAgent: view.task?.assignedAgent,
+    }),
+    [view.liveSteps, view.task?.assignedAgent],
+  );
+  const liveSession = useTaskInteractiveSession(taskId, selectedLiveStepId, interactiveData);
   const providerSession = useProviderSession(liveSession.session);
   const actions = useTaskDetailActions();
   const planState = usePlanEditorState(view.taskExecutionPlan, view.isAwaitingKickoff);
@@ -384,10 +391,10 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
     }
   };
 
-  const handleCreateMergeTask = async (mode: "plan" | "manual") => {
+  const handleCreateMergeTask = async () => {
     if (!task || !isTaskLoaded || !selectedMergeTaskId) return;
     try {
-      const mergedTaskId = await createMergedTask(task._id, selectedMergeTaskId, mode);
+      const mergedTaskId = await createMergedTask(task._id, selectedMergeTaskId);
       onTaskOpen?.(mergedTaskId);
     } catch {
       // error handled in hook state
