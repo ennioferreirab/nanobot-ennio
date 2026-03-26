@@ -201,6 +201,37 @@ class StepRepository:
         except (TypeError, ValueError):
             return 1
 
+    def cascade_reject_reset(
+        self,
+        review_step_id: str,
+        target_step_id: str,
+    ) -> dict[str, Any]:
+        """Cascade reset for review rejection.
+
+        Atomically resets the review step to blocked, all intermediate
+        dependents to blocked, and the target step to assigned.
+
+        Returns:
+            Dict with reviewStepId, targetStepId, intermediateStepIds.
+        """
+        result = self._client.mutation(
+            "steps:cascadeRejectReset",
+            {
+                "review_step_id": review_step_id,
+                "target_step_id": target_step_id,
+            },
+        )
+        intermediate_count = (
+            len(result.get("intermediate_step_ids", [])) if isinstance(result, dict) else 0
+        )
+        self._log_state_transition(
+            "step",
+            f"Cascade reject reset: review {review_step_id} → blocked, "
+            f"target {target_step_id} → assigned, "
+            f"{intermediate_count} intermediate(s) → blocked",
+        )
+        return result if isinstance(result, dict) else {}
+
     @staticmethod
     def _log_state_transition(entity_type: str, description: str) -> None:
         """Log a state transition to local stdout via logging."""

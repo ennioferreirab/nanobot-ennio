@@ -10,6 +10,7 @@ import {
   resolveInitialStepStatus,
   findBlockedStepsReadyToUnblock,
   findTransitiveDependents,
+  computeRejectionCascadeResets,
   resolveBlockedByIds,
   validateBatchSteps,
 } from "./lib/stepLifecycle";
@@ -1188,5 +1189,104 @@ export const checkAndUnblockDependents = internalMutation({
       new Date().toISOString(),
     );
     return unblockedIds;
+  },
+});
+
+/**
+ * Cascade reset for review rejection: reset the target step to assigned,
+ * all intermediate dependents to blocked, and the review step to blocked.
+ * This prevents stale completed steps from immediately unblocking the review.
+ */
+export const cascadeRejectReset = internalMutation({
+  args: {
+    reviewStepId: v.id("steps"),
+    targetStepId: v.id("steps"),
+  },
+  handler: async (ctx, args) => {
+    const reviewStep = await ctx.db.get(args.reviewStepId);
+    if (!reviewStep) throw new ConvexError("Review step not found");
+    const targetStep = await ctx.db.get(args.targetStepId);
+    if (!targetStep) throw new ConvexError("Target step not found");
+
+    if (String(reviewStep.taskId) !== String(targetStep.taskId)) {
+      throw new ConvexError(
+        `Review step and target step belong to different tasks: ${String(reviewStep.taskId)} vs ${String(targetStep.taskId)}`,
+      );
+    }
+
+    const allTaskSteps = await ctx.db
+      .query("steps")
+      .withIndex("by_taskId", (q) => q.eq("taskId", reviewStep.taskId))
+      .collect();
+
+    const stepsForComputation: StepWithDependencies[] = allTaskSteps.map((s) => ({
+      _id: s._id,
+      status: s.status as StepStatus,
+      blockedBy: s.blockedBy,
+      workflowStepType: s.workflowStepType,
+    }));
+
+    const cascade = computeRejectionCascadeResets({
+      steps: stepsForComputation,
+      targetStepId: args.targetStepId,
+      reviewStepId: args.reviewStepId,
+    });
+
+    const now = new Date().toISOString();
+    const stepsById = new Map(allTaskSteps.map((s) => [String(s._id), s] as const));
+
+    // 1. Reset review step → blocked
+    const review = stepsById.get(String(cascade.reviewStepId));
+    if (!review)
+      throw new ConvexError(`Review step ${String(cascade.reviewStepId)} not in task steps`);
+    await applyStepTransition(ctx, review as Parameters<typeof applyStepTransition>[1], {
+      stepId: cascade.reviewStepId,
+      fromStatus: review.status,
+      expectedStateVersion: getStepStateVersion(review),
+      toStatus: cascade.reviewToStatus,
+      reason: "Review rejection — cascade reset",
+      idempotencyKey: `reject-cascade:review:${String(cascade.reviewStepId)}:${getStepStateVersion(review)}`,
+    });
+
+    // 2. Reset intermediate steps → blocked
+    for (const stepId of cascade.intermediateStepIds) {
+      const step = stepsById.get(String(stepId));
+      if (!step || step.status === "deleted") continue;
+      await applyStepTransition(ctx, step as Parameters<typeof applyStepTransition>[1], {
+        stepId,
+        fromStatus: step.status,
+        expectedStateVersion: getStepStateVersion(step),
+        toStatus: cascade.intermediateToStatus,
+        reason: "Review rejection — cascade reset (intermediate)",
+        idempotencyKey: `reject-cascade:intermediate:${String(stepId)}:${getStepStateVersion(step)}`,
+      });
+    }
+
+    // 3. Reset target step → assigned
+    const target = stepsById.get(String(cascade.targetStepId));
+    if (!target)
+      throw new ConvexError(`Target step ${String(cascade.targetStepId)} not in task steps`);
+    await applyStepTransition(ctx, target as Parameters<typeof applyStepTransition>[1], {
+      stepId: cascade.targetStepId,
+      fromStatus: target.status,
+      expectedStateVersion: getStepStateVersion(target),
+      toStatus: cascade.targetToStatus,
+      reason: "Review rejection — cascade reset (target)",
+      idempotencyKey: `reject-cascade:target:${String(cascade.targetStepId)}:${getStepStateVersion(target)}`,
+    });
+
+    await logActivity(ctx, {
+      taskId: reviewStep.taskId,
+      agentName: reviewStep.assignedAgent,
+      eventType: "step_status_changed",
+      description: `Review rejection cascade: reset ${cascade.intermediateStepIds.length} intermediate step(s) to blocked`,
+      timestamp: now,
+    });
+
+    return {
+      reviewStepId: cascade.reviewStepId,
+      targetStepId: cascade.targetStepId,
+      intermediateStepIds: cascade.intermediateStepIds,
+    };
   },
 });

@@ -850,16 +850,32 @@ class StepDispatcher:
                         f"'{reject_target_key}' not found in task steps"
                     )
 
-                await asyncio.to_thread(
-                    self._bridge.update_step_status,
-                    step_id,
-                    StepStatus.BLOCKED,
-                )
-                await asyncio.to_thread(
-                    self._bridge.update_step_status,
-                    resolved_target_id,
-                    StepStatus.ASSIGNED,
-                )
+                # Cascade reset: review→blocked, intermediates→blocked, target→assigned.
+                # This prevents stale completed intermediates from immediately
+                # unblocking the review step via checkAndUnblockDependents.
+                try:
+                    cascade_result = await asyncio.to_thread(
+                        self._bridge.cascade_reject_reset,
+                        step_id,
+                        resolved_target_id,
+                    )
+                except Exception as cascade_exc:
+                    logger.warning(
+                        "[dispatcher] Cascade reset failed (%s); falling back to two-step reset",
+                        cascade_exc,
+                    )
+                    await asyncio.to_thread(
+                        self._bridge.update_step_status,
+                        step_id,
+                        StepStatus.BLOCKED,
+                    )
+                    await asyncio.to_thread(
+                        self._bridge.update_step_status,
+                        resolved_target_id,
+                        StepStatus.ASSIGNED,
+                    )
+                    cascade_result = {}
+                intermediate_count = len(cascade_result.get("intermediate_step_ids", []))
 
                 # Post rejection feedback to task thread for visibility
                 issues_summary = (
@@ -887,9 +903,10 @@ class StepDispatcher:
 
                 logger.info(
                     "[dispatcher] Review rejection: '%s' → blocked, '%s' → assigned for revision"
-                    " (rejection %d/%s)",
+                    " (%d intermediate(s) cascade-reset, rejection %d/%s)",
                     step_title,
                     target_step_title,
+                    intermediate_count,
                     rejection_count,
                     review_loop_limit if review_loop_limit else "∞",
                 )

@@ -225,6 +225,14 @@ class BridgeRepositoryFacadeMixin:
         self._ensure_repos()
         return self._steps.increment_rejection_count(step_id)
 
+    def cascade_reject_reset(
+        self,
+        review_step_id: str,
+        target_step_id: str,
+    ) -> dict[str, Any]:
+        self._ensure_repos()
+        return self._steps.cascade_reject_reset(review_step_id, target_step_id)
+
     def get_review_loop_limit(self) -> int:
         self._ensure_repos()
         return self._settings.get_review_loop_limit()
