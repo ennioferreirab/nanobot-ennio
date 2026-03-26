@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,13 @@ from mc.infrastructure.runtime_home import get_tasks_dir
 from mc.types import task_safe_id
 
 logger = logging.getLogger(__name__)
+
+
+def slugify(text: str, max_len: int = 40) -> str:
+    """Convert text to a filesystem-safe slug."""
+    slug = re.sub(r"[^\w\-]", "_", text.strip().lower())
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug[:max_len] if slug else "unknown"
 
 
 def _human_size(b: int) -> str:

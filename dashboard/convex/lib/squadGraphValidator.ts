@@ -97,7 +97,7 @@ function validateStepAgentKeys(step: SquadGraphWorkflowStepInput, agentKeys: Set
 
   if (!step.agentKey || !agentKeys.has(step.agentKey)) {
     throw new Error(
-      `Workflow step "${step.key}" references unknown agentKey "${step.agentKey ?? ""}"`,
+      `Workflow step "${step.id}" references unknown agentKey "${step.agentKey ?? ""}"`,
     );
   }
 }
@@ -112,17 +112,17 @@ async function validateReviewStepContracts(
     }
 
     if (typeof step.reviewSpecId !== "string" || step.reviewSpecId.trim().length === 0) {
-      throw new Error(`Review step "${step.key}" requires reviewSpecId`);
+      throw new Error(`Review step "${step.id}" requires reviewSpecId`);
     }
 
     if (typeof step.onReject !== "string" || step.onReject.trim().length === 0) {
-      throw new Error(`Review step "${step.key}" requires onReject`);
+      throw new Error(`Review step "${step.id}" requires onReject`);
     }
 
     const reviewSpec = await ctx.db.get(step.reviewSpecId);
     if (!reviewSpec) {
       throw new Error(
-        `Workflow step "${step.key}" references unknown reviewSpecId "${step.reviewSpecId}"`,
+        `Workflow step "${step.id}" references unknown reviewSpecId "${step.reviewSpecId}"`,
       );
     }
   }
@@ -135,15 +135,15 @@ async function validateWorkflow(
 ): Promise<void> {
   requireSlug("Workflow key", workflow.key);
 
-  const stepKeys = new Set<string>();
+  const stepIds = new Set<string>();
   for (const step of workflow.steps) {
-    requireSlug("Workflow step key", step.key);
-    if (stepKeys.has(step.key)) {
+    requireSlug("Workflow step id", step.id);
+    if (stepIds.has(step.id)) {
       throw new Error(
-        `Workflow step key "${step.key}" must be unique within workflow "${workflow.key}"`,
+        `Workflow step id "${step.id}" must be unique within workflow "${workflow.key}"`,
       );
     }
-    stepKeys.add(step.key);
+    stepIds.add(step.id);
   }
 
   for (const step of workflow.steps) {

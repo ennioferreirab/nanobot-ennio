@@ -217,9 +217,23 @@ class ThreadJournalService:
     def _build_store(self, task_id: str) -> ThreadJournalStore:
         safe_id = task_safe_id(task_id)
         output_dir = self._base_tasks_dir / safe_id / "output"
+        internal_dir = output_dir / ".internal"
+
+        journal_path = internal_dir / "THREAD_JOURNAL.md"
+        state_path = internal_dir / "THREAD_COMPACTION_STATE.json"
+
+        # Migrate from legacy path (output/ → output/.internal/) for in-flight tasks
+        legacy_journal = output_dir / "THREAD_JOURNAL.md"
+        legacy_state = output_dir / "THREAD_COMPACTION_STATE.json"
+        if not journal_path.exists() and legacy_journal.exists():
+            internal_dir.mkdir(parents=True, exist_ok=True)
+            legacy_journal.rename(journal_path)
+            if legacy_state.exists():
+                legacy_state.rename(state_path)
+
         return ThreadJournalStore(
-            journal_path=output_dir / "THREAD_JOURNAL.md",
-            state_path=output_dir / "THREAD_COMPACTION_STATE.json",
+            journal_path=journal_path,
+            state_path=state_path,
         )
 
     def _eligible_compaction_messages(

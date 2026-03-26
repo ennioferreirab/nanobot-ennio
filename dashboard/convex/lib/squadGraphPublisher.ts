@@ -42,8 +42,8 @@ export interface SquadGraphAgentInput {
 }
 
 export interface SquadGraphWorkflowStepInput {
-  /** Short key identifying this step within the workflow. */
-  key: string;
+  /** Short identifier for this step within the workflow. */
+  id: string;
   /** Step type — determines execution semantics. */
   type: "agent" | "human" | "review" | "system";
   /**
@@ -101,13 +101,13 @@ function validateReviewStep(step: SquadGraphWorkflowStepInput): void {
   }
 
   if (!step.agentKey) {
-    throw new ConvexError(`Review step "${step.key}" requires agentKey`);
+    throw new ConvexError(`Review step "${step.id}" requires agentKey`);
   }
   if (!step.reviewSpecId) {
-    throw new ConvexError(`Review step "${step.key}" requires reviewSpecId`);
+    throw new ConvexError(`Review step "${step.id}" requires reviewSpecId`);
   }
   if (!step.onReject) {
-    throw new ConvexError(`Review step "${step.key}" requires onReject`);
+    throw new ConvexError(`Review step "${step.id}" requires onReject`);
   }
 }
 
@@ -183,8 +183,8 @@ export async function publishSquadGraph(ctx: DbWriter, graph: SquadGraphInput): 
       validateReviewStep(step);
 
       const resolvedStep: Record<string, unknown> = {
-        id: step.key,
-        title: step.title ?? step.key,
+        id: step.id,
+        title: step.title ?? step.id,
         type: step.type,
       };
 

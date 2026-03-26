@@ -52,31 +52,31 @@ function toPlanSteps(workflow: EditableWorkflow): EditablePlanStep[] {
   // Steps at the same depth with no inter-dependencies are parallel.
   const depthMap = new Map<string, number>();
 
-  function getDepth(stepKey: string): number {
-    if (depthMap.has(stepKey)) return depthMap.get(stepKey)!;
-    const step = workflow.steps.find((s) => s.key === stepKey);
+  function getDepth(stepId: string): number {
+    if (depthMap.has(stepId)) return depthMap.get(stepId)!;
+    const step = workflow.steps.find((s) => s.id === stepId);
     if (!step || step.dependsOn.length === 0) {
-      depthMap.set(stepKey, 1);
+      depthMap.set(stepId, 1);
       return 1;
     }
     const maxBlockerDepth = Math.max(...step.dependsOn.map((dep) => getDepth(dep)));
     const depth = maxBlockerDepth + 1;
-    depthMap.set(stepKey, depth);
+    depthMap.set(stepId, depth);
     return depth;
   }
 
   // Compute all depths
   for (const step of workflow.steps) {
-    getDepth(step.key);
+    getDepth(step.id);
   }
 
   return workflow.steps.map((step, index) => ({
-    tempId: step.key,
+    tempId: step.id,
     title: step.title,
     description: step.description ?? "",
     assignedAgent: step.agentKey ?? "nanobot",
     blockedBy: step.dependsOn,
-    parallelGroup: depthMap.get(step.key) ?? index + 1,
+    parallelGroup: depthMap.get(step.id) ?? index + 1,
     order: index + 1,
   }));
 }
@@ -86,7 +86,7 @@ function fromPlanSteps(
   previousSteps: EditableWorkflowStep[],
   agents: Doc<"agents">[],
 ): EditableWorkflowStep[] {
-  const previousByKey = new Map(previousSteps.map((step) => [step.key, step]));
+  const previousByKey = new Map(previousSteps.map((step) => [step.id, step]));
   const fallbackAgent = agents[0]?.name;
 
   return [...planSteps]
@@ -99,7 +99,7 @@ function fromPlanSteps(
           : (previous?.agentKey ?? fallbackAgent);
 
       return {
-        key: planStep.tempId,
+        id: planStep.tempId,
         title: planStep.title,
         type: previous?.type ?? "agent",
         description: planStep.description,
@@ -165,7 +165,7 @@ function buildFlowModel(
 
 function createBlankStep(): EditableWorkflowStep {
   return {
-    key: `step-${Math.random().toString(36).slice(2, 8)}`,
+    id: `step-${Math.random().toString(36).slice(2, 8)}`,
     title: "",
     type: "agent",
     description: "",
@@ -186,11 +186,11 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
     onSelectAgent,
   } = props;
   const [activeTab, setActiveTab] = useState<"workflow" | "steps" | "criteria">("workflow");
-  const [selectedStepKey, setSelectedStepKey] = useState<string | null>(
-    workflow.steps[0]?.key ?? null,
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(
+    workflow.steps[0]?.id ?? null,
   );
 
-  const selectedStepIndex = workflow.steps.findIndex((step) => step.key === selectedStepKey);
+  const selectedStepIndex = workflow.steps.findIndex((step) => step.id === selectedStepId);
   const selectedStep = selectedStepIndex >= 0 ? workflow.steps[selectedStepIndex] : null;
 
   const applyPlanTransform = (
@@ -200,16 +200,16 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
     const nextSteps = fromPlanSteps(transform(toPlanSteps(workflow)), workflow.steps, agents);
     onChange({ ...workflow, steps: nextSteps });
     if (focusStepId) {
-      setSelectedStepKey(focusStepId);
+      setSelectedStepId(focusStepId);
     }
   };
 
   const { nodes, edges } = buildFlowModel(
     workflow,
     isEditing,
-    (stepId) => setSelectedStepKey(stepId),
+    (stepId) => setSelectedStepId(stepId),
     (stepId) => {
-      const nextSteps = workflow.steps.filter((step) => step.key !== stepId);
+      const nextSteps = workflow.steps.filter((step) => step.id !== stepId);
       onChange({
         ...workflow,
         steps: nextSteps.map((step) => ({
@@ -217,7 +217,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
           dependsOn: step.dependsOn.filter((dependency) => dependency !== stepId),
         })),
       });
-      setSelectedStepKey(nextSteps[0]?.key ?? null);
+      setSelectedStepId(nextSteps[0]?.id ?? null);
     },
     (stepId) => applyPlanTransform((steps) => insertSequentialStep(steps, stepId)),
     (stepId) => applyPlanTransform((steps) => insertParallelStep(steps, stepId)),
@@ -227,7 +227,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
   const handleAddStep = () => {
     const newStep = createBlankStep();
     onChange({ ...workflow, steps: [...workflow.steps, newStep] });
-    setSelectedStepKey(newStep.key);
+    setSelectedStepId(newStep.id);
     setActiveTab("steps");
   };
 
@@ -281,7 +281,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
                 defaultEdgeOptions={defaultEdgeOptions}
                 onNodeClick={(_event, node) => {
                   if (node.id.startsWith("__")) return;
-                  setSelectedStepKey(node.id);
+                  setSelectedStepId(node.id);
                 }}
                 nodesDraggable={false}
                 nodesConnectable={false}
@@ -306,7 +306,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
                 assignedAgent: ps.assignedAgent === "nanobot" ? undefined : ps.assignedAgent,
                 parallelGroup: ps.parallelGroup,
               }))}
-              onStepClick={(stepId) => setSelectedStepKey(stepId)}
+              onStepClick={(stepId) => setSelectedStepId(stepId)}
             />
           </TabsContent>
 
@@ -355,7 +355,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
                   onChange({
                     ...workflow,
                     steps: workflow.steps.map((step) =>
-                      step.key === selectedStep.key ? { ...step, title: event.target.value } : step,
+                      step.id === selectedStep.id ? { ...step, title: event.target.value } : step,
                     ),
                   })
                 }
@@ -372,7 +372,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
                   onChange({
                     ...workflow,
                     steps: workflow.steps.map((step) =>
-                      step.key === selectedStep.key
+                      step.id === selectedStep.id
                         ? {
                             ...step,
                             type: event.target.value as EditableWorkflowStep["type"],
@@ -401,7 +401,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
                 onChange({
                   ...workflow,
                   steps: workflow.steps.map((step) =>
-                    step.key === selectedStep.key
+                    step.id === selectedStep.id
                       ? { ...step, description: event.target.value }
                       : step,
                   ),
@@ -423,7 +423,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
                     onChange({
                       ...workflow,
                       steps: workflow.steps.map((step) =>
-                        step.key === selectedStep.key
+                        step.id === selectedStep.id
                           ? { ...step, agentKey: event.target.value || undefined }
                           : step,
                       ),
@@ -465,7 +465,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
                     onChange({
                       ...workflow,
                       steps: workflow.steps.map((step) =>
-                        step.key === selectedStep.key
+                        step.id === selectedStep.id
                           ? { ...step, reviewSpecId: event.target.value || undefined }
                           : step,
                       ),
@@ -484,7 +484,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
                     onChange({
                       ...workflow,
                       steps: workflow.steps.map((step) =>
-                        step.key === selectedStep.key
+                        step.id === selectedStep.id
                           ? { ...step, onReject: event.target.value || undefined }
                           : step,
                       ),
@@ -506,7 +506,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
                 onChange({
                   ...workflow,
                   steps: workflow.steps.map((step) =>
-                    step.key === selectedStep.key
+                    step.id === selectedStep.id
                       ? {
                           ...step,
                           dependsOn: event.target.value

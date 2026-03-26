@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
 type UpdatePublishedSquadStep = {
-  key: string;
+  id: string;
   title: string;
   type: "agent" | "human" | "review" | "system";
   description?: string;

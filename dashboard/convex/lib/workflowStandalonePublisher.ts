@@ -120,20 +120,20 @@ export async function publishWorkflowStandalone(
   }
 
   // Step 3b: Validate internal cross-references (dependsOn and onReject must reference existing step ids)
-  const stepsWithKeys = workflow.steps.map((step, index) => ({
-    key: step.id ?? `${workflow.name}-${step.title}-${index}`,
+  const stepsForValidation = workflow.steps.map((step, index) => ({
+    id: step.id ?? `${workflow.name}-${step.title}-${index}`,
     type: step.type,
     dependsOn: step.dependsOn,
     onReject: step.onReject,
   }));
-  // Guard against synthetic key collisions
-  const keySet = new Set(stepsWithKeys.map((s) => s.key));
-  if (keySet.size !== stepsWithKeys.length) {
+  // Guard against synthetic id collisions
+  const idSet = new Set(stepsForValidation.map((s) => s.id));
+  if (idSet.size !== stepsForValidation.length) {
     throw new ConvexError(
       `Workflow '${workflow.name}' has duplicate step ids. Ensure each step has a unique id.`,
     );
   }
-  validateWorkflowStepReferences(stepsWithKeys, `workflow '${workflow.name}'`);
+  validateWorkflowStepReferences(stepsForValidation, `workflow '${workflow.name}'`);
 
   // Step 4: Transform steps — replace agentKey with resolved agentId, generate step id if absent
   const resolvedSteps: ResolvedStep[] = workflow.steps.map((step) => {

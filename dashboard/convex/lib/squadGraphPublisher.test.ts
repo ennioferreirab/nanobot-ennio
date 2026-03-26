@@ -37,8 +37,8 @@ const GRAPH_FIXTURE: SquadGraphInput = {
       key: "default",
       name: "Default Workflow",
       steps: [
-        { key: "research", type: "agent", agentKey: "researcher" },
-        { key: "write", type: "agent", agentKey: "writer", dependsOn: ["research"] },
+        { id: "research", type: "agent", agentKey: "researcher" },
+        { id: "write", type: "agent", agentKey: "writer", dependsOn: ["research"] },
       ],
     },
   ],
@@ -230,9 +230,9 @@ describe("publishSquadGraph", () => {
           key: "default",
           name: "Default Workflow",
           steps: [
-            { key: "draft", type: "agent", agentKey: "writer" },
+            { id: "draft", type: "agent", agentKey: "writer" },
             {
-              key: "review",
+              id: "review",
               type: "review",
               agentKey: "researcher",
               reviewSpecId: "review-spec-1",
@@ -265,8 +265,8 @@ describe("publishSquadGraph", () => {
             key: "default",
             name: "Default Workflow",
             steps: [
-              { key: "draft", type: "agent", agentKey: "writer" },
-              { key: "review", type: "review", agentKey: "researcher" },
+              { id: "draft", type: "agent", agentKey: "writer" },
+              { id: "review", type: "review", agentKey: "researcher" },
             ],
           },
         ],
@@ -285,9 +285,9 @@ describe("publishSquadGraph", () => {
             key: "default",
             name: "Default Workflow",
             steps: [
-              { key: "draft", type: "agent", agentKey: "writer" },
+              { id: "draft", type: "agent", agentKey: "writer" },
               {
-                key: "review",
+                id: "review",
                 type: "review",
                 agentKey: "researcher",
                 reviewSpecId: "missing-review-spec",
@@ -399,7 +399,7 @@ describe("publishSquadGraph - canonical agent fields", () => {
         {
           key: "default",
           name: "Default Workflow",
-          steps: [{ key: "write", type: "agent", agentKey: "writer" }],
+          steps: [{ id: "write", type: "agent", agentKey: "writer" }],
         },
       ],
     });
@@ -427,7 +427,7 @@ describe("publishSquadGraph - canonical agent fields", () => {
         {
           key: "default",
           name: "Default Workflow",
-          steps: [{ key: "write", type: "agent", agentKey: "writer" }],
+          steps: [{ id: "write", type: "agent", agentKey: "writer" }],
         },
       ],
     });
@@ -455,7 +455,7 @@ describe("publishSquadGraph - canonical agent fields", () => {
         {
           key: "default",
           name: "Default Workflow",
-          steps: [{ key: "write", type: "agent", agentKey: "writer" }],
+          steps: [{ id: "write", type: "agent", agentKey: "writer" }],
         },
       ],
     });
@@ -483,7 +483,7 @@ describe("publishSquadGraph - canonical agent fields", () => {
         {
           key: "default",
           name: "Default Workflow",
-          steps: [{ key: "write", type: "agent", agentKey: "writer" }],
+          steps: [{ id: "write", type: "agent", agentKey: "writer" }],
         },
       ],
     });
@@ -508,7 +508,7 @@ describe("publishSquadGraph - canonical agent fields", () => {
         {
           key: "default",
           name: "Default Workflow",
-          steps: [{ key: "write", type: "agent", agentKey: "writer" }],
+          steps: [{ id: "write", type: "agent", agentKey: "writer" }],
         },
       ],
     });
@@ -539,7 +539,7 @@ describe("publishSquadGraph - skills-first validation", () => {
           {
             key: "default",
             name: "Default Workflow",
-            steps: [{ key: "draft", type: "agent", agentKey: "writer" }],
+            steps: [{ id: "draft", type: "agent", agentKey: "writer" }],
           },
         ],
       }),
@@ -567,7 +567,7 @@ describe("publishSquadGraph - skills-first validation", () => {
           {
             key: "default",
             name: "Default Workflow",
-            steps: [{ key: "draft", type: "agent", agentKey: "writer" }],
+            steps: [{ id: "draft", type: "agent", agentKey: "writer" }],
           },
         ],
       }),
@@ -595,7 +595,7 @@ describe("publishSquadGraph - skills-first validation", () => {
           {
             key: "default",
             name: "Default Workflow",
-            steps: [{ key: "draft", type: "agent", agentKey: "writer" }],
+            steps: [{ id: "draft", type: "agent", agentKey: "writer" }],
           },
         ],
       }),
@@ -623,7 +623,7 @@ describe("publishSquadGraph - skills-first validation", () => {
           {
             key: "default",
             name: "Default Workflow",
-            steps: [{ key: "draft", type: "agent", agentKey: "writer" }],
+            steps: [{ id: "draft", type: "agent", agentKey: "writer" }],
           },
         ],
       }),
@@ -652,7 +652,7 @@ describe("publishSquadGraph - skills-first validation", () => {
           {
             key: "default",
             name: "Default Workflow",
-            steps: [{ key: "draft", type: "agent", agentKey: "writer" }],
+            steps: [{ id: "draft", type: "agent", agentKey: "writer" }],
           },
         ],
       }),
@@ -670,7 +670,7 @@ describe("publishSquadGraph - skills-first validation", () => {
           {
             key: "default",
             name: "Default Workflow",
-            steps: [{ key: "draft", type: "agent", agentKey: "writer" }],
+            steps: [{ id: "draft", type: "agent", agentKey: "writer" }],
           },
         ],
       }),
@@ -699,7 +699,7 @@ describe("publishSquadGraph - skills-first validation", () => {
           {
             key: "default",
             name: "Default Workflow",
-            steps: [{ key: "draft", type: "agent", agentKey: "ghost" }],
+            steps: [{ id: "draft", type: "agent", agentKey: "ghost" }],
           },
         ],
       }),

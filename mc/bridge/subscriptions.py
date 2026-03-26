@@ -121,16 +121,9 @@ class SubscriptionManager:
                 result = await asyncio.to_thread(self._client.query, function_name, args)
                 consecutive_errors = 0
                 is_error = isinstance(result, dict) and result.get("_error") is True
-                should_wake = (
-                    not is_error
-                    and bool(result)
-                    and (
-                        getattr(sleep_controller, "mode", "active") == "sleep"
-                        or result != last_result
-                    )
-                )
+                is_new_work = not is_error and bool(result) and result != last_result
                 if sleep_controller is not None:
-                    if should_wake:
+                    if is_new_work:
                         await sleep_controller.record_work_found()
                     else:
                         await sleep_controller.record_idle()
@@ -191,15 +184,8 @@ class SubscriptionManager:
                     result = _convert_keys_to_snake(raw_result)
                     if sleep_controller is not None:
                         is_error = isinstance(result, dict) and result.get("_error") is True
-                        should_wake = (
-                            not is_error
-                            and bool(result)
-                            and (
-                                getattr(sleep_controller, "mode", "active") == "sleep"
-                                or result != last_result
-                            )
-                        )
-                        if should_wake:
+                        is_new_work = not is_error and bool(result) and result != last_result
+                        if is_new_work:
                             await sleep_controller.record_work_found()
                         else:
                             await sleep_controller.record_idle()

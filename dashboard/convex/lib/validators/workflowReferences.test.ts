@@ -13,48 +13,48 @@ const CONTEXT = "workflow 'brand-delivery'";
 // ---------------------------------------------------------------------------
 
 describe("validateWorkflowStepReferences — dependsOn", () => {
-  it("passes when dependsOn references a valid step key", () => {
+  it("passes when dependsOn references a valid step id", () => {
     expect(() =>
       validateWorkflowStepReferences(
         [
-          { key: "research", type: "agent" },
-          { key: "write", type: "agent", dependsOn: ["research"] },
+          { id: "research", type: "agent" },
+          { id: "write", type: "agent", dependsOn: ["research"] },
         ],
         CONTEXT,
       ),
     ).not.toThrow();
   });
 
-  it("throws ConvexError when dependsOn references an invalid step key", () => {
+  it("throws ConvexError when dependsOn references an invalid step id", () => {
     expect(() =>
       validateWorkflowStepReferences(
         [
-          { key: "research", type: "agent" },
-          { key: "write", type: "agent", dependsOn: ["nonexistent-step"] },
+          { id: "research", type: "agent" },
+          { id: "write", type: "agent", dependsOn: ["nonexistent-step"] },
         ],
         CONTEXT,
       ),
     ).toThrow(/invalid dependsOn target "nonexistent-step"/);
   });
 
-  it("includes the list of valid step keys in the dependsOn error message", () => {
+  it("includes the list of valid step ids in the dependsOn error message", () => {
     expect(() =>
       validateWorkflowStepReferences(
         [
-          { key: "research", type: "agent" },
-          { key: "write", type: "agent", dependsOn: ["missing"] },
+          { id: "research", type: "agent" },
+          { id: "write", type: "agent", dependsOn: ["missing"] },
         ],
         CONTEXT,
       ),
-    ).toThrow(/Valid step keys: \[research, write\]/);
+    ).toThrow(/Valid step ids: \[research, write\]/);
   });
 
   it("passes when steps have no dependsOn", () => {
     expect(() =>
       validateWorkflowStepReferences(
         [
-          { key: "step-a", type: "agent" },
-          { key: "step-b", type: "agent" },
+          { id: "step-a", type: "agent" },
+          { id: "step-b", type: "agent" },
         ],
         CONTEXT,
       ),
@@ -67,60 +67,60 @@ describe("validateWorkflowStepReferences — dependsOn", () => {
 // ---------------------------------------------------------------------------
 
 describe("validateWorkflowStepReferences — review step onReject", () => {
-  it("passes when review step onReject references a valid step key", () => {
+  it("passes when review step onReject references a valid step id", () => {
     expect(() =>
       validateWorkflowStepReferences(
         [
-          { key: "write", type: "agent" },
-          { key: "review", type: "review", onReject: "write" },
+          { id: "write", type: "agent" },
+          { id: "review", type: "review", onReject: "write" },
         ],
         CONTEXT,
       ),
     ).not.toThrow();
   });
 
-  it("throws ConvexError when review step onReject references an invalid step key", () => {
+  it("throws ConvexError when review step onReject references an invalid step id", () => {
     expect(() =>
       validateWorkflowStepReferences(
         [
-          { key: "write", type: "agent" },
-          { key: "review", type: "review", onReject: "nonexistent-step" },
+          { id: "write", type: "agent" },
+          { id: "review", type: "review", onReject: "nonexistent-step" },
         ],
         CONTEXT,
       ),
     ).toThrow(/invalid onReject target "nonexistent-step"/);
   });
 
-  it("throws ConvexError when onReject is a descriptive phrase instead of a step key", () => {
+  it("throws ConvexError when onReject is a descriptive phrase instead of a step id", () => {
     expect(() =>
       validateWorkflowStepReferences(
         [
-          { key: "assets", type: "agent" },
-          { key: "review", type: "review", onReject: "Return to assets step for rework" },
+          { id: "assets", type: "agent" },
+          { id: "review", type: "review", onReject: "Return to assets step for rework" },
         ],
         CONTEXT,
       ),
     ).toThrow(/invalid onReject target "Return to assets step for rework"/);
   });
 
-  it("includes the list of valid step keys in the onReject error message", () => {
+  it("includes the list of valid step ids in the onReject error message", () => {
     expect(() =>
       validateWorkflowStepReferences(
         [
-          { key: "write", type: "agent" },
-          { key: "review", type: "review", onReject: "bad-step" },
+          { id: "write", type: "agent" },
+          { id: "review", type: "review", onReject: "bad-step" },
         ],
         CONTEXT,
       ),
-    ).toThrow(/Valid step keys: \[write, review\]/);
+    ).toThrow(/Valid step ids: \[write, review\]/);
   });
 
   it("throws ConvexError when review step has no onReject", () => {
     expect(() =>
       validateWorkflowStepReferences(
         [
-          { key: "write", type: "agent" },
-          { key: "review", type: "review" },
+          { id: "write", type: "agent" },
+          { id: "review", type: "review" },
         ],
         CONTEXT,
       ),
@@ -131,8 +131,8 @@ describe("validateWorkflowStepReferences — review step onReject", () => {
     expect(() =>
       validateWorkflowStepReferences(
         [
-          { key: "write", type: "agent" },
-          { key: "review", type: "review", onReject: "   " },
+          { id: "write", type: "agent" },
+          { id: "review", type: "review", onReject: "   " },
         ],
         CONTEXT,
       ),
@@ -148,7 +148,7 @@ describe("validateWorkflowStepReferences — non-review step onReject ignored", 
   it("does not validate onReject for agent-type steps", () => {
     expect(() =>
       validateWorkflowStepReferences(
-        [{ key: "write", type: "agent", onReject: "some-arbitrary-string" }],
+        [{ id: "write", type: "agent", onReject: "some-arbitrary-string" }],
         CONTEXT,
       ),
     ).not.toThrow();
@@ -157,7 +157,7 @@ describe("validateWorkflowStepReferences — non-review step onReject ignored", 
   it("does not validate onReject for human-type steps", () => {
     expect(() =>
       validateWorkflowStepReferences(
-        [{ key: "approve", type: "human", onReject: "not-a-real-step" }],
+        [{ id: "approve", type: "human", onReject: "not-a-real-step" }],
         CONTEXT,
       ),
     ).not.toThrow();
@@ -166,7 +166,7 @@ describe("validateWorkflowStepReferences — non-review step onReject ignored", 
   it("does not validate onReject for system-type steps", () => {
     expect(() =>
       validateWorkflowStepReferences(
-        [{ key: "notify", type: "system", onReject: "also-not-real" }],
+        [{ id: "notify", type: "system", onReject: "also-not-real" }],
         CONTEXT,
       ),
     ).not.toThrow();
@@ -185,7 +185,7 @@ describe("validateWorkflowStepReferences — edge cases", () => {
   it("includes the context string in error messages", () => {
     const customContext = "workflow 'my-custom-flow'";
     expect(() =>
-      validateWorkflowStepReferences([{ key: "review", type: "review" }], customContext),
+      validateWorkflowStepReferences([{ id: "review", type: "review" }], customContext),
     ).toThrow(customContext);
   });
 });

@@ -74,13 +74,27 @@ def resolve_task_dirs(task_id: str) -> tuple[str, str]:
 
 
 def resolve_thread_journal_paths(task_id: str) -> tuple[str, str]:
-    """Resolve task-scoped thread journal and compaction-state file paths."""
+    """Resolve task-scoped thread journal and compaction-state file paths.
+
+    Checks the new `.internal` location first; falls back to the legacy
+    `output/` location for in-flight tasks that haven't been migrated yet.
+    """
     _, output_dir = resolve_task_dirs(task_id)
-    output_path = Path(output_dir)
-    return (
-        str(output_path / "THREAD_JOURNAL.md"),
-        str(output_path / "THREAD_COMPACTION_STATE.json"),
-    )
+    internal_dir = Path(output_dir) / ".internal"
+
+    journal = internal_dir / "THREAD_JOURNAL.md"
+    state = internal_dir / "THREAD_COMPACTION_STATE.json"
+
+    # Fall back to legacy paths if new location doesn't exist yet
+    if not journal.exists():
+        legacy_journal = Path(output_dir) / "THREAD_JOURNAL.md"
+        if legacy_journal.exists():
+            return (
+                str(legacy_journal),
+                str(Path(output_dir) / "THREAD_COMPACTION_STATE.json"),
+            )
+
+    return (str(journal), str(state))
 
 
 def build_file_context(

@@ -163,7 +163,7 @@ export const publishGraph = mutation({
           name: v.string(),
           steps: v.array(
             v.object({
-              key: v.string(),
+              id: v.string(),
               type: workflowStepTypeValidator,
               agentKey: v.optional(v.string()),
               reviewSpecId: v.optional(v.string()),
@@ -214,7 +214,7 @@ export const updatePublishedGraph = mutation({
           name: v.string(),
           steps: v.array(
             v.object({
-              key: v.string(),
+              id: v.string(),
               type: workflowStepTypeValidator,
               agentKey: v.optional(v.string()),
               reviewSpecId: v.optional(v.string()),

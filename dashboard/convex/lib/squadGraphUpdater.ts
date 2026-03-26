@@ -30,10 +30,10 @@ function validateReviewStepFields(workflow: EditableSquadGraphWorkflowInput): vo
     }
 
     if (!step.agentKey) {
-      throw new ConvexError(`Review step "${step.key}" requires agentKey`);
+      throw new ConvexError(`Review step "${step.id}" requires agentKey`);
     }
     if (!step.reviewSpecId) {
-      throw new ConvexError(`Review step "${step.key}" requires reviewSpecId`);
+      throw new ConvexError(`Review step "${step.id}" requires reviewSpecId`);
     }
   }
 }
@@ -70,8 +70,8 @@ function buildStoredSteps(
 
   return workflow.steps.map((step: SquadGraphWorkflowStepInput) => {
     const stored: Record<string, unknown> = {
-      id: step.key,
-      title: step.title ?? step.key,
+      id: step.id,
+      title: step.title ?? step.id,
       type: step.type,
     };
 

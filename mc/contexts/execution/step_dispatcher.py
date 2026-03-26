@@ -698,10 +698,13 @@ class StepDispatcher:
                     "=== FINAL ASSEMBLED PROMPT (sent to agent) ===",
                     req.prompt or "(none)",
                 ]
+                from mc.contexts.execution.output_artifacts import slugify
+
+                step_slug = slugify(step_title)
                 await asyncio.to_thread(
                     write_prompt_log,
                     task_id,
-                    "system_prompt_log_{DDHHMMSS}.txt",
+                    f"system_prompt_log_{step_slug}_{{DDHHMMSS}}.txt",
                     "\n".join(prompt_log_parts),
                 )
             except Exception:

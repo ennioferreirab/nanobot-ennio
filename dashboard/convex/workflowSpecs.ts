@@ -96,7 +96,7 @@ export const publish = internalMutation({
     validateReviewSteps(spec.steps as WorkflowStepRecord[] | undefined);
     const stepsForRefValidation = ((spec.steps as WorkflowStepRecord[] | undefined) ?? []).map(
       (s) => ({
-        key: s.id,
+        id: s.id,
         type: s.type,
         dependsOn: s.dependsOn,
         onReject: s.onReject,

@@ -84,11 +84,11 @@ function extractGraphFromDraft(draftGraph: Record<string, unknown>) {
     name: typeof wf.name === "string" ? wf.name : "Default Workflow",
     steps: Array.isArray(wf.steps)
       ? (wf.steps as Array<Record<string, unknown>>).map((step) => ({
-          key:
-            typeof step.key === "string"
-              ? step.key
-              : typeof step.id === "string"
-                ? step.id
+          id:
+            typeof step.id === "string"
+              ? step.id
+              : typeof step.key === "string"
+                ? step.key
                 : "step",
           type: (["agent", "human", "review", "system"].includes(step.type as string)
             ? step.type
@@ -151,7 +151,7 @@ export function useCreateSquadDraft(): UseCreateSquadDraftReturn {
       setIsSaving(true);
       try {
         const workflowSteps = draft.workflowSteps.map((step) => ({
-          key: step.id,
+          id: step.id,
           type: step.type,
           title: step.title,
           description: step.description || undefined,

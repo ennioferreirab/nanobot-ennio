@@ -64,7 +64,7 @@ function buildDraft(
       name: workflow.name,
       exitCriteria: workflow.exitCriteria ?? "",
       steps: workflow.steps.map((step) => ({
-        key: step.id,
+        id: step.id,
         title: step.title,
         type: step.type,
         description: step.description ?? "",
@@ -142,7 +142,7 @@ export function SquadDetailSheet({
             name: workflow.name,
             exitCriteria: workflow.exitCriteria || undefined,
             steps: workflow.steps.map((step) => ({
-              key: step.key,
+              id: step.id,
               type: step.type,
               title: step.title,
               description: step.description || undefined,

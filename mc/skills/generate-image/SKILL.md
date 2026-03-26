@@ -1,6 +1,6 @@
 ---
 name: generate-image
-description: Generate and edit images using OpenRouter image models. Use when an agent needs to create images from text prompts, edit or modify existing photos, generate visual content for marketing or products, or needs guidance on image composition, style, and prompt engineering for visual output.
+description: generate or edit images using openrouter image models with explicit control over quality, aspect ratio, and brand consistency. use when an agent needs draft or production visuals, visual explorations, image edits, or precise generation prompts for marketing and social content.
 ---
 
 # Generate Image
