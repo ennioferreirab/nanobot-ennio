@@ -23,7 +23,7 @@ CONTROL_SETTINGS_KEY = "gateway_sleep_control"
 ACTIVE_POLL_INTERVAL_SECONDS = 5
 SLEEP_POLL_INTERVAL_SECONDS = 300
 AUTO_SLEEP_AFTER_SECONDS = 300
-CONTROL_POLL_INTERVAL_SECONDS = 1
+CONTROL_SUBSCRIBE_BACKOFF_SECONDS = 5
 
 
 class RuntimeSleepController:
@@ -102,36 +102,32 @@ class RuntimeSleepController:
             if self._mode == "active":
                 return
 
-    async def poll_control_once(self) -> None:
-        raw = await asyncio.to_thread(
-            self._bridge.query,
-            "settings:getGatewaySleepControl",
-            {},
-        )
-        if not raw:
-            return
-
-        mode = raw.get("mode")
-        requested_at = raw.get("requestedAt") or raw.get("requested_at")
-        if mode not in {"sleep", "active"} or not requested_at:
-            return
-
-        signature = (mode, requested_at)
-        if signature == self._last_control_signature:
-            return
-
-        self._last_control_signature = signature
-        await self.apply_manual_mode(mode)
-
     async def watch_control(self) -> None:
+        """Watch for manual sleep/wake control changes via reactive subscription."""
         while True:
+            queue = self._bridge.async_subscribe("settings:getGatewaySleepControl", {})
             try:
-                await self.poll_control_once()
+                while True:
+                    raw = await queue.get()
+                    if not raw:
+                        continue
+
+                    mode = raw.get("mode")
+                    requested_at = raw.get("requestedAt") or raw.get("requested_at")
+                    if mode not in {"sleep", "active"} or not requested_at:
+                        continue
+
+                    signature = (mode, requested_at)
+                    if signature == self._last_control_signature:
+                        continue
+
+                    self._last_control_signature = signature
+                    await self.apply_manual_mode(mode)
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.debug("[sleep] Control poll failed", exc_info=True)
-            await asyncio.sleep(CONTROL_POLL_INTERVAL_SECONDS)
+                logger.debug("[sleep] Control subscription error, reconnecting", exc_info=True)
+                await asyncio.sleep(CONTROL_SUBSCRIBE_BACKOFF_SECONDS)
 
     def runtime_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
