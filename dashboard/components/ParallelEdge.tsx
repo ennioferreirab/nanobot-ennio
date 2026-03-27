@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { BaseEdge, getBezierPath, type EdgeProps } from "@xyflow/react";
+import { BaseEdge, getSmoothStepPath, type EdgeProps } from "@xyflow/react";
 
 interface ParallelEdgeData {
   isParallelFork?: boolean;
@@ -22,13 +22,14 @@ function ParallelEdgeComponent({
   data,
 }: EdgeProps) {
   const edgeData = data as ParallelEdgeData | undefined;
-  const [edgePath] = getBezierPath({
+  const [edgePath] = getSmoothStepPath({
     sourceX,
     sourceY,
     targetX,
     targetY,
     sourcePosition,
     targetPosition,
+    borderRadius: 0,
   });
 
   return (

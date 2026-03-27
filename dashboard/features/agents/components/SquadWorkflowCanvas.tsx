@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FlowStepNode, type FlowStepNodeData } from "@/components/FlowStepNode";
 import { StartNode, EndNode } from "@/components/StartEndNode";
+import { ParallelLabelNode } from "@/components/ParallelLabelNode";
+import { ParallelEdge } from "@/components/ParallelEdge";
 import { StepListView } from "@/components/StepListView";
 import { layoutWithDagre, stepsToNodesAndEdges } from "@/lib/flowLayout";
 import {
@@ -29,11 +31,16 @@ const nodeTypes = {
   flowStep: FlowStepNode,
   start: StartNode,
   end: EndNode,
+  parallelLabel: ParallelLabelNode,
 };
 
+const edgeTypes = { parallel: ParallelEdge };
+
 const defaultEdgeOptions = {
+  type: "smoothstep" as const,
   animated: false,
   style: { stroke: "hsl(var(--foreground))", strokeWidth: 2 },
+  pathOptions: { borderRadius: 0 },
 };
 
 interface SquadWorkflowCanvasProps {
@@ -278,6 +285,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
                 nodes={nodes}
                 edges={edges}
                 nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
                 defaultEdgeOptions={defaultEdgeOptions}
                 onNodeClick={(_event, node) => {
                   if (node.id.startsWith("__")) return;

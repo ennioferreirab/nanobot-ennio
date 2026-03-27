@@ -231,10 +231,7 @@ export function AgentSidebar({ onSelectAgent, onSelectSquad }: AgentSidebarProps
               <CollapsibleContent>
                 {!isAgentsLoading && filteredRegularAgents.length === 0 && !filterQuery && (
                   <p className="px-2 py-4 text-xs text-muted-foreground">
-                    No agents found. Add a YAML config to{" "}
-                    <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
-                      ~/.nanobot/agents/
-                    </code>
+                    No agents found. Register an agent to get started.
                   </p>
                 )}
                 <div className="overflow-y-auto max-h-[560px]">

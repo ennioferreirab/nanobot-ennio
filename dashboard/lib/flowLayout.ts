@@ -16,10 +16,10 @@ export interface FlowLayoutOptions {
 
 const DEFAULTS: Required<FlowLayoutOptions> = {
   nodeWidth: 220,
-  nodeHeight: 80,
-  rankSep: 120,
+  nodeHeight: 64,
+  rankSep: 50,
   nodeSep: 60,
-  direction: "LR",
+  direction: "TB",
 };
 
 const START_NODE_ID = "__start__";
@@ -27,6 +27,56 @@ const END_NODE_ID = "__end__";
 const START_END_WIDTH = 120;
 const START_END_HEIGHT = 50;
 const PARALLEL_LABEL_SIZE = 20;
+
+/**
+ * Remove transitive (redundant) dependencies for display.
+ * If step D blockedBy [A, B] and B blockedBy [A], then D→A is redundant.
+ */
+function reduceTransitiveBlockedBy(steps: EditablePlanStep[]): Map<string, string[]> {
+  const depsMap = new Map<string, string[]>();
+  for (const step of steps) {
+    depsMap.set(step.tempId, [...step.blockedBy]);
+  }
+
+  const result = new Map<string, string[]>();
+  for (const [stepId, deps] of depsMap) {
+    if (deps.length < 2) {
+      result.set(stepId, deps);
+      continue;
+    }
+
+    // For each direct dep, compute all nodes reachable transitively
+    const reachable = new Map<string, Set<string>>();
+    for (const dep of deps) {
+      const visited = new Set<string>();
+      const stack = [...(depsMap.get(dep) ?? [])];
+      while (stack.length > 0) {
+        const cur = stack.pop()!;
+        if (visited.has(cur)) continue;
+        visited.add(cur);
+        for (const d of depsMap.get(cur) ?? []) stack.push(d);
+      }
+      reachable.set(dep, visited);
+    }
+
+    // dep X is redundant if another dep Y can reach X transitively
+    const redundant = new Set<string>();
+    for (const x of deps) {
+      for (const y of deps) {
+        if (x !== y && reachable.get(y)!.has(x)) {
+          redundant.add(x);
+          break;
+        }
+      }
+    }
+
+    result.set(
+      stepId,
+      deps.filter((d) => !redundant.has(d)),
+    );
+  }
+  return result;
+}
 
 /**
  * Convert EditablePlanStep[] into React Flow nodes and edges.
@@ -80,9 +130,13 @@ export function stepsToNodesAndEdges(
     height: opts.nodeHeight,
   }));
 
+  // Apply transitive reduction to remove redundant edges at display time.
+  // This catches workflows stored before the publish-time reduction was added.
+  const reducedBlockedBy = reduceTransitiveBlockedBy(steps);
+
   const edges: Edge[] = [];
   for (const step of steps) {
-    for (const blockerId of step.blockedBy) {
+    for (const blockerId of reducedBlockedBy.get(step.tempId) ?? step.blockedBy) {
       edges.push({
         id: `e-${blockerId}-${step.tempId}`,
         source: blockerId,
@@ -182,7 +236,7 @@ export function stepsToNodesAndEdges(
 }
 
 /**
- * Position nodes using dagre (left-to-right layout).
+ * Position nodes using dagre (top-to-bottom layout).
  * Respects per-node width/height for accurate sizing of START/END nodes.
  * Positions parallel label pseudo-nodes at the midpoint of their fork targets.
  */
@@ -234,8 +288,8 @@ export function layoutWithDagre(nodes: Node[], edges: Edge[], options?: FlowLayo
     };
   });
 
-  // Position label nodes at the vertical midpoint of their fork targets,
-  // horizontally between the fork source and targets.
+  // Position label nodes at the horizontal midpoint of their fork targets,
+  // vertically between the fork source and targets (TB layout).
   const positionedMap = new Map(positioned.map((n) => [n.id, n]));
   const positionedLabels = labelNodes.map((label) => {
     const data = label.data as { forkSource: string; forkTargets: string[] };
@@ -246,21 +300,21 @@ export function layoutWithDagre(nodes: Node[], edges: Edge[], options?: FlowLayo
 
     if (targetNodes.length === 0 || !sourceNode) return label;
 
-    // Average Y of targets (center of each target node)
-    const avgY =
-      targetNodes.reduce((sum, n) => sum + n.position.y + (n.height ?? opts.nodeHeight) / 2, 0) /
+    // Average X of targets (center of each target node)
+    const avgX =
+      targetNodes.reduce((sum, n) => sum + n.position.x + (n.width ?? opts.nodeWidth) / 2, 0) /
       targetNodes.length;
 
-    // X: between source right edge and targets left edge
-    const sourceRight = sourceNode.position.x + (sourceNode.width ?? opts.nodeWidth);
-    const targetLeft = Math.min(...targetNodes.map((n) => n.position.x));
-    const midX = (sourceRight + targetLeft) / 2;
+    // Y: between source bottom edge and targets top edge
+    const sourceBottom = sourceNode.position.y + (sourceNode.height ?? opts.nodeHeight);
+    const targetTop = Math.min(...targetNodes.map((n) => n.position.y));
+    const midY = (sourceBottom + targetTop) / 2;
 
     return {
       ...label,
       position: {
-        x: midX - (label.width ?? PARALLEL_LABEL_SIZE) / 2,
-        y: avgY - (label.height ?? PARALLEL_LABEL_SIZE) / 2,
+        x: avgX - (label.width ?? PARALLEL_LABEL_SIZE) / 2,
+        y: midY - (label.height ?? PARALLEL_LABEL_SIZE) / 2,
       },
     };
   });

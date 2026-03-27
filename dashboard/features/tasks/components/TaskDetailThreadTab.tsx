@@ -285,6 +285,7 @@ export function TaskDetailThreadTab({
 
                 const nonDeletedSteps = (liveSteps ?? []).filter((s) => s.status !== "deleted");
                 let lastStepId: string | undefined;
+                let dividerIndex = 0;
                 const threadElements: React.ReactNode[] = [];
 
                 for (const msg of filteredMessages) {
@@ -298,7 +299,7 @@ export function TaskDetailThreadTab({
 
                       threadElements.push(
                         <StepDivider
-                          key={`divider-${msg.stepId}`}
+                          key={`divider-${msg.stepId}-${dividerIndex++}`}
                           stepName={
                             isParallel
                               ? `Steps ${stepIndex}–${stepIndex + (pgMembers!.length - 1)} (parallel)`

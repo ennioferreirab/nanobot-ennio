@@ -26,7 +26,7 @@ interface ChatMessage {
 }
 
 export async function POST(request: NextRequest) {
-  const tmpScript = join(tmpdir(), `nanobot-assist-${randomUUID()}.py`);
+  const tmpScript = join(tmpdir(), `oc-assist-${randomUUID()}.py`);
 
   try {
     const body = await request.json();
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Build the input payload as a JSON file to avoid shell escaping issues
-    const tmpInput = join(tmpdir(), `nanobot-assist-input-${randomUUID()}.json`);
+    const tmpInput = join(tmpdir(), `oc-assist-input-${randomUUID()}.json`);
     await writeFile(
       tmpInput,
       JSON.stringify({ messages, description: lastUserMessage.content }),

@@ -135,7 +135,7 @@ function AgentCard({
         : "bg-muted-foreground/50";
 
   return (
-    <div className="rounded-xl border bg-card p-4 sm:p-5 flex flex-col gap-3 transition-colors hover:border-border/80">
+    <div className="rounded-xl border bg-card p-4 sm:p-5 flex flex-col gap-3 transition-colors hover:border-border/80 cursor-pointer">
       {/* Header row */}
       <button
         type="button"
@@ -230,7 +230,7 @@ function MobileSquadNav({
         role="tab"
         aria-selected={active === "workflow"}
         onClick={() => onChange("workflow")}
-        className={`flex flex-col items-center gap-1 px-4 py-1 ${
+        className={`flex flex-col items-center gap-1 px-4 py-2 min-h-[44px] ${
           active === "workflow" ? "text-primary" : "text-muted-foreground"
         }`}
       >
@@ -242,7 +242,7 @@ function MobileSquadNav({
         role="tab"
         aria-selected={active === "agents"}
         onClick={() => onChange("agents")}
-        className={`flex flex-col items-center gap-1 px-4 py-1 ${
+        className={`flex flex-col items-center gap-1 px-4 py-2 min-h-[44px] ${
           active === "agents" ? "text-primary" : "text-muted-foreground"
         }`}
       >
@@ -315,15 +315,14 @@ function ContextRail({
                 aria-label="Outcome"
                 className="min-h-20 text-xs"
                 value={(draft ?? initialDraft)?.squad.outcome ?? ""}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const source = draft ?? initialDraft;
+                  if (!source) return;
                   onDraftChange({
-                    ...(draft ?? initialDraft)!,
-                    squad: {
-                      ...(draft ?? initialDraft)!.squad,
-                      outcome: e.target.value,
-                    },
-                  })
-                }
+                    ...source,
+                    squad: { ...source.squad, outcome: e.target.value },
+                  });
+                }}
               />
             ) : (
               <p className="text-xs text-muted-foreground leading-relaxed">
@@ -348,12 +347,11 @@ function ContextRail({
                 aria-label="Review Policy"
                 className="min-h-20 text-xs"
                 value={(draft ?? initialDraft)?.reviewPolicy ?? ""}
-                onChange={(e) =>
-                  onDraftChange({
-                    ...(draft ?? initialDraft)!,
-                    reviewPolicy: e.target.value,
-                  })
-                }
+                onChange={(e) => {
+                  const source = draft ?? initialDraft;
+                  if (!source) return;
+                  onDraftChange({ ...source, reviewPolicy: e.target.value });
+                }}
               />
             ) : (
               <p className="text-xs text-muted-foreground leading-relaxed">
@@ -373,9 +371,27 @@ function ContextRail({
             <ChevronDown className="h-3 w-3 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
           </CollapsibleTrigger>
           <CollapsibleContent className="px-5 py-3 border-b">
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {workflows[0]?.exitCriteria || "No exit criteria defined."}
-            </p>
+            {isEditing && workflows[0] ? (
+              <Textarea
+                aria-label="Exit Criteria"
+                className="min-h-20 text-xs"
+                value={workflows[0].exitCriteria ?? ""}
+                onChange={(e) => {
+                  const source = draft ?? initialDraft;
+                  if (!source) return;
+                  onDraftChange({
+                    ...source,
+                    workflows: source.workflows.map((wf, i) =>
+                      i === 0 ? { ...wf, exitCriteria: e.target.value } : wf,
+                    ),
+                  });
+                }}
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {workflows[0]?.exitCriteria || "No exit criteria defined."}
+              </p>
+            )}
           </CollapsibleContent>
         </Collapsible>
       </ScrollArea>
@@ -762,10 +778,12 @@ export function SquadDetailSheet({
 
                         {/* Mobile: Outcome & Review Policy inline */}
                         <div className="md:hidden space-y-4">
-                          {squad.outcome && (
+                          {((draft ?? initialDraft)?.squad.outcome || squad.outcome) && (
                             <div>
                               <h4 className="text-sm font-semibold mb-1">Outcome</h4>
-                              <p className="text-sm text-muted-foreground">{squad.outcome}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {(draft ?? initialDraft)?.squad.outcome ?? squad.outcome}
+                              </p>
                             </div>
                           )}
                           {squadReviewPolicy && (

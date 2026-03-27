@@ -5,7 +5,7 @@ import { getRuntimePath } from "@/lib/runtimeHome";
 /**
  * Write a SKILL.md file to the runtime workspace on disk.
  *
- * Creates `~/.nanobot/workspace/skills/<name>/SKILL.md` with YAML frontmatter.
+ * Creates `<runtime-home>/workspace/skills/<name>/SKILL.md` with YAML frontmatter.
  * Called before the Convex mutation so failures are caught early.
  */
 export function writeSkillToDisk(

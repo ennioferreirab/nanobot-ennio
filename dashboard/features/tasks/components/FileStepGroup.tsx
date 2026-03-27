@@ -108,14 +108,22 @@ export function FileStepGroup({
                   <Star className="h-2.5 w-2.5 flex-shrink-0 fill-amber-400 text-amber-400" />
                 )}
                 {onToggleFavorite && (
-                  <button
-                    type="button"
+                  <span
+                    role="button"
+                    tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation();
                       onToggleFavorite(file);
                     }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onToggleFavorite(file);
+                      }
+                    }}
                     className={cn(
-                      "flex-shrink-0",
+                      "flex-shrink-0 cursor-pointer",
                       file.isFavorite ? "" : "opacity-0 group-hover:opacity-100",
                     )}
                     aria-label={file.isFavorite ? "Remove from favorites" : "Add to favorites"}
@@ -123,7 +131,7 @@ export function FileStepGroup({
                     {!file.isFavorite && (
                       <Star className="h-2.5 w-2.5 text-muted-foreground/40 hover:text-amber-400" />
                     )}
-                  </button>
+                  </span>
                 )}
                 {file.size !== undefined && (
                   <span className="flex-shrink-0 text-[10px] text-muted-foreground/60">

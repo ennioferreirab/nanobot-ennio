@@ -34,8 +34,10 @@ const nodeTypes = {
 const edgeTypes = { parallel: ParallelEdge };
 
 const defaultEdgeOptions = {
+  type: "smoothstep" as const,
   animated: false,
   style: { stroke: "hsl(var(--foreground))", strokeWidth: 2 },
+  pathOptions: { borderRadius: 0 },
 };
 
 /* ── Types ── */
@@ -98,12 +100,6 @@ interface ExecutionPlanTabProps {
   hasUnsavedChanges?: boolean;
   onOpenLive?: (stepId: string) => void;
   liveStepIds?: string[];
-  /** Called when a flow node is clicked in canvas mode (for external selection tracking) */
-  onNodeSelect?: (stepId: string) => void;
-  /** The currently selected node ID (receives blue border with glow) */
-  selectedNodeId?: string | null;
-  /** Files associated with the task, used to show output file chips on nodes */
-  files?: Array<{ name: string; stepId?: string }>;
 }
 
 interface NormalizedStep {
@@ -325,9 +321,6 @@ export function ExecutionPlanTab({
   hasUnsavedChanges = false,
   onOpenLive,
   liveStepIds,
-  onNodeSelect,
-  selectedNodeId,
-  files,
 }: ExecutionPlanTabProps) {
   const { acceptHumanStep, retryStep, stopStep, manualMoveStep, addStep, updateStep, deleteStep } =
     useExecutionPlanActions();
@@ -598,12 +591,10 @@ export function ExecutionPlanTab({
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
       if (node.id === "__start__" || node.id === "__end__") return;
-      if (node.id === VISUAL_MERGE_ALIAS_ID) return;
-      onNodeSelect?.(node.id);
       if (!canAddOrEdit) return;
       handleStepClick(node.id);
     },
-    [canAddOrEdit, handleStepClick, onNodeSelect],
+    [canAddOrEdit, handleStepClick],
   );
 
   // Compute leaf steps: steps that no other step depends on (closest to END)
@@ -630,7 +621,7 @@ export function ExecutionPlanTab({
         .map((s) => [s.stepId, formatDuration(s.startedAt!, s.completedAt!)]),
     );
     const nodesWithStatus = rawNodes.map((n) => {
-      if (n.id === "__start__" || n.id === "__end__" || n.type === "parallelLabel") return n;
+      if (n.id === "__start__" || n.id === "__end__") return n;
       // Compute hasParallelSiblings for merge button visibility
       const stepData = planSteps.find((step) => step.tempId === n.id);
       const matchedDisplayStep = displaySteps.find((s) => s.stepId === n.id);
@@ -668,10 +659,8 @@ export function ExecutionPlanTab({
           onOpenLive: isVisualOnly ? undefined : onOpenLive,
           isLiveStep: Boolean(
             liveStepIdSet.has(n.id) ||
-            (matchedDisplayStep?.liveId != null && liveStepIdSet.has(matchedDisplayStep.liveId)),
+              (matchedDisplayStep?.liveId != null && liveStepIdSet.has(matchedDisplayStep.liveId)),
           ),
-          isSelectedNode: selectedNodeId === n.id,
-          outputFiles: files?.filter((f) => f.stepId === n.id).map((f) => f.name) ?? [],
         },
       };
     });
@@ -702,8 +691,6 @@ export function ExecutionPlanTab({
     handleStepClick,
     onOpenLive,
     liveStepIdSet,
-    selectedNodeId,
-    files,
   ]);
 
   // Build existingSteps for the blocked-by selector

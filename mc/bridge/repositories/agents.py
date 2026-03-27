@@ -41,9 +41,10 @@ class AgentRepository:
             args["soul"] = agent_data.soul
         if agent_data.is_system:
             args["is_system"] = True
-        args["backend"] = agent_data.backend
-        if agent_data.interactive_provider is not None:
-            args["interactive_provider"] = agent_data.interactive_provider
+        # Map backend to interactiveProvider for Convex (backend field not in schema)
+        interactive = agent_data.interactive_provider or agent_data.backend
+        if interactive:
+            args["interactive_provider"] = interactive
         cc_opts = agent_data.claude_code_opts
         if cc_opts is not None:
             cc_payload: dict[str, Any] = {}

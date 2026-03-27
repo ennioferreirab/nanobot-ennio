@@ -20,6 +20,7 @@ import type * as executionSessions from "../executionSessions.js";
 import type * as integrations from "../integrations.js";
 import type * as interactiveSessions from "../interactiveSessions.js";
 import type * as lib_executionInteractionState from "../lib/executionInteractionState.js";
+import type * as lib_graphUtils from "../lib/graphUtils.js";
 import type * as lib_integrationMappings from "../lib/integrationMappings.js";
 import type * as lib_integrationSync from "../lib/integrationSync.js";
 import type * as lib_readModels from "../lib/readModels.js";
@@ -85,6 +86,7 @@ declare const fullApi: ApiFromModules<{
   integrations: typeof integrations;
   interactiveSessions: typeof interactiveSessions;
   "lib/executionInteractionState": typeof lib_executionInteractionState;
+  "lib/graphUtils": typeof lib_graphUtils;
   "lib/integrationMappings": typeof lib_integrationMappings;
   "lib/integrationSync": typeof lib_integrationSync;
   "lib/readModels": typeof lib_readModels;

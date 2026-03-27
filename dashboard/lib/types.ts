@@ -6,7 +6,7 @@ export type EditablePlanStep = {
   tempId: string;
   title: string;
   description: string;
-  assignedAgent: string;
+  assignedAgent?: string;
   blockedBy: string[];
   parallelGroup: number;
   order: number;

@@ -17,14 +17,28 @@ import { STATUS_COLORS } from "@/lib/constants";
 import type { EditablePlanStep } from "@/lib/types";
 import { getAvatarColor } from "@/lib/agentUtils";
 
-/* ── Canvas color constants ── */
-const _CANVAS_COLORS = {
-  success: "#2ea043",
-  primary: "#2383e2",
-  surface: "#1e1e1e",
-  surfaceDim: "#1a1a1a",
-  muted: "#222",
-} as const;
+/* ── Subtle full-border status color ── */
+
+function getStatusBorderClass(status: string): string {
+  const normalized = normalizeStatus(status);
+  switch (normalized) {
+    case "completed":
+      return "border-green-500/30";
+    case "running":
+    case "in_progress":
+      return "border-blue-500/30";
+    case "crashed":
+    case "failed":
+      return "border-red-500/30";
+    case "blocked":
+    case "waiting_human":
+      return "border-amber-500/30";
+    case "assigned":
+      return "border-cyan-500/30";
+    default:
+      return "border-border";
+  }
+}
 
 /* ── Status helpers (shared with ExecutionPlanTab) ── */
 
@@ -145,45 +159,6 @@ function StatusDot({ meta }: { meta: StepStatusMeta }) {
   }
 }
 
-/* ── Border color mapping ── */
-
-function getBorderColorClass(avatarBgClass: string): string {
-  const map: Record<string, string> = {
-    "bg-blue-500": "border-l-blue-500",
-    "bg-emerald-500": "border-l-emerald-500",
-    "bg-violet-500": "border-l-violet-500",
-    "bg-amber-500": "border-l-amber-500",
-    "bg-rose-500": "border-l-rose-500",
-    "bg-cyan-500": "border-l-cyan-500",
-    "bg-indigo-500": "border-l-indigo-500",
-    "bg-teal-500": "border-l-teal-500",
-  };
-  return map[avatarBgClass] ?? "border-l-border";
-}
-
-/* ── Status bar color helper ── */
-
-function getStatusBarClass(status: string): string {
-  const normalized = normalizeStatus(status);
-  switch (normalized) {
-    case "completed":
-      return "bg-[var(--canvas-success,#2ea043)]";
-    case "running":
-    case "in_progress":
-      return "bg-[var(--canvas-primary,#2383e2)]";
-    case "crashed":
-    case "failed":
-      return "bg-destructive";
-    default:
-      return "bg-[var(--canvas-dim,#1a1a1a)]";
-  }
-}
-
-function isRunningStatus(status: string): boolean {
-  const n = normalizeStatus(status);
-  return n === "running" || n === "in_progress";
-}
-
 /* ── Node data type ── */
 
 export type FlowStepNodeData = {
@@ -272,7 +247,6 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
       : step.assignedAgent;
 
   const avatarBgClass = agentName ? getAvatarColor(agentName) : "bg-muted";
-  const borderColorClass = agentName ? getBorderColorClass(avatarBgClass) : "border-l-border";
 
   const showRetryButton =
     (!isEditMode || isPaused) &&
@@ -292,12 +266,11 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
         data-testid={`flow-step-node-${step.tempId}`}
         className={cn(
           "relative rounded-lg border bg-background px-3 py-2 shadow-sm w-[220px]",
-          isSelectedNode
-            ? "border-2 border-primary shadow-[0_0_20px_rgba(35,131,226,0.15)]"
-            : cn("border-l-2", borderColorClass),
-          selected ? "ring-1 ring-primary/40" : "border-border",
+          getStatusBorderClass(resolvedStatus),
+          isSelectedNode && "ring-2 ring-primary shadow-[0_0_20px_rgba(35,131,226,0.15)]",
+          !isSelectedNode && selected && "ring-1 ring-primary/40",
           meta.runningPulse && "motion-safe:animate-pulse",
-          onStepClick && "cursor-pointer hover:border-primary/50 transition-colors",
+          onStepClick && "cursor-pointer hover:bg-muted/50 transition-colors",
         )}
         role={onStepClick ? "button" : undefined}
         tabIndex={onStepClick ? 0 : undefined}
@@ -310,26 +283,9 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           }
         }}
       >
-        {/* Status bar at top of card */}
-        {isRunningStatus(resolvedStatus) ? (
-          <div
-            className="h-[3px] -mx-3 -mt-2 rounded-t-lg mb-2 overflow-hidden"
-            style={{
-              background: `linear-gradient(90deg, var(--canvas-primary, #2383e2) 50%, var(--canvas-muted, #222) 50%)`,
-            }}
-          />
-        ) : (
-          <div
-            className={cn(
-              "h-[3px] -mx-3 -mt-2 rounded-t-lg mb-2",
-              getStatusBarClass(resolvedStatus),
-            )}
-          />
-        )}
-
         <Handle
           type="target"
-          position={Position.Left}
+          position={Position.Top}
           className="!opacity-0 !pointer-events-none !w-2 !h-2"
         />
 
@@ -484,37 +440,20 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           </div>
         )}
 
-        {/* Progress bar at bottom of card */}
-        {isRunningStatus(resolvedStatus) ? (
-          <div
-            className="h-[3px] -mx-3 -mb-2 rounded-b-lg mt-2 overflow-hidden"
-            style={{
-              background: `linear-gradient(90deg, var(--canvas-primary, #2383e2) 50%, var(--canvas-muted, #222) 50%)`,
-            }}
-          />
-        ) : (
-          <div
-            className={cn(
-              "h-[3px] -mx-3 -mb-2 rounded-b-lg mt-2",
-              getStatusBarClass(resolvedStatus),
-            )}
-          />
-        )}
-
         <Handle
           type="source"
-          position={Position.Right}
+          position={Position.Bottom}
           className="!opacity-0 !pointer-events-none !w-2 !h-2"
         />
       </div>
 
-      {/* Edit-mode buttons positioned around the card, inside the group hover area */}
+      {/* Edit-mode buttons positioned around the card (TB layout) */}
       {isEditMode && (
         <>
-          {/* Sequential → (right edge) */}
+          {/* Sequential ↓ (bottom edge) */}
           <div
             className={cn(
-              "absolute right-0 top-1/2 -translate-y-1/2 flex flex-col gap-1 transition-opacity",
+              "absolute bottom-0 left-1/2 -translate-x-1/2 flex gap-1 transition-opacity",
               btnVisibility,
             )}
           >
@@ -528,7 +467,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
               }}
               title="Add sequential step"
             >
-              <ArrowRight className="h-3 w-3" />
+              <ArrowRight className="h-3 w-3 rotate-90" />
             </button>
             {hasParallelSiblings && (
               <button
@@ -547,10 +486,10 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           </div>
           {onAddParallel && (
             <>
-              {/* Parallel ↑ (top edge) */}
+              {/* Parallel ← (left edge) */}
               <div
                 className={cn(
-                  "absolute top-0 left-1/2 -translate-x-1/2 transition-opacity",
+                  "absolute left-0 top-1/2 -translate-y-1/2 transition-opacity",
                   btnVisibility,
                 )}
               >
@@ -564,13 +503,13 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
                   }}
                   title="Add parallel step"
                 >
-                  <ArrowRight className="h-3 w-3 -rotate-90" />
+                  <ArrowRight className="h-3 w-3 rotate-180" />
                 </button>
               </div>
-              {/* Parallel ↓ (bottom edge) */}
+              {/* Parallel → (right edge) */}
               <div
                 className={cn(
-                  "absolute bottom-0 left-1/2 -translate-x-1/2 transition-opacity",
+                  "absolute right-0 top-1/2 -translate-y-1/2 transition-opacity",
                   btnVisibility,
                 )}
               >
@@ -584,15 +523,15 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
                   }}
                   title="Add parallel step"
                 >
-                  <ArrowRight className="h-3 w-3 rotate-90" />
+                  <ArrowRight className="h-3 w-3" />
                 </button>
               </div>
             </>
           )}
-          {/* Trash (left edge) */}
+          {/* Trash (top edge) */}
           <div
             className={cn(
-              "absolute left-0 top-1/2 -translate-y-1/2 transition-opacity",
+              "absolute top-0 left-1/2 -translate-x-1/2 transition-opacity",
               btnVisibility,
             )}
           >

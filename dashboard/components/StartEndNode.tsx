@@ -19,7 +19,11 @@ function StartNodeComponent({ selected }: NodeProps<StartNodeType>) {
     >
       <Play className="h-3.5 w-3.5 text-green-500 fill-green-500" />
       <span className="text-xs font-medium text-green-600">START</span>
-      <Handle type="source" position={Position.Right} className="!opacity-0 !pointer-events-none" />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="!opacity-0 !pointer-events-none"
+      />
     </div>
   );
 }
@@ -33,7 +37,7 @@ function EndNodeComponent({ selected }: NodeProps<EndNodeType>) {
         selected && "ring-2 ring-red-500/30",
       )}
     >
-      <Handle type="target" position={Position.Left} className="!opacity-0 !pointer-events-none" />
+      <Handle type="target" position={Position.Top} className="!opacity-0 !pointer-events-none" />
       <Square className="h-3.5 w-3.5 text-red-500 fill-red-500" />
       <span className="text-xs font-medium text-red-600">END</span>
     </div>
