@@ -275,7 +275,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
   const avatarBgClass = agentName ? getAvatarColor(agentName) : "bg-muted";
 
   const canSkip =
-    !isEditMode && !!onSkip && ["planned", "assigned", "blocked"].includes(normalizedStatus);
+    !isEditMode && !!onSkip && ["assigned", "blocked", "review"].includes(normalizedStatus);
   const canUnskip = !isEditMode && !!onSkip && normalizedStatus === "skipped";
   const isMarkedForSkip = step.skip === true && normalizedStatus !== "skipped";
 

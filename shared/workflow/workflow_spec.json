@@ -82,10 +82,10 @@
   ],
 
   "stepTransitions": {
-    "planned": ["assigned", "blocked", "skipped"],
+    "planned": ["assigned", "blocked"],
     "assigned": ["running", "review", "completed", "skipped", "crashed", "blocked", "waiting_human"],
     "running": ["assigned", "blocked", "review", "completed", "crashed"],
-    "review": ["running", "completed", "crashed"],
+    "review": ["running", "completed", "skipped", "crashed"],
     "completed": ["assigned"],
     "skipped": ["assigned", "deleted"],
     "crashed": ["assigned"],
@@ -114,7 +114,7 @@
     "waiting_human->running": "step_started",
     "waiting_human->completed": "step_completed",
     "waiting_human->crashed": "system_error",
-    "planned->skipped": "step_skipped",
+    "review->skipped": "step_skipped",
     "assigned->skipped": "step_skipped",
     "blocked->skipped": "step_skipped",
     "skipped->assigned": "step_dispatched"

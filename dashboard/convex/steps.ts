@@ -1194,10 +1194,10 @@ export const skipStep = mutation({
     const timestamp = new Date().toISOString();
 
     if (args.skip) {
-      const skippableStatuses = ["planned", "assigned", "blocked"];
+      const skippableStatuses = ["assigned", "blocked", "review"];
       if (!skippableStatuses.includes(step.status)) {
         throw new ConvexError(
-          `Cannot skip a step in '${step.status}' status. Step must be planned, assigned, or blocked.`,
+          `Cannot skip a step in '${step.status}' status. Step must be assigned, blocked, or in review.`,
         );
       }
 

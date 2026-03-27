@@ -646,8 +646,8 @@ describe("skipped status", () => {
     expect(isValidStepStatus("skipped")).toBe(true);
   });
 
-  it("planned -> skipped is valid", () => {
-    expect(isValidStepTransition("planned", "skipped")).toBe(true);
+  it("review -> skipped is valid", () => {
+    expect(isValidStepTransition("review", "skipped")).toBe(true);
   });
 
   it("assigned -> skipped is valid", () => {

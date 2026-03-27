@@ -44,7 +44,7 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
   const isWaitingHuman = step.status === "waiting_human";
   const isRunningGateStep = step.status === "running" && (isHuman || isWorkflowGate);
   const isSkipped = step.status === "skipped";
-  const isSkippable = ["planned", "assigned", "blocked", "skipped"].includes(step.status);
+  const isSkippable = ["assigned", "blocked", "review", "skipped"].includes(step.status);
   const assignedAgentInitials = step.assignedAgent
     ? step.assignedAgent
         .split(/[\s-_]+/)
