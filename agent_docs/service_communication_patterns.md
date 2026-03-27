@@ -304,7 +304,65 @@ The Python side uses two modes, both in `mc/bridge/subscriptions.py`:
 
 The `review` and `in_progress` loops each serve two consumers via fan-out. Consumers that don't need heavy fields (`executionPlan`, `routingDecision`, `files`, merge fields) use `tasks:listByStatusLite`.
 
-### 2.6 All Convex Functions Called from Python
+### 2.6 Python-Side Caches
+
+The Python backend caches frequently-read Convex data to reduce query volume during active execution.
+
+#### SettingsCache
+
+**File:** `mc/bridge/settings_cache.py`
+
+TTL-based cache for `settings:get` queries. Attached to `ConvexBridge` as `bridge.settings_cache`.
+
+| Setting Key | TTL | Consumer |
+|-------------|-----|----------|
+| `global_orientation_prompt` | 60s | `mc/infrastructure/orientation.py` |
+| `task_timeout_minutes` | 60s | `mc/runtime/timeout_checker.py` |
+
+**Stale fallback:** On query failure, returns the last cached value if available (prevents transient Convex errors from crashing execution).
+
+**Rule:** All `settings:get` queries from Python must go through `bridge.settings_cache.get(key)`, not direct `bridge.query("settings:get", ...)`. The `TierResolver` has its own 60s cache for `model_tiers` and `tier_reasoning_levels`.
+
+#### TagAttributesCache
+
+**File:** `mc/bridge/tag_attributes_cache.py`
+
+5-minute TTL cache for `tagAttributes:list` (catalog data that rarely changes). Attached to `ConvexBridge` as `bridge.tag_attributes_cache`.
+
+| Consumer | File |
+|----------|------|
+| Context builder tag attrs | `mc/application/execution/context_builder.py` |
+| Post-processing tag attrs | `mc/contexts/execution/post_processing.py` |
+| CC executor tag attrs | `mc/contexts/execution/cc_executor.py` |
+
+**Rule:** Never query `tagAttributes:list` directly. Use `bridge.tag_attributes_cache.get()`.
+
+#### InteractiveSessionRegistry Cache
+
+**File:** `mc/contexts/interactive/registry.py`
+
+In-memory cache of session documents with 30s TTL and 500-entry cap. Eliminates redundant `interactiveSessions:getForRuntime` queries during supervision event handling (which fires 10-50x/sec during active execution).
+
+- `get()` checks cache → on miss or TTL expired, queries Convex
+- `_upsert()` updates cache with written data + resets timestamp
+- `end_session()` / `terminate()` evict from cache
+
+#### Activity Log Batching
+
+**File:** `mc/contexts/interactive/activity_service.py`
+
+`sessionActivityLog:append` mutations are buffered and flushed in batches via `sessionActivityLog:appendBatch`. This reduces Convex mutation volume from ~30/sec to ~3/sec during active execution.
+
+| Trigger | Threshold |
+|---------|-----------|
+| Buffer size | 20 events |
+| Time since last flush | 300ms |
+| Session end / result | Explicit `flush()` call |
+| Exception paths | Explicit `flush()` in strategy error handlers |
+
+**Rule:** All new code calling `activity_service.append_event()` must ensure `flush()` is called in error/finally paths. Lost buffer events are not recoverable.
+
+### 2.7 All Convex Functions Called from Python
 
 #### Tasks
 
@@ -760,6 +818,50 @@ The dashboard connects to Convex via the JS SDK WebSocket (reactive). Key subscr
 | Activity | `activities.listRecent` | `useActivityFeed` |
 
 **Pattern:** Feature hooks abstract all Convex access. Components never call `useQuery`/`useMutation` directly — they go through hooks like `useTaskDetailView(taskId)`, `useBoardView(filters)`, `useAgentConfigSheetData(name)`.
+
+#### Subscription Deduplication: AppDataProvider
+
+**File:** `dashboard/components/AppDataProvider.tsx`
+
+Four global queries are subscribed once via a React Context provider and shared across all consuming hooks:
+
+| Query | Consumers |
+|-------|-----------|
+| `agents.list` | `useBoardSelectorData`, `useAgentSidebarData` |
+| `boards.list` | `useBoardProviderData`, `useBoardSelectorData` |
+| `taskTags.list` | `useSearchBarFilters`, `useTaskInputData` |
+| `tagAttributes.list` | `useSearchBarFilters`, `useTaskInputData` |
+
+**Rule:** Never add a new `useQuery(api.agents.list)`, `useQuery(api.boards.list)`, `useQuery(api.taskTags.list)`, or `useQuery(api.tagAttributes.list)` in a hook. Use `useAppData()` instead. Adding a direct `useQuery` for these creates a duplicate subscription.
+
+#### Lazy Subscriptions
+
+Some components use the `"skip"` pattern or conditional mounting to avoid subscribing when their data isn't needed:
+
+| Component | Query | Strategy |
+|-----------|-------|----------|
+| `TrashBinSheet` | `tasks.listDeleted` | Only mounted when sheet is open (`{trashOpen && <TrashBinSheet>}`) |
+| `DoneTasksSheet` | `tasks.listDoneHistory` | Only mounted when sheet is open (`{doneSheetOpen && <DoneTasksSheet>}`) |
+| `ActivityFeed` | `activities.listRecent` | Skip pattern when `enabled=false` (panel collapsed) |
+| `useTaskInteractiveSession` | `interactiveSessions.listSessions` | Skip when no `taskId`; filters by `taskId` via index |
+| `useTaskInteractiveSession` | `agents.getByName` | Skip when no target agent |
+
+**Rule:** Sheets, modals, and collapsible panels must NOT subscribe to Convex when closed/collapsed. Either use conditional mounting (`{open && <Component>}`) or the `"skip"` pattern.
+
+#### Invalidation Surface
+
+Every Convex `useQuery` subscription re-evaluates when ANY document in its read-set tables changes. Wider read-sets = more frequent re-evaluations.
+
+| Query | Tables Read | Invalidation Trigger |
+|-------|------------|---------------------|
+| `boards.getBoardView` | boards, tasks, steps, tagAttributeValues | Any task/step status change, board update |
+| `tasks.getDetailView` | tasks, boards, messages, steps, tagAttributeValues, squadSpecs, workflowSpecs, agents | Any message/step for the task |
+| `agents.list` | agents | Any agent mutation (including metric updates) |
+| `activities.listRecent` | activities | Every activity insert (very frequent during execution) |
+| `interactiveSessions.listSessions` | interactiveSessions (via `by_taskId` index) | Session upserts for the specific task |
+| `sessionActivityLog.listForSession` | sessionActivityLog (via `by_session_seq` index) | Activity log appends for the specific session |
+
+**Rule:** When adding queries to `getBoardView` or `getDetailView`, avoid adding new table reads — each table widens the invalidation surface. Prefer separate small queries over mega-queries.
 
 ### 6.2 Key Convex Mutations from Dashboard
 
