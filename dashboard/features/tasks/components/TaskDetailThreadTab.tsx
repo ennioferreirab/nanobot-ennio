@@ -8,6 +8,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { ThreadInput } from "@/features/thread/components/ThreadInput";
 import { ThreadMessage } from "@/features/thread/components/ThreadMessage";
+import { ChatBubble } from "@/features/thread/components/ChatBubble";
+import { StepDivider } from "@/features/thread/components/StepDivider";
+import { getAvatarHexColor } from "@/lib/agentUtils";
+import { formatDuration } from "@/lib/formatDuration";
 import type {
   MergeSourceThread,
   TaskDetailViewData,
@@ -269,20 +273,104 @@ export function TaskDetailThreadTab({
                     : "No messages yet. Agent activity will appear here."}
                 </p>
               )}
-              {filteredMessages.map((msg) => (
-                <motion.div
-                  key={msg._id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.2 }}
-                >
-                  <ThreadMessage
-                    message={msg}
-                    steps={liveSteps ?? undefined}
-                    onArtifactClick={handleOpenArtifact}
-                  />
-                </motion.div>
-              ))}
+              {(() => {
+                const stepsById = new Map((liveSteps ?? []).map((s) => [s._id, s]));
+                // Build parallel group info
+                const parallelGroups = new Map<number, string[]>();
+                for (const s of liveSteps ?? []) {
+                  const group = parallelGroups.get(s.parallelGroup) ?? [];
+                  group.push(s._id);
+                  parallelGroups.set(s.parallelGroup, group);
+                }
+
+                const nonDeletedSteps = (liveSteps ?? []).filter((s) => s.status !== "deleted");
+                let lastStepId: string | undefined;
+                const threadElements: React.ReactNode[] = [];
+
+                for (const msg of filteredMessages) {
+                  // Insert StepDivider when stepId changes
+                  if (msg.stepId && msg.stepId !== lastStepId) {
+                    const step = stepsById.get(msg.stepId);
+                    if (step) {
+                      const pgMembers = parallelGroups.get(step.parallelGroup);
+                      const isParallel = (pgMembers?.length ?? 0) > 1;
+                      const stepIndex = nonDeletedSteps.findIndex((s) => s._id === step._id) + 1;
+
+                      threadElements.push(
+                        <StepDivider
+                          key={`divider-${msg.stepId}`}
+                          stepName={
+                            isParallel
+                              ? `Steps ${stepIndex}–${stepIndex + (pgMembers!.length - 1)} (parallel)`
+                              : `Step ${stepIndex}: ${step.title ?? "Untitled"}`
+                          }
+                          status={
+                            step.status === "completed"
+                              ? "done"
+                              : step.status === "running"
+                                ? "running"
+                                : "queued"
+                          }
+                          duration={
+                            step.completedAt && step.startedAt
+                              ? formatDuration(step.startedAt, step.completedAt)
+                              : undefined
+                          }
+                          isParallel={isParallel}
+                        />,
+                      );
+                    }
+                    lastStepId = msg.stepId;
+                  }
+
+                  // Determine step label for parallel messages
+                  const msgStep = msg.stepId ? stepsById.get(msg.stepId) : undefined;
+                  const pgMembers = msgStep ? parallelGroups.get(msgStep.parallelGroup) : undefined;
+                  const isInParallel = (pgMembers?.length ?? 0) > 1;
+                  const stepNumber = msgStep
+                    ? nonDeletedSteps.findIndex((s) => s._id === msgStep._id) + 1
+                    : undefined;
+
+                  threadElements.push(
+                    <motion.div
+                      key={msg._id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.2 }}
+                    >
+                      <ChatBubble
+                        authorType={
+                          msg.authorType === "user"
+                            ? "user"
+                            : msg.type === "system_error" || msg.type === "step_completion"
+                              ? "system"
+                              : "agent"
+                        }
+                        messageType={msg.type ?? undefined}
+                        agentColor={
+                          msg.authorType === "agent"
+                            ? getAvatarHexColor(msg.authorName ?? "agent")
+                            : undefined
+                        }
+                        stepLabel={isInParallel && stepNumber ? `Step ${stepNumber}` : undefined}
+                        stepLabelColor={
+                          msg.authorType === "agent"
+                            ? getAvatarHexColor(msg.authorName ?? "agent")
+                            : undefined
+                        }
+                      >
+                        <ThreadMessage
+                          message={msg}
+                          steps={liveSteps ?? undefined}
+                          onArtifactClick={handleOpenArtifact}
+                        />
+                      </ChatBubble>
+                    </motion.div>,
+                  );
+                }
+
+                return threadElements;
+              })()}
               <div ref={endRef} />
             </div>
           </>
