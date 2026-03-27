@@ -426,12 +426,8 @@ export function ExecutionPlanTab({
 
   const handleSkip = useCallback(
     async (stepTempId: string, skip: boolean) => {
-      // Find the live step by matching the tempId to a real step ID
-      const liveStep = liveSteps?.find(
-        (s) => String(s._id) === stepTempId || s.title === stepTempId,
-      );
-      if (!liveStep) return;
-      const stepId = liveStep._id;
+      const foundStep = steps.find((step) => step.stepId === stepTempId);
+      const realStepId = foundStep?.liveId ?? stepTempId;
 
       setSkippingStepIds((prev) => new Set(prev).add(stepTempId));
       setSkipErrors((prev) => {
@@ -441,7 +437,7 @@ export function ExecutionPlanTab({
       });
 
       try {
-        await skipStepMutation({ stepId: stepId as Id<"steps">, skip });
+        await skipStepMutation({ stepId: realStepId as Id<"steps">, skip });
       } catch (err) {
         setSkipErrors((prev) =>
           new Map(prev).set(stepTempId, err instanceof Error ? err.message : String(err)),
@@ -454,7 +450,7 @@ export function ExecutionPlanTab({
         });
       }
     },
-    [liveSteps, skipStepMutation],
+    [steps, skipStepMutation],
   );
 
   const completedCount = steps.filter((step) => {
