@@ -552,13 +552,17 @@ class CCWorkspaceManager:
         commands_dir = workspace / ".claude" / "commands"
         commands_dir.mkdir(parents=True, exist_ok=True)
 
-        # Clean up stale entries (broken symlinks from old code, or dirs
-        # whose source has changed).
-        for entry in skills_dir.iterdir():
+        # Clean up stale entries: remove broken symlinks from old code AND
+        # directory copies for skills no longer in the agent's config.
+        current_skill_set = set(skills)
+        for entry in list(skills_dir.iterdir()):
             if entry.is_symlink():
                 # Migrate: remove old symlinks so they get replaced by copies
                 logger.debug("Removing legacy symlink: %s", entry)
                 entry.unlink()
+            elif entry.is_dir() and entry.name not in current_skill_set:
+                shutil.rmtree(entry)
+                logger.info("[skills] Removed stale skill copy: %s", entry.name)
 
         _loader = None
         try:
@@ -744,8 +748,29 @@ class CCWorkspaceManager:
         claude_dir = workspace / ".claude"
         claude_dir.mkdir(parents=True, exist_ok=True)
         settings_path = claude_dir / "settings.json"
+
+        # Grant file access to the entire data tree so agents can read task
+        # attachments, write task output, and access memory across workspaces.
+        # Without this the CC sandbox blocks paths outside the agent's CWD.
+        data_root = str(self._root.expanduser().resolve())
+        base_settings: dict = {
+            "permissions": {
+                "allow": [
+                    f"Read({data_root}/**)",
+                    f"Edit({data_root}/**)",
+                    f"Write({data_root}/**)",
+                ]
+            },
+            "sandbox": {
+                "filesystem": {
+                    "allowWrite": [data_root]
+                }
+            },
+        }
+
         if interactive_session_id is None:
-            settings_path.write_text(json.dumps({"hooks": {}}, indent=2), encoding="utf-8")
+            base_settings["hooks"] = {}
+            settings_path.write_text(json.dumps(base_settings, indent=2), encoding="utf-8")
             return
 
         command = self._build_hook_command(
@@ -756,18 +781,16 @@ class CCWorkspaceManager:
         )
         command_hook = [{"hooks": [{"type": "command", "command": command}]}]
         tool_hook = [{"matcher": "*", "hooks": [{"type": "command", "command": command}]}]
-        settings = {
-            "hooks": {
-                "SessionStart": command_hook,
-                "UserPromptSubmit": command_hook,
-                "PermissionRequest": command_hook,
-                "Stop": command_hook,
-                "PreToolUse": tool_hook,
-                "PostToolUse": tool_hook,
-                "PostToolUseFailure": tool_hook,
-            }
+        base_settings["hooks"] = {
+            "SessionStart": command_hook,
+            "UserPromptSubmit": command_hook,
+            "PermissionRequest": command_hook,
+            "Stop": command_hook,
+            "PreToolUse": tool_hook,
+            "PostToolUse": tool_hook,
+            "PostToolUseFailure": tool_hook,
         }
-        settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+        settings_path.write_text(json.dumps(base_settings, indent=2), encoding="utf-8")
 
     def _build_hook_command(
         self,
