@@ -312,6 +312,55 @@ describe("dependency mapping", () => {
 // Order and parallelGroup assignment
 // ---------------------------------------------------------------------------
 
+describe("transitive reduction", () => {
+  it("removes redundant transitive dependencies from blockedBy", () => {
+    const workflow: WorkflowSpecInput = {
+      specId: "spec-transitive",
+      name: "Transitive Test",
+      steps: [
+        { id: "A", title: "Step A", type: "agent", agentId: "agent-id-1" },
+        { id: "B", title: "Step B", type: "agent", agentId: "agent-id-2", dependsOn: ["A"] },
+        {
+          id: "C",
+          title: "Step C",
+          type: "agent",
+          agentId: "agent-id-3",
+          dependsOn: ["A", "B"],
+        },
+      ],
+    };
+    const plan = compileWorkflowExecutionPlan(workflow, AGENT_REFS);
+    const stepC = plan.steps.find((s) => s.tempId === "C")!;
+    // A is redundant because B already depends on A
+    expect(stepC.blockedBy).toEqual(["B"]);
+  });
+
+  it("computes correct parallelGroups after reduction", () => {
+    const workflow: WorkflowSpecInput = {
+      specId: "spec-transitive-groups",
+      name: "Transitive Groups",
+      steps: [
+        { id: "A", title: "Step A", type: "agent", agentId: "agent-id-1" },
+        { id: "B", title: "Step B", type: "agent", agentId: "agent-id-2", dependsOn: ["A"] },
+        {
+          id: "C",
+          title: "Step C",
+          type: "agent",
+          agentId: "agent-id-3",
+          dependsOn: ["A", "B"],
+        },
+      ],
+    };
+    const plan = compileWorkflowExecutionPlan(workflow, AGENT_REFS);
+    const stepA = plan.steps.find((s) => s.tempId === "A")!;
+    const stepB = plan.steps.find((s) => s.tempId === "B")!;
+    const stepC = plan.steps.find((s) => s.tempId === "C")!;
+    expect(stepA.parallelGroup).toBe(1);
+    expect(stepB.parallelGroup).toBe(2);
+    expect(stepC.parallelGroup).toBe(3);
+  });
+});
+
 describe("order and parallelGroup", () => {
   it("assigns an order to each step starting at 0", () => {
     const plan = compileWorkflowExecutionPlan(MULTI_STEP_WORKFLOW, AGENT_REFS);

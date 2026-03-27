@@ -13,7 +13,11 @@
  *   distinguish plan sources.
  * - Optional workflow metadata fields (workflowStepId, workflowStepType,
  *   agentId) are attached to each step for downstream use.
+ * - Transitive reduction is applied to dependsOn before mapping to blockedBy,
+ *   removing redundant edges that don't affect execution order.
  */
+
+import { reduceTransitiveDeps } from "./graphUtils";
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -177,8 +181,15 @@ export function compileWorkflowExecutionPlan(
     agentLookup.set(ref.agentId, ref.agentName);
   }
 
-  // Compute topological layer groups for parallelGroup assignment
-  const parallelGroups = computeParallelGroups(workflow.steps);
+  // Remove transitive dependencies before computing topology (safety net)
+  const reducedDeps = reduceTransitiveDeps(workflow.steps);
+
+  // Compute topological layer groups from the reduced dependency graph
+  const stepsWithReducedDeps = workflow.steps.map((s) => ({
+    ...s,
+    dependsOn: reducedDeps.get(s.id) ?? s.dependsOn,
+  }));
+  const parallelGroups = computeParallelGroups(stepsWithReducedDeps);
 
   const compiledSteps: WorkflowExecutionPlanStep[] = workflow.steps.map((step, index) => {
     validateWorkflowStep(step);
@@ -196,8 +207,8 @@ export function compileWorkflowExecutionPlan(
       assignedAgent = resolvedName;
     }
 
-    // Map dependsOn → blockedBy (reuses the workflow step id as tempId directly)
-    const blockedBy: string[] = step.dependsOn ?? [];
+    // Map reduced dependsOn → blockedBy (reuses the workflow step id as tempId directly)
+    const blockedBy: string[] = reducedDeps.get(step.id) ?? step.dependsOn ?? [];
 
     const compiledStep: WorkflowExecutionPlanStep = {
       tempId: step.id,

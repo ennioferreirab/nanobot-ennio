@@ -45,6 +45,14 @@ Use context to:
 - Human approval should happen after automated review, not instead of it
 - If copy and design are produced in parallel, add a synchronization layer before final review
 
+## Dependency design principles
+
+- A dependency means "this step needs the OUTPUT of that step" — not "this step happens after that step"
+- NEVER add transitive dependencies. If A→B→C, do NOT add A→C. B already guarantees A completes before C
+- Minimize dependencies to maximize parallelism. Fewer edges = more steps can run concurrently
+- Steps with no data relationship should NOT be connected even if one "logically precedes" the other
+- When in doubt, omit the dependency. The system applies transitive reduction automatically, but cleaner input = cleaner graphs
+
 ## Squad design questions
 
 Ask in this order:

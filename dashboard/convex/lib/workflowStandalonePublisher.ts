@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
+import { reduceTransitiveDeps } from "./graphUtils";
 import type { DbWriter } from "./types";
 import { validateWorkflowStepReferences } from "./validators/workflowReferences";
 
@@ -174,6 +175,17 @@ export async function publishWorkflowStandalone(
 
     return resolved;
   });
+
+  // Step 4b: Remove transitive (redundant) dependencies from resolved steps
+  const reducedDeps = reduceTransitiveDeps(resolvedSteps);
+  for (const step of resolvedSteps) {
+    const trimmed = reducedDeps.get(step.id);
+    if (trimmed && trimmed.length > 0) {
+      step.dependsOn = trimmed;
+    } else {
+      step.dependsOn = undefined;
+    }
+  }
 
   // Step 5: Insert workflowSpec
   const now = new Date().toISOString();

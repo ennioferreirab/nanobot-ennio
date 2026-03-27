@@ -1,3 +1,4 @@
+import { reduceTransitiveDeps } from "./graphUtils";
 import { validateSquadGraph } from "./squadGraphValidator";
 
 /**
@@ -179,6 +180,9 @@ export async function publishSquadGraph(ctx: DbWriter, graph: SquadGraphInput): 
   const workflowSpecIds: string[] = [];
 
   for (const workflow of graph.workflows) {
+    // Remove transitive (redundant) dependencies before storing
+    const reducedDeps = reduceTransitiveDeps(workflow.steps);
+
     const resolvedSteps = workflow.steps.map((step) => {
       validateReviewStep(step);
 
@@ -195,8 +199,9 @@ export async function publishSquadGraph(ctx: DbWriter, graph: SquadGraphInput): 
         }
       }
 
-      if (step.dependsOn !== undefined && step.dependsOn.length > 0) {
-        resolvedStep.dependsOn = step.dependsOn;
+      const trimmedDeps = reducedDeps.get(step.id);
+      if (trimmedDeps !== undefined && trimmedDeps.length > 0) {
+        resolvedStep.dependsOn = trimmedDeps;
       }
 
       if (step.description !== undefined) {

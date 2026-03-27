@@ -4,6 +4,7 @@ import type {
   SquadGraphWorkflowInput,
   SquadGraphWorkflowStepInput,
 } from "./squadGraphPublisher";
+import { reduceTransitiveDeps } from "./graphUtils";
 import type { DbWriter } from "./types";
 import { validateWorkflowStepReferences } from "./validators/workflowReferences";
 
@@ -68,6 +69,9 @@ function buildStoredSteps(
   validateReviewStepFields(workflow);
   validateWorkflowStepReferences(workflow.steps, `workflow '${workflow.name}'`);
 
+  // Remove transitive (redundant) dependencies before storing
+  const reducedDeps = reduceTransitiveDeps(workflow.steps);
+
   return workflow.steps.map((step: SquadGraphWorkflowStepInput) => {
     const stored: Record<string, unknown> = {
       id: step.id,
@@ -78,8 +82,9 @@ function buildStoredSteps(
     if (step.description !== undefined) {
       stored.description = step.description;
     }
-    if (step.dependsOn?.length) {
-      stored.dependsOn = step.dependsOn;
+    const trimmedDeps = reducedDeps.get(step.id);
+    if (trimmedDeps?.length) {
+      stored.dependsOn = trimmedDeps;
     }
     if (step.agentKey !== undefined) {
       const agentId = agentKeyToId.get(step.agentKey);
