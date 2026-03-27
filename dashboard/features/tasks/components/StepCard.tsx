@@ -163,15 +163,23 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
             {isSkippable && (
               <SkipForward
                 className={[
-                  "h-3.5 w-3.5 cursor-pointer transition-colors",
+                  "h-3.5 w-3.5 transition-colors",
+                  isActioning ? "cursor-not-allowed opacity-50" : "cursor-pointer",
                   isSkipped
                     ? "text-slate-500 hover:text-foreground"
                     : "text-muted-foreground hover:text-slate-600",
                 ].join(" ")}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (isActioning) return;
                   if (isSkipped) {
-                    void skipStep({ stepId: step._id, skip: false });
+                    setIsActioning(true);
+                    setActionError("");
+                    skipStep({ stepId: step._id, skip: false })
+                      .catch((err) =>
+                        setActionError(err instanceof Error ? err.message : String(err)),
+                      )
+                      .finally(() => setIsActioning(false));
                   } else {
                     setShowSkipConfirm((prev) => !prev);
                   }
@@ -242,8 +250,16 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
                 <InlineConfirm
                   message="Skip this step?"
                   onConfirm={() => {
-                    void skipStep({ stepId: step._id, skip: true });
-                    setShowSkipConfirm(false);
+                    setIsActioning(true);
+                    setActionError("");
+                    skipStep({ stepId: step._id, skip: true })
+                      .catch((err) =>
+                        setActionError(err instanceof Error ? err.message : String(err)),
+                      )
+                      .finally(() => {
+                        setIsActioning(false);
+                        setShowSkipConfirm(false);
+                      });
                   }}
                   onCancel={() => setShowSkipConfirm(false)}
                   confirmLabel="Skip"

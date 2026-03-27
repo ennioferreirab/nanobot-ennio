@@ -457,9 +457,10 @@ export function ExecutionPlanTab({
     [liveSteps, skipStepMutation],
   );
 
-  const completedCount = steps.filter(
-    (step) => normalizeStatus(step.status) === "completed",
-  ).length;
+  const completedCount = steps.filter((step) => {
+    const s = normalizeStatus(step.status);
+    return s === "completed" || s === "skipped";
+  }).length;
 
   // Determine if this is a review (pre-kickoff) mode vs live mode
   const isReviewMode = taskStatus === "review" || taskStatus === "inbox" || isEditMode;

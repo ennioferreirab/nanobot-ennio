@@ -50,7 +50,15 @@ interface StepStatusMeta {
   iconColorClass: string;
   badgeClass: string;
   runningPulse?: boolean;
-  icon: "completed" | "running" | "failed" | "blocked" | "assigned" | "pending" | "waiting_human";
+  icon:
+    | "completed"
+    | "running"
+    | "failed"
+    | "blocked"
+    | "assigned"
+    | "pending"
+    | "waiting_human"
+    | "skipped";
 }
 
 export function normalizeStatus(status: string | null | undefined): string {
@@ -131,7 +139,7 @@ export function getStatusMeta(status: string): StepStatusMeta {
         badgeText: "Skipped",
         iconColorClass: "text-slate-400",
         badgeClass: "bg-slate-100 text-slate-500 dark:bg-slate-900 dark:text-slate-400",
-        icon: "pending",
+        icon: "skipped",
       };
     default:
       return {
@@ -161,6 +169,8 @@ function StatusDot({ meta }: { meta: StepStatusMeta }) {
     case "blocked":
     case "waiting_human":
       return <span className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0" />;
+    case "skipped":
+      return <span className="inline-block w-2 h-2 rounded-full bg-slate-400 shrink-0" />;
     default:
       // planned / pending / assigned — gray outline dot
       return (
