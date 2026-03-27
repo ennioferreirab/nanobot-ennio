@@ -72,7 +72,10 @@ export function FileStepGroup({
           )}
         />
         <span
-          className={cn("h-[5px] w-[5px] flex-shrink-0 rounded-full", getStatusDotColor(stepStatus))}
+          className={cn(
+            "h-[5px] w-[5px] flex-shrink-0 rounded-full",
+            getStatusDotColor(stepStatus),
+          )}
         />
         <span className="flex-1 truncate text-left">{stepName}</span>
         <span className="flex-shrink-0 text-[10px] text-muted-foreground/60">{files.length}</span>
