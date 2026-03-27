@@ -13,6 +13,7 @@ export function AttachButton({ onClick, className, disabled }: AttachButtonProps
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label="Attach file"
       className={cn(
         "w-8 h-8 rounded-full bg-card border border-border text-muted-foreground flex items-center justify-center hover:bg-muted hover:text-foreground transition-colors",
         disabled && "opacity-50 cursor-not-allowed",

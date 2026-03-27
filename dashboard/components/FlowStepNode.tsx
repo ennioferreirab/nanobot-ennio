@@ -17,6 +17,15 @@ import { STATUS_COLORS } from "@/lib/constants";
 import type { EditablePlanStep } from "@/lib/types";
 import { getAvatarColor } from "@/lib/agentUtils";
 
+/* ── Canvas color constants ── */
+const _CANVAS_COLORS = {
+  success: "#2ea043",
+  primary: "#2383e2",
+  surface: "#1e1e1e",
+  surfaceDim: "#1a1a1a",
+  muted: "#222",
+} as const;
+
 /* ── Status helpers (shared with ExecutionPlanTab) ── */
 
 interface StepStatusMeta {
@@ -158,15 +167,15 @@ function getStatusBarClass(status: string): string {
   const normalized = normalizeStatus(status);
   switch (normalized) {
     case "completed":
-      return "bg-[#2ea043]";
+      return "bg-[var(--canvas-success,#2ea043)]";
     case "running":
     case "in_progress":
-      return "bg-[#2383e2]";
+      return "bg-[var(--canvas-primary,#2383e2)]";
     case "crashed":
     case "failed":
       return "bg-destructive";
     default:
-      return "bg-[#1a1a1a]";
+      return "bg-[var(--canvas-dim,#1a1a1a)]";
   }
 }
 
@@ -306,7 +315,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           <div
             className="h-[3px] -mx-3 -mt-2 rounded-t-lg mb-2 overflow-hidden"
             style={{
-              background: `linear-gradient(90deg, #2383e2 50%, #222 50%)`,
+              background: `linear-gradient(90deg, var(--canvas-primary, #2383e2) 50%, var(--canvas-muted, #222) 50%)`,
             }}
           />
         ) : (
@@ -367,7 +376,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
             {data.outputFiles.map((f) => (
               <span
                 key={f}
-                className="px-1.5 py-0.5 bg-[#1e1e1e] border border-border rounded-full text-[9px] text-primary truncate max-w-[120px]"
+                className="px-1.5 py-0.5 bg-[var(--canvas-surface,#1e1e1e)] border border-border rounded-full text-[9px] text-primary truncate max-w-[120px]"
               >
                 {f}
               </span>
@@ -480,7 +489,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           <div
             className="h-[3px] -mx-3 -mb-2 rounded-b-lg mt-2 overflow-hidden"
             style={{
-              background: `linear-gradient(90deg, #2383e2 50%, #222 50%)`,
+              background: `linear-gradient(90deg, var(--canvas-primary, #2383e2) 50%, var(--canvas-muted, #222) 50%)`,
             }}
           />
         ) : (

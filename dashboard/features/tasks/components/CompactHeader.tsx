@@ -2,8 +2,7 @@
 
 import type { Doc } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
-import { STATUS_COLORS, TAG_COLORS } from "@/lib/constants";
-import type { TaskStatus } from "@/lib/constants";
+import { TAG_COLORS } from "@/lib/constants";
 import { TagChip } from "@/components/TagChip";
 import { ViewToggle } from "@/components/ViewToggle";
 import { Check, Pause, Play, Star, X } from "lucide-react";
@@ -27,11 +26,21 @@ interface CompactHeaderProps {
   className?: string;
 }
 
+const STATUS_DOT_COLORS: Record<string, string> = {
+  ready: "bg-teal-500",
+  failed: "bg-rose-500",
+  inbox: "bg-violet-500",
+  assigned: "bg-cyan-500",
+  in_progress: "bg-blue-500",
+  review: "bg-amber-500",
+  done: "bg-green-500",
+  retrying: "bg-amber-500",
+  crashed: "bg-red-500",
+  deleted: "bg-gray-500",
+};
+
 function getStatusDotColor(status: string): string {
-  const colors = STATUS_COLORS[status as TaskStatus];
-  if (!colors) return "bg-muted-foreground";
-  const match = colors.border.match(/^border-[a-z]+-(.+)$/);
-  return match ? `bg-${match[1]}` : "bg-current";
+  return STATUS_DOT_COLORS[status] ?? "bg-muted-foreground";
 }
 
 export function CompactHeader({

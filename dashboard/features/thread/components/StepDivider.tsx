@@ -36,9 +36,18 @@ export function StepDivider({
           background: "linear-gradient(90deg, transparent, hsl(var(--border)))",
         }}
       />
-      <button
-        type="button"
+      <div
+        role={onToggleCollapse ? "button" : undefined}
+        tabIndex={onToggleCollapse ? 0 : undefined}
         onClick={onToggleCollapse}
+        onKeyDown={
+          onToggleCollapse
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") onToggleCollapse();
+              }
+            : undefined
+        }
+        aria-label={onToggleCollapse ? `Toggle ${stepName}` : undefined}
         className={cn(
           "flex items-center gap-1.5 px-2 py-0.5",
           onToggleCollapse && "cursor-pointer hover:opacity-80",
@@ -80,7 +89,7 @@ export function StepDivider({
             )}
           />
         )}
-      </button>
+      </div>
       <div
         className="flex-1 h-px"
         style={{
