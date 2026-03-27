@@ -222,13 +222,20 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
       onChange({
         ...workflow,
         steps: nextSteps.map((step) => {
-          if (!step.dependsOn.includes(stepId)) return step;
-          // Reroute: replace deleted step with its own predecessors
-          const newDeps = [
-            ...step.dependsOn.filter((dep) => dep !== stepId),
-            ...deletedStepDeps.filter((dep) => !step.dependsOn.includes(dep)),
-          ];
-          return { ...step, dependsOn: newDeps };
+          let updated = step;
+          // Reroute dependsOn: replace deleted step with its own predecessors
+          if (step.dependsOn.includes(stepId)) {
+            const newDeps = [
+              ...step.dependsOn.filter((dep) => dep !== stepId),
+              ...deletedStepDeps.filter((dep) => !step.dependsOn.includes(dep)),
+            ];
+            updated = { ...updated, dependsOn: newDeps };
+          }
+          // Reroute onReject: if pointing to deleted step, use its first predecessor
+          if (updated.onReject === stepId) {
+            updated = { ...updated, onReject: deletedStepDeps[0] };
+          }
+          return updated;
         }),
       });
       setSelectedStepId(nextSteps[0]?.id ?? null);
