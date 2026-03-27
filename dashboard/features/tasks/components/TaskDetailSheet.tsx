@@ -266,7 +266,6 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
     [setActiveTab],
   );
 
-  const handleNodeSelect = useCallback((stepId: string) => setSelectedCanvasNodeId(stepId), []);
   const handleOpenLivePanel = useCallback((stepId: string) => {
     setLiveStepId(stepId);
     setSelectedLiveStepId(stepId);
@@ -512,6 +511,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
     <Sheet open={!!taskId} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
+        hideClose
         className="w-screen md:w-[90vw] lg:w-[70vw] xl:max-w-[1400px] md:max-w-none flex flex-col overflow-hidden p-0"
       >
         {isTaskLoaded ? (
@@ -592,9 +592,6 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                         hasUnsavedChanges={!!localPlan}
                         onOpenLive={liveSession.liveStepIds.length > 0 ? handleOpenLive : undefined}
                         liveStepIds={liveSession.liveStepIds}
-                        onNodeSelect={handleNodeSelect}
-                        selectedNodeId={selectedCanvasNodeId}
-                        files={displayFiles.map((f) => ({ name: f.name, stepId: f.stepId }))}
                       />
                     </div>
                   </div>

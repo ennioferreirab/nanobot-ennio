@@ -1,5 +1,7 @@
 "use client";
 
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
 import { TAG_COLORS } from "@/lib/constants";
@@ -60,6 +62,7 @@ export function CompactHeader({
   onClose,
   className,
 }: CompactHeaderProps) {
+  const toggleFavorite = useMutation(api.tasks.toggleFavorite);
   const dotColor = getStatusDotColor(task.status);
   const tags = task.tags ?? [];
 
@@ -116,10 +119,11 @@ export function CompactHeader({
       <button
         type="button"
         className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted inline-flex items-center justify-center flex-shrink-0"
-        aria-label="Toggle favorite"
+        onClick={() => void toggleFavorite({ taskId: task._id })}
+        aria-label={task.isFavorite ? "Remove from favorites" : "Add to favorites"}
         data-testid="favorite-button"
       >
-        <Star className="h-4 w-4" />
+        <Star className={cn("h-4 w-4", task.isFavorite && "fill-yellow-400 text-yellow-400")} />
       </button>
 
       {task.status === "in_progress" && !isPaused && (
