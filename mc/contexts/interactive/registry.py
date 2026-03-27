@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import secrets
+import time
 from typing import Any
 
 from mc.contexts.interactive.identity import InteractiveSessionIdentity
 from mc.contexts.interactive.metrics import increment_interactive_metric
 from mc.types import ActivityEventType
+
+_CACHE_TTL_SECONDS = 30.0
+_CACHE_MAX_ENTRIES = 500
 
 
 class InteractiveSessionRegistry:
@@ -16,7 +20,7 @@ class InteractiveSessionRegistry:
     def __init__(self, bridge: Any, *, token_factory: Any | None = None) -> None:
         self._bridge = bridge
         self._token_factory = token_factory or (lambda: secrets.token_urlsafe(24))
-        self._session_cache: dict[str, dict[str, Any]] = {}
+        self._session_cache: dict[str, tuple[dict[str, Any], float]] = {}
 
     def register(
         self,
@@ -62,15 +66,17 @@ class InteractiveSessionRegistry:
         return metadata
 
     def get(self, session_id: str) -> dict[str, Any] | None:
-        cached = self._session_cache.get(session_id)
-        if cached is not None:
-            return cached
+        entry = self._session_cache.get(session_id)
+        if entry is not None:
+            value, cached_at = entry
+            if time.monotonic() - cached_at < _CACHE_TTL_SECONDS:
+                return value
         result = self._bridge.query(
             "interactiveSessions:getForRuntime",
             {"session_id": session_id},
         )
         if result is not None:
-            self._session_cache[session_id] = result
+            self._session_cache[session_id] = (result, time.monotonic())
         return result
 
     def list_sessions(self, *, agent_name: str | None = None) -> list[dict[str, Any]]:
@@ -151,11 +157,7 @@ class InteractiveSessionRegistry:
     ) -> dict[str, Any]:
         existing = self.get(identity.session_key)
         if existing is not None:
-            result = self.end_session(
-                identity.session_key, timestamp=timestamp, outcome="terminated"
-            )
-            self._session_cache.pop(identity.session_key, None)
-            return result
+            return self.end_session(identity.session_key, timestamp=timestamp, outcome="terminated")
         metadata = identity.to_metadata(
             status="ended",
             capabilities=[],
@@ -244,7 +246,9 @@ class InteractiveSessionRegistry:
         self._bridge.mutation("interactiveSessions:upsert", metadata)
         session_id = metadata.get("session_id")
         if session_id:
-            self._session_cache[session_id] = metadata
+            if len(self._session_cache) >= _CACHE_MAX_ENTRIES:
+                self._session_cache.clear()
+            self._session_cache[session_id] = (metadata, time.monotonic())
 
     def _require_session(self, session_id: str) -> dict[str, Any]:
         existing = self.get(session_id)

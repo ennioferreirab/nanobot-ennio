@@ -100,6 +100,7 @@ class NanobotRunnerStrategy:
         try:
             raw_result, session_key, loop = await self._run_agent_loop(request, mc_session_id)
         except _PROVIDER_ERRORS as exc:
+            self._activity.flush()
             logger.error(
                 "[nanobot-strategy] Provider error for task '%s': %s",
                 request.title,
@@ -121,6 +122,7 @@ class NanobotRunnerStrategy:
                 error_exception=exc,
             )
         except Exception as exc:
+            self._activity.flush()
             logger.error(
                 "[nanobot-strategy] Runner error for task '%s': %s",
                 request.title,

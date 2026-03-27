@@ -159,6 +159,7 @@ class ProviderCliRunnerStrategy:
         try:
             return await self._run(request)
         except Exception as exc:
+            self._activity.flush()
             logger.error(
                 "[provider-cli-strategy] Runner error for task '%s': %s",
                 request.title,
@@ -638,6 +639,7 @@ class ProviderCliRunnerStrategy:
                         provider=self._parser.provider_name,
                     )
         except Exception:
+            self._activity.flush()
             await self._stop_and_cleanup(handle)
             raise
 
@@ -645,6 +647,7 @@ class ProviderCliRunnerStrategy:
         try:
             exit_code = await self._wait_for_exit(handle)
         except Exception:
+            self._activity.flush()
             await self._stop_and_cleanup(handle)
             raise
 

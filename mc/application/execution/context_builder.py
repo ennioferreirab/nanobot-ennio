@@ -365,9 +365,10 @@ class ContextBuilder:
         # Process fresh task result
         fresh_task: dict[str, Any] | None = None
         if isinstance(fresh_task_result, BaseException):
-            logger.warning(
+            logger.error(
                 "[context] Failed to fetch fresh task for '%s', using snapshot",
                 title,
+                exc_info=fresh_task_result,
             )
             raw_files = (task_data or {}).get("files") or []
         else:
@@ -661,13 +662,13 @@ class ContextBuilder:
             all_task_steps_result if not isinstance(all_task_steps_result, BaseException) else []
         )
         if isinstance(thread_messages_result, BaseException):
-            logger.warning(
+            logger.error(
                 "[context] Failed to fetch thread messages for step '%s'",
                 step_title,
                 exc_info=thread_messages_result,
             )
         if isinstance(all_task_steps_result, BaseException):
-            logger.warning(
+            logger.error(
                 "[context] Failed to fetch task steps for step '%s'",
                 step_title,
                 exc_info=all_task_steps_result,
@@ -749,14 +750,12 @@ class ContextBuilder:
 
     async def _build_tag_attrs(self, task_id: str, task_tags: list[str]) -> str:
         """Build tag attributes context string."""
-        from mc.bridge.tag_attributes_cache import get_tag_attributes
-
         tag_attr_values = await asyncio.to_thread(
             self._bridge.query,
             "tagAttributeValues:getByTask",
             {"task_id": task_id},
         )
-        tag_attr_catalog = await asyncio.to_thread(get_tag_attributes, self._bridge)
+        tag_attr_catalog = await asyncio.to_thread(self._bridge.tag_attributes_cache.get)
         return build_tag_attributes_context(
             task_tags,
             tag_attr_values if isinstance(tag_attr_values, list) else [],

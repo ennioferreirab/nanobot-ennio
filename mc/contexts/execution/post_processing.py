@@ -399,9 +399,7 @@ async def _enrich_nanobot_description(
             tag_attr_values = await asyncio.to_thread(
                 bridge.query, "tagAttributeValues:getByTask", {"task_id": task_id}
             )
-            from mc.bridge.tag_attributes_cache import get_tag_attributes
-
-            tag_attr_catalog = await asyncio.to_thread(get_tag_attributes, bridge)
+            tag_attr_catalog = await asyncio.to_thread(bridge.tag_attributes_cache.get)
             tag_attrs_context = build_tag_attributes_context(
                 task_tags,
                 tag_attr_values if isinstance(tag_attr_values, list) else [],

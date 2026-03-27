@@ -229,7 +229,7 @@ class SessionActivityService:
             else:
                 self._bridge.mutation("sessionActivityLog:appendBatch", {"events": events})
         except Exception:
-            logger.debug("[activity-service] Failed to flush %d event(s)", len(events))
+            logger.warning("[activity-service] Failed to flush %d event(s)", len(events))
 
     def append_result(
         self,

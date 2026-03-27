@@ -70,7 +70,6 @@ vi.mock("@/components/AppDataProvider", () => ({
   AppDataProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
   useAppData: () => ({
     agents: [],
-    deletedAgents: [],
     boards: [],
     taskTags: [],
     tagAttributes: [],

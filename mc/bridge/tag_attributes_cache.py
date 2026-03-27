@@ -1,4 +1,4 @@
-"""Module-level TTL cache for tagAttributes:list queries.
+"""TTL cache for tagAttributes:list queries.
 
 The tag attributes catalog changes rarely (admin-only operations), so a
 5-minute TTL is safe and eliminates redundant Convex queries across
@@ -15,40 +15,47 @@ logger = logging.getLogger(__name__)
 
 TAG_ATTRIBUTES_TTL_SECONDS = 300  # 5 minutes
 
-_cache: list[dict[str, Any]] | None = None
-_cache_time: float = 0.0
 
+class TagAttributesCache:
+    """Instance-level TTL cache for the tag attributes catalog.
 
-def get_tag_attributes(bridge: Any) -> list[dict[str, Any]]:
-    """Return the tag attribute catalog, using a 5-minute TTL cache.
+    Similar to ``SettingsCache`` — stores the full catalog as a single
+    cached value with a configurable TTL.
 
     Args:
         bridge: ConvexBridge instance for querying Convex.
-
-    Returns:
-        List of tag attribute records (snake_case keys).
+        ttl_seconds: Time-to-live for cached values.
     """
-    global _cache, _cache_time
 
-    now = time.monotonic()
-    if _cache is not None and now - _cache_time < TAG_ATTRIBUTES_TTL_SECONDS:
-        return _cache
+    def __init__(self, bridge: Any, ttl_seconds: float = TAG_ATTRIBUTES_TTL_SECONDS) -> None:
+        self._bridge = bridge
+        self._ttl = ttl_seconds
+        self._cache: list[dict[str, Any]] | None = None
+        self._cache_time: float = 0.0
 
-    try:
-        result = bridge.query("tagAttributes:list", {})
-        if isinstance(result, list):
-            _cache = result
-            _cache_time = now
-            return _cache
-    except Exception:
-        logger.warning("[tag-attrs-cache] Failed to fetch tagAttributes:list", exc_info=True)
+    def get(self) -> list[dict[str, Any]]:
+        """Return the tag attribute catalog, using a TTL cache.
 
-    # Return stale cache if available, otherwise empty
-    return _cache if _cache is not None else []
+        Returns:
+            List of tag attribute records (snake_case keys).
+        """
+        now = time.monotonic()
+        if self._cache is not None and now - self._cache_time < self._ttl:
+            return self._cache
 
+        try:
+            result = self._bridge.query("tagAttributes:list", {})
+            if isinstance(result, list):
+                self._cache = result
+                self._cache_time = now
+                return self._cache
+        except Exception:
+            logger.warning("[tag-attrs-cache] Failed to fetch tagAttributes:list", exc_info=True)
 
-def invalidate() -> None:
-    """Force a refresh on the next get_tag_attributes() call."""
-    global _cache, _cache_time
-    _cache = None
-    _cache_time = 0.0
+        # Return stale cache if available, otherwise empty
+        return self._cache if self._cache is not None else []
+
+    def invalidate(self) -> None:
+        """Force a refresh on the next get() call."""
+        self._cache = None
+        self._cache_time = 0.0

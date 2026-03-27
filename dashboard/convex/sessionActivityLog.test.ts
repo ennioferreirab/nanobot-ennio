@@ -400,4 +400,26 @@ describe("sessionActivityLog.appendBatch", () => {
     expect((inserts[0].value.toolInput as string).length).toBe(2000);
     expect((inserts[0].value.summary as string).length).toBe(1000);
   });
+
+  it("throws ConvexError when events have mismatched sessionIds", async () => {
+    const handler = getAppendBatchHandler();
+    const { ctx } = makeAppendCtx(null);
+
+    await expect(
+      handler(ctx, {
+        events: [
+          {
+            sessionId: "session-a",
+            kind: "tool_call",
+            ts: "2026-03-14T10:00:00.000Z",
+          },
+          {
+            sessionId: "session-b",
+            kind: "text",
+            ts: "2026-03-14T10:00:01.000Z",
+          },
+        ],
+      }),
+    ).rejects.toThrow("All events in a batch must share the same sessionId");
+  });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAppData } from "@/components/AppDataProvider";
 import type { Doc } from "@/convex/_generated/dataModel";
@@ -18,7 +18,8 @@ export interface AgentSidebarData {
 }
 
 export function useAgentSidebarData(): AgentSidebarData {
-  const { agents, deletedAgents } = useAppData();
+  const { agents } = useAppData();
+  const deletedAgents = useQuery(api.agents.listDeleted);
   const softDeleteAgentMutation = useMutation(api.agents.softDeleteAgent);
   const restoreAgentMutation = useMutation(api.agents.restoreAgent);
 

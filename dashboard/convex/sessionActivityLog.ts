@@ -1,5 +1,5 @@
 import { internalMutation, query } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 const TOOL_INPUT_MAX = 2000;
 const SUMMARY_MAX = 1000;
@@ -94,8 +94,11 @@ export const appendBatch = internalMutation({
   handler: async (ctx, args) => {
     if (args.events.length === 0) return;
 
-    // All events in a batch share the same sessionId (enforced by Python buffer)
+    // All events in a batch must share the same sessionId
     const sessionId = args.events[0].sessionId;
+    if (args.events.some((e) => e.sessionId !== sessionId)) {
+      throw new ConvexError("All events in a batch must share the same sessionId");
+    }
 
     // Query max seq once for the session
     const last = await ctx.db

@@ -30,7 +30,6 @@ vi.mock("../../convex/_generated/api", () => ({
 vi.mock("@/components/AppDataProvider", () => ({
   useAppData: () => ({
     agents: [],
-    deletedAgents: [],
     boards: [],
     taskTags: [],
     tagAttributes: [],

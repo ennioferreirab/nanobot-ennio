@@ -49,6 +49,7 @@ from mc.bridge.retry import (
 )
 from mc.bridge.settings_cache import SettingsCache
 from mc.bridge.subscriptions import SubscriptionManager
+from mc.bridge.tag_attributes_cache import TagAttributesCache
 from mc.types import task_safe_id  # noqa: F401
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ class ConvexBridge(BridgeRepositoryFacadeMixin):
             )
         logger.info("ConvexBridge connected to %s", deployment_url)
         self.settings_cache = SettingsCache(self)
+        self.tag_attributes_cache = TagAttributesCache(self)
         self._init_repositories()
 
     def _init_repositories(self) -> None:

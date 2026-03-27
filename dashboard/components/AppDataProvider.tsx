@@ -8,7 +8,6 @@ import type { Doc } from "@/convex/_generated/dataModel";
 
 interface AppDataContextValue {
   agents: Doc<"agents">[] | undefined;
-  deletedAgents: Doc<"agents">[] | undefined;
   boards: Doc<"boards">[] | undefined;
   taskTags: Doc<"taskTags">[] | undefined;
   tagAttributes: Doc<"tagAttributes">[] | undefined;
@@ -18,13 +17,12 @@ const AppDataContext = createContext<AppDataContextValue | null>(null);
 
 export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const agents = useQuery(api.agents.list);
-  const deletedAgents = useQuery(api.agents.listDeleted);
   const boards = useQuery(api.boards.list);
   const taskTags = useQuery(api.taskTags.list);
   const tagAttributes = useQuery(api.tagAttributes.list);
 
   return (
-    <AppDataContext.Provider value={{ agents, deletedAgents, boards, taskTags, tagAttributes }}>
+    <AppDataContext.Provider value={{ agents, boards, taskTags, tagAttributes }}>
       {children}
     </AppDataContext.Provider>
   );

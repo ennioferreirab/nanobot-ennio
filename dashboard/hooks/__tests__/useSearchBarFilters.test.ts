@@ -15,7 +15,6 @@ const SAMPLE_ATTRS = [
 vi.mock("@/components/AppDataProvider", () => ({
   useAppData: () => ({
     agents: [],
-    deletedAgents: [],
     boards: [],
     taskTags: SAMPLE_TAGS,
     tagAttributes: SAMPLE_ATTRS,
