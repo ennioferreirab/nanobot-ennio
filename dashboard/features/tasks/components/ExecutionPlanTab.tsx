@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState, useCallback, useRef } from "react";
+import { useMutation } from "convex/react";
 import { Loader2, Plus } from "lucide-react";
 import { ReactFlow, Background, Controls, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { Id } from "@/convex/_generated/dataModel";
+import { api } from "@/convex/_generated/api";
 import { FlowStepNode, normalizeStatus, type FlowStepNodeData } from "@/components/FlowStepNode";
 import { StartNode, EndNode } from "@/components/StartEndNode";
 import { ParallelLabelNode } from "@/components/ParallelLabelNode";
@@ -68,6 +70,7 @@ interface LiveStep {
   errorMessage?: string;
   startedAt?: string;
   completedAt?: string;
+  skip?: boolean;
 }
 
 interface MergeAliasDisplay {
@@ -116,6 +119,7 @@ interface NormalizedStep {
   isVisualOnly?: boolean;
   startedAt?: string;
   completedAt?: string;
+  skip?: boolean;
 }
 
 /* ── Utility functions ── */
@@ -246,6 +250,7 @@ function mergeStepsWithLiveData(
       errorMessage: liveStep.errorMessage ?? planStep.errorMessage,
       startedAt: liveStep.startedAt,
       completedAt: liveStep.completedAt,
+      skip: liveStep.skip,
     };
   });
 }
@@ -262,6 +267,7 @@ function normalizedStepsToPlanSteps(steps: NormalizedStep[]): EditablePlanStep[]
     blockedBy: s.dependencies,
     parallelGroup: typeof s.parallelGroup === "number" ? s.parallelGroup : 0,
     order: s.order,
+    skip: s.skip,
   }));
 }
 
@@ -324,12 +330,15 @@ export function ExecutionPlanTab({
 }: ExecutionPlanTabProps) {
   const { acceptHumanStep, retryStep, stopStep, manualMoveStep, addStep, updateStep, deleteStep } =
     useExecutionPlanActions();
+  const skipStepMutation = useMutation(api.steps.skipStep);
   const [acceptingStepId, setAcceptingStepId] = useState<string | null>(null);
   const [acceptErrors, setAcceptErrors] = useState<Record<string, string>>({});
   const [retryingStepId, setRetryingStepId] = useState<string | null>(null);
   const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
   const [stoppingStepId, setStoppingStepId] = useState<string | null>(null);
   const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
+  const [skippingStepIds, setSkippingStepIds] = useState<Set<string>>(new Set());
+  const [skipErrors, setSkipErrors] = useState<Map<string, string>>(new Map());
   const [showAddForm, setShowAddForm] = useState(false);
   const [addStepError, setAddStepError] = useState<string | null>(null);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
@@ -415,9 +424,43 @@ export function ExecutionPlanTab({
     [acceptHumanStep, manualMoveStep, steps],
   );
 
-  const completedCount = steps.filter(
-    (step) => normalizeStatus(step.status) === "completed",
-  ).length;
+  const handleSkip = useCallback(
+    async (stepTempId: string, skip: boolean) => {
+      // Find the live step by matching the tempId to a real step ID
+      const liveStep = liveSteps?.find(
+        (s) => String(s._id) === stepTempId || s.title === stepTempId,
+      );
+      if (!liveStep) return;
+      const stepId = liveStep._id;
+
+      setSkippingStepIds((prev) => new Set(prev).add(stepTempId));
+      setSkipErrors((prev) => {
+        const next = new Map(prev);
+        next.delete(stepTempId);
+        return next;
+      });
+
+      try {
+        await skipStepMutation({ stepId: stepId as Id<"steps">, skip });
+      } catch (err) {
+        setSkipErrors((prev) =>
+          new Map(prev).set(stepTempId, err instanceof Error ? err.message : String(err)),
+        );
+      } finally {
+        setSkippingStepIds((prev) => {
+          const next = new Set(prev);
+          next.delete(stepTempId);
+          return next;
+        });
+      }
+    },
+    [liveSteps, skipStepMutation],
+  );
+
+  const completedCount = steps.filter((step) => {
+    const s = normalizeStatus(step.status);
+    return s === "completed" || s === "skipped";
+  }).length;
 
   // Determine if this is a review (pre-kickoff) mode vs live mode
   const isReviewMode = taskStatus === "review" || taskStatus === "inbox" || isEditMode;
@@ -666,6 +709,9 @@ export function ExecutionPlanTab({
             liveStepIdSet.has(n.id) ||
               (matchedDisplayStep?.liveId != null && liveStepIdSet.has(matchedDisplayStep.liveId)),
           ),
+          onSkip: readOnly || isVisualOnly ? undefined : handleSkip,
+          isSkipping: skippingStepIds.has(n.id),
+          skipError: skipErrors.get(n.id),
         },
       };
     });
@@ -696,6 +742,9 @@ export function ExecutionPlanTab({
     handleStepClick,
     onOpenLive,
     liveStepIdSet,
+    handleSkip,
+    skippingStepIds,
+    skipErrors,
   ]);
 
   // Build existingSteps for the blocked-by selector

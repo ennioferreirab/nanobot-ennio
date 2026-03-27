@@ -90,13 +90,16 @@ async function completeStepAndUnblockDependents(
   await applyManualParentTaskTransition(ctx, { task, step, currentTaskSteps });
 }
 
-function deriveManualParentTaskStatus(
+export function deriveManualParentTaskStatus(
   steps: Array<{
     status?: string;
   }>,
 ): "done" | "crashed" | "in_progress" {
   const activeSteps = steps.filter((step) => step.status !== "deleted");
-  if (activeSteps.length > 0 && activeSteps.every((step) => step.status === "completed")) {
+  if (
+    activeSteps.length > 0 &&
+    activeSteps.every((step) => step.status === "completed" || step.status === "skipped")
+  ) {
     return "done";
   }
   if (activeSteps.some((step) => step.status === "crashed")) {
@@ -289,6 +292,7 @@ export const batchCreate = internalMutation({
         agentId: v.optional(v.id("agents")),
         reviewSpecId: v.optional(v.id("reviewSpecs")),
         onRejectStepId: v.optional(v.string()),
+        skip: v.optional(v.boolean()),
       }),
     ),
   },
@@ -330,6 +334,7 @@ export const batchCreate = internalMutation({
         ...(step.agentId !== undefined ? { agentId: step.agentId } : {}),
         ...(step.reviewSpecId !== undefined ? { reviewSpecId: step.reviewSpecId } : {}),
         ...(step.onRejectStepId !== undefined ? { onRejectStepId: step.onRejectStepId } : {}),
+        ...(step.skip ? { skip: step.skip } : {}),
       });
 
       tempIdToRealId[step.tempId] = stepId;
@@ -923,7 +928,9 @@ export const addStep = mutation({
     } else {
       // Check if all blockers are completed
       const blockerSteps = existingSteps.filter((s) => blockedByIds.includes(s._id));
-      const allBlockersCompleted = blockerSteps.every((s) => s.status === "completed");
+      const allBlockersCompleted = blockerSteps.every(
+        (s) => s.status === "completed" || s.status === "skipped",
+      );
       status = allBlockersCompleted ? "planned" : "blocked";
     }
 
@@ -1086,7 +1093,9 @@ export const updateStep = mutation({
           .withIndex("by_taskId", (q) => q.eq("taskId", step.taskId))
           .collect();
         const blockerSteps = existingSteps.filter((s) => args.blockedByStepIds!.includes(s._id));
-        const allDone = blockerSteps.every((s) => s.status === "completed");
+        const allDone = blockerSteps.every(
+          (s) => s.status === "completed" || s.status === "skipped",
+        );
         nextStepStatus = allDone ? "planned" : "blocked";
       }
     }
@@ -1165,6 +1174,106 @@ export const deleteStep = mutation({
     await ctx.db.patch(args.stepId, {
       deletedAt: timestamp,
     });
+  },
+});
+
+export const skipStep = mutation({
+  args: {
+    stepId: v.id("steps"),
+    skip: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const step = await ctx.db.get(args.stepId);
+    if (!step) {
+      throw new ConvexError("Step not found");
+    }
+    if (step.status === "deleted") {
+      throw new ConvexError("Cannot skip a deleted step");
+    }
+
+    const timestamp = new Date().toISOString();
+
+    if (args.skip) {
+      const skippableStatuses = ["planned", "assigned", "blocked"];
+      if (!skippableStatuses.includes(step.status)) {
+        throw new ConvexError(
+          `Cannot skip a step in '${step.status}' status. Step must be planned, assigned, or blocked.`,
+        );
+      }
+
+      await ctx.db.patch(args.stepId, { skip: true, skippedAt: timestamp });
+
+      await applyStepTransition(ctx, step as Parameters<typeof applyStepTransition>[1], {
+        stepId: args.stepId,
+        fromStatus: step.status,
+        expectedStateVersion: getStepStateVersion(step),
+        toStatus: "skipped",
+        reason: "Step skipped by user",
+        idempotencyKey: `skip:${String(args.stepId)}:${getStepStateVersion(step)}`,
+      });
+
+      const { currentTaskSteps } = await unblockReadyDependents(ctx, step.taskId, timestamp, {
+        stepId: args.stepId,
+        status: "skipped",
+      });
+
+      // Reconcile parent task status after skip
+      const task = await ctx.db.get(step.taskId);
+      if (task) {
+        await applyManualParentTaskTransition(ctx, { task, step, currentTaskSteps });
+      }
+
+      await logActivity(ctx, {
+        taskId: step.taskId,
+        agentName: step.assignedAgent,
+        eventType: "step_skipped",
+        description: `Step skipped: "${step.title}"`,
+        timestamp,
+      });
+    } else {
+      if (step.status !== "skipped") {
+        throw new ConvexError(
+          `Cannot un-skip a step in '${step.status}' status. Step must be in 'skipped' status.`,
+        );
+      }
+
+      await ctx.db.patch(args.stepId, { skip: false, skippedAt: undefined });
+
+      const blockedBy = step.blockedBy ?? [];
+      let toStatus: StepStatus = "assigned";
+      if (blockedBy.length > 0) {
+        const allSteps = await ctx.db
+          .query("steps")
+          .withIndex("by_taskId", (q) => q.eq("taskId", step.taskId))
+          .collect();
+        const blockerSteps = allSteps.filter((s) => blockedBy.includes(s._id));
+        const allBlockersDone = blockerSteps.every(
+          (s) => s.status === "completed" || s.status === "skipped",
+        );
+        if (!allBlockersDone) {
+          toStatus = "blocked";
+        }
+      }
+
+      await applyStepTransition(ctx, step as Parameters<typeof applyStepTransition>[1], {
+        stepId: args.stepId,
+        fromStatus: step.status,
+        expectedStateVersion: getStepStateVersion(step),
+        toStatus,
+        reason: "Step un-skipped by user",
+        idempotencyKey: `unskip:${String(args.stepId)}:${getStepStateVersion(step)}`,
+      });
+
+      await logActivity(ctx, {
+        taskId: step.taskId,
+        agentName: step.assignedAgent,
+        eventType: "step_status_changed",
+        description: `Step un-skipped and set to ${toStatus}: "${step.title}"`,
+        timestamp,
+      });
+    }
+
+    return args.stepId;
   },
 });
 

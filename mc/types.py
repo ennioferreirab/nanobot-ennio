@@ -100,6 +100,7 @@ class StepStatus(StrEnum):
     RUNNING = "running"
     REVIEW = "review"
     COMPLETED = "completed"
+    SKIPPED = "skipped"
     CRASHED = "crashed"
     BLOCKED = "blocked"
     WAITING_HUMAN = "waiting_human"
@@ -147,6 +148,7 @@ class ActivityEventType(StrEnum):
     STEP_DISPATCHED = "step_dispatched"
     STEP_STARTED = "step_started"
     STEP_COMPLETED = "step_completed"
+    STEP_SKIPPED = "step_skipped"
     STEP_RETRYING = "step_retrying"
     SYSTEM_ERROR = "system_error"
     TASK_DELETED = "task_deleted"
@@ -232,6 +234,7 @@ class ExecutionPlanStep:
     agent_spec_id: str | None = None
     review_spec_id: str | None = None
     on_reject_step_id: str | None = None
+    skip: bool = False
 
 
 def _as_int(value: Any, default: int) -> int:

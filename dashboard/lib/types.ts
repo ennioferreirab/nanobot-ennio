@@ -11,6 +11,7 @@ export type EditablePlanStep = {
   parallelGroup: number;
   order: number;
   attachedFiles?: string[];
+  skip?: boolean;
 };
 
 export type ExecutionPlan = {

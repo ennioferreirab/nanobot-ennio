@@ -8,6 +8,7 @@ import {
   GitMerge,
   Loader2,
   RefreshCw,
+  SkipForward,
   Square,
   Trash2,
   Zap,
@@ -35,6 +36,8 @@ function getStatusBorderClass(status: string): string {
       return "border-amber-500/30";
     case "assigned":
       return "border-cyan-500/30";
+    case "skipped":
+      return "border-slate-400/30";
     default:
       return "border-border";
   }
@@ -47,7 +50,15 @@ interface StepStatusMeta {
   iconColorClass: string;
   badgeClass: string;
   runningPulse?: boolean;
-  icon: "completed" | "running" | "failed" | "blocked" | "assigned" | "pending" | "waiting_human";
+  icon:
+    | "completed"
+    | "running"
+    | "failed"
+    | "blocked"
+    | "assigned"
+    | "pending"
+    | "waiting_human"
+    | "skipped";
 }
 
 export function normalizeStatus(status: string | null | undefined): string {
@@ -123,6 +134,13 @@ export function getStatusMeta(status: string): StepStatusMeta {
         badgeClass: "bg-muted text-muted-foreground",
         icon: "pending",
       };
+    case "skipped":
+      return {
+        badgeText: "Skipped",
+        iconColorClass: "text-slate-400",
+        badgeClass: "bg-slate-100 text-slate-500 dark:bg-slate-900 dark:text-slate-400",
+        icon: "skipped",
+      };
     default:
       return {
         badgeText: "Pending",
@@ -151,6 +169,8 @@ function StatusDot({ meta }: { meta: StepStatusMeta }) {
     case "blocked":
     case "waiting_human":
       return <span className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0" />;
+    case "skipped":
+      return <span className="inline-block w-2 h-2 rounded-full bg-slate-400 shrink-0" />;
     default:
       // planned / pending / assigned — gray outline dot
       return (
@@ -190,6 +210,9 @@ export type FlowStepNodeData = {
   /** Whether this node is the currently selected node in the canvas */
   isSelectedNode?: boolean;
   outputFiles?: string[];
+  onSkip?: (stepId: string, skip: boolean) => void;
+  isSkipping?: boolean;
+  skipError?: string;
 };
 
 export type FlowStepNodeType = Node<FlowStepNodeData, "flowStep">;
@@ -226,6 +249,9 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
     isSelectedNode,
     isPaused,
     stepErrorMessage,
+    onSkip,
+    isSkipping,
+    skipError,
   } = data;
 
   const resolvedStatus = status ?? "planned";
@@ -247,6 +273,11 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
       : step.assignedAgent;
 
   const avatarBgClass = agentName ? getAvatarColor(agentName) : "bg-muted";
+
+  const canSkip =
+    !isEditMode && !!onSkip && ["planned", "assigned", "blocked"].includes(normalizedStatus);
+  const canUnskip = !isEditMode && !!onSkip && normalizedStatus === "skipped";
+  const isMarkedForSkip = step.skip === true && normalizedStatus !== "skipped";
 
   const showRetryButton =
     (!isEditMode || isPaused) &&
@@ -271,6 +302,8 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           !isSelectedNode && selected && "ring-1 ring-primary/40",
           meta.runningPulse && "motion-safe:animate-pulse",
           onStepClick && "cursor-pointer hover:bg-muted/50 transition-colors",
+          isMarkedForSkip && "opacity-60",
+          normalizedStatus === "skipped" && "opacity-50",
         )}
         role={onStepClick ? "button" : undefined}
         tabIndex={onStepClick ? 0 : undefined}
@@ -316,7 +349,13 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
         {/* Row 2: Status dot + step title + duration */}
         <div className="flex items-center gap-1.5 min-w-0">
           <StatusDot meta={meta} />
-          <span className="text-[13px] font-medium truncate flex-1 leading-tight">
+          <span
+            className={cn(
+              "text-[13px] font-medium truncate flex-1 leading-tight",
+              (isMarkedForSkip || normalizedStatus === "skipped") &&
+                "line-through text-muted-foreground",
+            )}
+          >
             {step.title || "Untitled"}
           </span>
           {data.duration && normalizedStatus === "completed" && (
@@ -437,6 +476,35 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
               Retry step
             </button>
             {retryError && <p className="mt-0.5 text-[10px] text-red-600">{retryError}</p>}
+          </div>
+        )}
+
+        {(canSkip || canUnskip) && (
+          <div className="mt-1.5">
+            <button
+              type="button"
+              data-testid={`skip-step-${step.tempId}`}
+              disabled={isSkipping}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSkip!(step.tempId, !canUnskip);
+              }}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors",
+                canUnskip
+                  ? "bg-slate-500 text-white hover:bg-slate-600"
+                  : "bg-slate-400 text-white hover:bg-slate-500",
+                "disabled:opacity-60 disabled:cursor-not-allowed",
+              )}
+            >
+              {isSkipping ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <SkipForward className="h-3 w-3" />
+              )}
+              {canUnskip ? "Un-skip" : "Skip"}
+            </button>
+            {skipError && <p className="mt-0.5 text-[10px] text-red-600">{skipError}</p>}
           </div>
         )}
 

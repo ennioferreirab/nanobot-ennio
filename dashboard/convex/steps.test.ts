@@ -6,6 +6,7 @@ import {
   batchCreate,
   create,
   deleteStep,
+  deriveManualParentTaskStatus,
   findBlockedStepsReadyToUnblock,
   isValidStepTransition,
   isValidStepStatus,
@@ -2116,5 +2117,45 @@ describe("updateStep", () => {
     await expect(handler(ctx, { stepId: "step-r2", reviewSpecId: "draft-spec" })).rejects.toThrow(
       "Review spec must be published",
     );
+  });
+});
+
+describe("deriveManualParentTaskStatus with skipped steps", () => {
+  it("returns done when all active steps are completed or skipped", () => {
+    expect(
+      deriveManualParentTaskStatus([
+        { status: "completed" },
+        { status: "skipped" },
+        { status: "completed" },
+      ]),
+    ).toBe("done");
+  });
+
+  it("returns done when all active steps are skipped", () => {
+    expect(deriveManualParentTaskStatus([{ status: "skipped" }, { status: "skipped" }])).toBe(
+      "done",
+    );
+  });
+
+  it("returns in_progress with skipped and running steps", () => {
+    expect(deriveManualParentTaskStatus([{ status: "skipped" }, { status: "running" }])).toBe(
+      "in_progress",
+    );
+  });
+
+  it("returns crashed with skipped and crashed steps", () => {
+    expect(deriveManualParentTaskStatus([{ status: "skipped" }, { status: "crashed" }])).toBe(
+      "crashed",
+    );
+  });
+
+  it("returns done when mix of completed, skipped, and deleted", () => {
+    expect(
+      deriveManualParentTaskStatus([
+        { status: "completed" },
+        { status: "skipped" },
+        { status: "deleted" },
+      ]),
+    ).toBe("done");
   });
 });
