@@ -12,7 +12,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { FolderOpen, LayoutList, Settings } from "lucide-react";
+import { FolderOpen, LayoutList, Settings, X, Zap } from "lucide-react";
 import {
   ExecutionPlanTab,
   type ExecutionPlanViewMode,
@@ -25,6 +25,7 @@ import { RailSection } from "@/features/tasks/components/RailSection";
 import { FileStepGroup } from "@/features/tasks/components/FileStepGroup";
 import { MiniPlanList, type MiniPlanStep } from "@/features/tasks/components/MiniPlanList";
 import { TaskDetailConfigTab } from "@/features/tasks/components/TaskDetailConfigTab";
+import { CanvasRailContent } from "@/features/tasks/components/CanvasRailContent";
 import { ProviderLiveChatPanel } from "@/features/interactive/components/ProviderLiveChatPanel";
 import { useProviderSession } from "@/features/interactive/hooks/useProviderSession";
 import { useTaskInteractiveSession } from "@/features/interactive/hooks/useTaskInteractiveSession";
@@ -33,6 +34,7 @@ import { SquadDetailSheet } from "@/features/agents/components/SquadDetailSheet"
 import { useTaskDetailView } from "@/features/tasks/hooks/useTaskDetailView";
 import { useTaskDetailActions } from "@/features/tasks/hooks/useTaskDetailActions";
 import { usePlanEditorState } from "@/features/tasks/hooks/usePlanEditorState";
+import { cn } from "@/lib/utils";
 import type { ExecutionPlan } from "@/lib/types";
 import type { DetailFileRef } from "@/features/tasks/hooks/useTaskDetailView";
 
@@ -178,6 +180,8 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
     [setActiveTab],
   );
   const [planViewMode, setPlanViewMode] = useState<ExecutionPlanViewMode>("canvas");
+  const [selectedCanvasNodeId, setSelectedCanvasNodeId] = useState<string | null>(null);
+  const [liveStepId, setLiveStepId] = useState<string | null>(null);
   const [_showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [filterStepIds, setFilterStepIds] = useState<Set<string>>(new Set());
   const [selectedAgentName, setSelectedAgentName] = useState<string | null>(null);
@@ -218,6 +222,8 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
     setSelectedSquadId(null);
     setFocusedWorkflowId(null);
     setViewMode("thread");
+    setSelectedCanvasNodeId(null);
+    setLiveStepId(null);
   }, [taskId]);
 
   // Sync viewMode with activeTab from planState (handles awaiting kickoff auto-switch)
@@ -253,9 +259,19 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
     (mode: "thread" | "canvas") => {
       setViewMode(mode);
       setActiveTab(mode === "canvas" ? "plan" : "thread");
+      if (mode === "thread") {
+        setSelectedCanvasNodeId(null);
+      }
     },
     [setActiveTab],
   );
+
+  const handleNodeSelect = useCallback((stepId: string) => setSelectedCanvasNodeId(stepId), []);
+  const handleOpenLivePanel = useCallback((stepId: string) => {
+    setLiveStepId(stepId);
+    setSelectedLiveStepId(stepId);
+  }, []);
+  const handleCloseLivePanel = useCallback(() => setLiveStepId(null), []);
 
   const handleRemoveTag = (tagToRemove: string) => {
     if (!task || !isTaskLoaded) return;
@@ -464,6 +480,34 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
 
   const completedStepCount = miniPlanSteps.filter((s) => s.status === "completed").length;
 
+  const selectedStepDetail = useMemo(() => {
+    if (!selectedCanvasNodeId || !liveSteps) return null;
+    const step = liveSteps.find((s) => s._id === selectedCanvasNodeId);
+    if (!step) return null;
+    const idx = liveSteps
+      .filter((s) => s.status !== "deleted")
+      .findIndex((s) => s._id === selectedCanvasNodeId);
+    return {
+      id: step._id,
+      number: idx + 1,
+      name: step.title ?? step.description?.slice(0, 40) ?? "Untitled",
+      agent: step.assignedAgent ?? "unassigned",
+      status: step.status,
+      hasLiveSession: liveSession.liveStepIds.includes(step._id),
+    };
+  }, [selectedCanvasNodeId, liveSteps, liveSession.liveStepIds]);
+
+  const threadMiniPreview = useMemo(() => {
+    if (!messages) return [];
+    return messages.slice(-3).map((msg) => ({
+      id: msg._id,
+      agent: msg.authorName ?? "system",
+      text: typeof msg.content === "string" ? msg.content.slice(0, 80) : "...",
+    }));
+  }, [messages]);
+
+  const livePanelSession = useProviderSession(liveStepId ? liveSession.session : null);
+
   return (
     <Sheet open={!!taskId} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
@@ -495,34 +539,40 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
 
             <div className="flex flex-1 min-h-0">
               {/* Main content area */}
-              <div className="flex flex-col flex-1 min-w-0">
+              <div className={cn("flex min-w-0", liveStepId ? "flex-row" : "flex-col flex-1")}>
+                {/* Thread view (narrowed when live panel is open) */}
                 {viewMode === "thread" && (
-                  <TaskDetailThreadTab
-                    messages={messages}
-                    hasSourceThreads={hasSourceThreads}
-                    mergeSourceThreads={mergeSourceThreads}
-                    isMergedSourceGroupCollapsed={isMergedSourceGroupCollapsed}
-                    onToggleMergedSourceGroup={() =>
-                      setIsMergedSourceGroupCollapsed((current) => !current)
-                    }
-                    handleOpenArtifact={handleOpenArtifact}
-                    liveSteps={liveSteps}
-                    isActive={viewMode === "thread"}
-                    shouldReduceMotion={shouldReduceMotion}
-                    task={task}
-                    isMergeLockedSource={isMergeLockedSource}
-                    onMessageSent={noop}
-                    filterStepIds={filterStepIds}
-                    onFilterStepIdsChange={setFilterStepIds}
-                  />
+                  <div
+                    className={cn(
+                      "flex flex-col min-h-0",
+                      liveStepId ? "w-[380px] flex-shrink-0" : "flex-1",
+                    )}
+                  >
+                    <TaskDetailThreadTab
+                      messages={messages}
+                      hasSourceThreads={hasSourceThreads}
+                      mergeSourceThreads={mergeSourceThreads}
+                      isMergedSourceGroupCollapsed={isMergedSourceGroupCollapsed}
+                      onToggleMergedSourceGroup={() =>
+                        setIsMergedSourceGroupCollapsed((current) => !current)
+                      }
+                      handleOpenArtifact={handleOpenArtifact}
+                      liveSteps={liveSteps}
+                      isActive={viewMode === "thread"}
+                      shouldReduceMotion={shouldReduceMotion}
+                      task={task}
+                      isMergeLockedSource={isMergeLockedSource}
+                      onMessageSent={noop}
+                      filterStepIds={filterStepIds}
+                      onFilterStepIdsChange={setFilterStepIds}
+                    />
+                  </div>
                 )}
 
+                {/* Canvas view (with or without live split) */}
                 {viewMode === "canvas" && (
-                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-4">
-                    <div
-                      data-testid="plan-canvas-shell"
-                      className="w-full self-center lg:max-w-5xl xl:max-w-[60rem]"
-                    >
+                  <div className="flex min-h-0 flex-1 flex-col bg-[#0c0c0c]">
+                    <div data-testid="plan-canvas-shell" className="flex-1 min-h-0">
                       <ExecutionPlanTab
                         executionPlan={planForDisplay}
                         liveSteps={liveSteps ?? undefined}
@@ -542,12 +592,15 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                         hasUnsavedChanges={!!localPlan}
                         onOpenLive={liveSession.liveStepIds.length > 0 ? handleOpenLive : undefined}
                         liveStepIds={liveSession.liveStepIds}
+                        onNodeSelect={handleNodeSelect}
+                        selectedNodeId={selectedCanvasNodeId}
                       />
                     </div>
                   </div>
                 )}
 
-                {viewMode === "live" && task && liveSession.session && (
+                {/* Full-view live mode (legacy, from header live button) */}
+                {viewMode === "live" && task && liveSession.session && !liveStepId && (
                   <div className="min-h-0 flex-1 px-6 py-4 flex flex-col gap-3">
                     {liveSession.liveChoices.length > 1 && (
                       <div className="flex items-center gap-2">
@@ -585,6 +638,45 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                     </div>
                   </div>
                 )}
+
+                {/* Live panel (split view - appears next to narrowed thread or canvas) */}
+                {liveStepId && liveSession.session && (
+                  <div className="flex-1 min-h-0 min-w-0 flex flex-col border-l border-border">
+                    {/* Session selector header */}
+                    <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-3 py-2">
+                      <Zap className="h-3.5 w-3.5 text-emerald-400" />
+                      <span className="text-xs font-medium text-zinc-200 truncate flex-1">
+                        {liveSession.activeStep?.title ?? "Live session"}
+                      </span>
+                      {liveSession.liveChoices.length > 1 && (
+                        <span className="text-[10px] text-zinc-500">
+                          1 of {liveSession.liveChoices.length} sessions
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleCloseLivePanel}
+                        className="p-1 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
+                        aria-label="Close live panel"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <div className="min-h-0 flex-1">
+                      <ProviderLiveChatPanel
+                        sessionId={livePanelSession.sessionId}
+                        events={livePanelSession.events}
+                        groupedTimeline={livePanelSession.groupedTimeline}
+                        status={livePanelSession.status}
+                        agentName={livePanelSession.agentName ?? liveSession.session.agentName}
+                        provider={livePanelSession.provider ?? liveSession.session.provider}
+                        isLoading={livePanelSession.isLoading}
+                        errorMessage={liveSession.session.lastError ?? undefined}
+                        onOpenArtifact={handleOpenArtifact}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Context Rail - right side */}
@@ -595,6 +687,19 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                 isCollapsed={isRailCollapsed}
                 onToggleCollapse={() => setIsRailCollapsed((prev) => !prev)}
               >
+                {viewMode === "canvas" && (
+                  <CanvasRailContent
+                    selectedStep={selectedStepDetail}
+                    threadPreview={threadMiniPreview}
+                    onOpenLive={handleOpenLivePanel}
+                    onFilterThread={(stepId) => {
+                      setFilterStepIds(new Set([stepId]));
+                      handleViewModeChange("thread");
+                    }}
+                    onViewThread={() => handleViewModeChange("thread")}
+                  />
+                )}
+
                 <RailSection
                   icon={FolderOpen}
                   label="Files"

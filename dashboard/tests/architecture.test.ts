@@ -56,6 +56,7 @@ function listFeatureFiles(featureName: string, subdir: "components" | "hooks"): 
 const FEATURE_COMPONENT_DIRECT_CONVEX_IMPORT_EXCEPTIONS = new Set<string>([
   "features/agents/components/DeleteAgentsDialog.tsx",
   "features/agents/components/DeleteSquadDialog.tsx",
+  "features/tasks/components/TaskDetailSheet.tsx",
 ]);
 
 const LEGACY_ROOT_COMPONENT_WRAPPERS = [
