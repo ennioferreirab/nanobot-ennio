@@ -117,7 +117,7 @@ export function collectTaskLiveStepIds(
     if (
       session.taskId === taskId &&
       typeof session.stepId === "string" &&
-      (ATTACHABLE_STATUSES.has(session.status) || HISTORICAL_STATUSES.has(session.status))
+      ATTACHABLE_STATUSES.has(session.status)
     ) {
       stepIds.add(session.stepId);
     }

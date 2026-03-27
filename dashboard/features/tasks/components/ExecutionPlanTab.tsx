@@ -580,21 +580,26 @@ export function ExecutionPlanTab({
   const handleStepClick = useCallback(
     (stepId: string) => {
       if (stepId === VISUAL_MERGE_ALIAS_ID) return;
-      if (!canAddOrEdit) return;
+      if (!canAddOrEdit) {
+        // In read-only mode, open the live tab for the clicked step
+        if (onOpenLive) {
+          onOpenLive(stepId);
+        }
+        return;
+      }
       setEditingStepId(stepId);
       setEditStepError(null);
       setShowAddForm(false);
     },
-    [canAddOrEdit],
+    [canAddOrEdit, onOpenLive],
   );
 
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
       if (node.id === "__start__" || node.id === "__end__") return;
-      if (!canAddOrEdit) return;
       handleStepClick(node.id);
     },
-    [canAddOrEdit, handleStepClick],
+    [handleStepClick],
   );
 
   // Compute leaf steps: steps that no other step depends on (closest to END)
@@ -652,7 +657,7 @@ export function ExecutionPlanTab({
           stopError: stopErrors[n.id],
           isAccepting: acceptingStepId === n.id,
           acceptError: acceptErrors[n.id],
-          onStepClick: canAddOrEdit && !isVisualOnly ? handleStepClick : undefined,
+          onStepClick: !isVisualOnly && (canAddOrEdit || onOpenLive) ? handleStepClick : undefined,
           isRetrying: retryingStepId === n.id,
           retryError: retryErrors[n.id],
           isVisualOnly,

@@ -590,7 +590,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                         onSavePlan={handleSavePlan}
                         isSavingPlan={isSavingPlan}
                         hasUnsavedChanges={!!localPlan}
-                        onOpenLive={liveSession.liveStepIds.length > 0 ? handleOpenLive : undefined}
+                        onOpenLive={handleOpenLive}
                         liveStepIds={liveSession.liveStepIds}
                       />
                     </div>
