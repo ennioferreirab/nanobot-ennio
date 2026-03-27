@@ -328,8 +328,8 @@ describe("Architecture: story 22.4 hotspot seams exist", () => {
   });
 });
 
-describe("Architecture: task detail remains decomposed by tab ownership", () => {
-  it("TaskDetailSheet delegates heavy tabs to extracted task-detail subcomponents", () => {
+describe("Architecture: task detail remains decomposed into extracted subcomponents", () => {
+  it("TaskDetailSheet delegates to extracted thread, config, header, and rail subcomponents", () => {
     const taskDetailSheetPath = path.join(
       DASHBOARD_ROOT,
       "features",
@@ -342,8 +342,8 @@ describe("Architecture: task detail remains decomposed by tab ownership", () => 
 
     expect(content).toContain(`from "@/features/tasks/components/TaskDetailThreadTab"`);
     expect(content).toContain(`from "@/features/tasks/components/TaskDetailConfigTab"`);
-    expect(content).toContain(`from "@/features/tasks/components/TaskDetailFilesTab"`);
-    expect(content).toContain(`from "@/features/tasks/components/TaskDetailHeader"`);
+    expect(content).toContain(`from "@/features/tasks/components/CompactHeader"`);
+    expect(content).toContain(`from "@/features/tasks/components/ContextRail"`);
   });
 });
 
