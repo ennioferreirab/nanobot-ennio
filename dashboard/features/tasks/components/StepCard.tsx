@@ -176,7 +176,7 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
                     setShowSkipConfirm((prev) => !prev);
                   }
                 }}
-                title={isSkipped ? "Un-skip step" : "Skip step"}
+                aria-label={isSkipped ? "Un-skip step" : "Skip step"}
               />
             )}
             <Trash2
