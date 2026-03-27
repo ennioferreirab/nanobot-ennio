@@ -10,11 +10,12 @@ import {
   RefreshCw,
   Square,
   Trash2,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { STATUS_COLORS } from "@/lib/constants";
 import type { EditablePlanStep } from "@/lib/types";
-import { getInitials, getAvatarColor } from "@/lib/agentUtils";
+import { getAvatarColor } from "@/lib/agentUtils";
 
 /* ── Status helpers (shared with ExecutionPlanTab) ── */
 
@@ -151,6 +152,29 @@ function getBorderColorClass(avatarBgClass: string): string {
   return map[avatarBgClass] ?? "border-l-border";
 }
 
+/* ── Status bar color helper ── */
+
+function getStatusBarClass(status: string): string {
+  const normalized = normalizeStatus(status);
+  switch (normalized) {
+    case "completed":
+      return "bg-[#2ea043]";
+    case "running":
+    case "in_progress":
+      return "bg-[#2383e2]";
+    case "crashed":
+    case "failed":
+      return "bg-destructive";
+    default:
+      return "bg-[#1a1a1a]";
+  }
+}
+
+function isRunningStatus(status: string): boolean {
+  const n = normalizeStatus(status);
+  return n === "running" || n === "in_progress";
+}
+
 /* ── Node data type ── */
 
 export type FlowStepNodeData = {
@@ -181,6 +205,7 @@ export type FlowStepNodeData = {
   isLiveStep?: boolean;
   /** Whether this node is the currently selected node in the canvas */
   isSelectedNode?: boolean;
+  outputFiles?: string[];
 };
 
 export type FlowStepNodeType = Node<FlowStepNodeData, "flowStep">;
@@ -276,6 +301,23 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           }
         }}
       >
+        {/* Status bar at top of card */}
+        {isRunningStatus(resolvedStatus) ? (
+          <div
+            className="h-[3px] -mx-3 -mt-2 rounded-t-lg mb-2 overflow-hidden"
+            style={{
+              background: `linear-gradient(90deg, #2383e2 50%, #222 50%)`,
+            }}
+          />
+        ) : (
+          <div
+            className={cn(
+              "h-[3px] -mx-3 -mt-2 rounded-t-lg mb-2",
+              getStatusBarClass(resolvedStatus),
+            )}
+          />
+        )}
+
         <Handle
           type="target"
           position={Position.Left}
@@ -287,17 +329,17 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           {agentName ? (
             <span
               className={cn(
-                "inline-flex items-center justify-center w-6 h-6 rounded-full text-white shrink-0",
-                "text-[9px] font-semibold leading-none",
+                "inline-flex items-center justify-center w-3 h-3 rounded-[3px] text-white shrink-0",
+                "text-[7px] font-bold leading-none",
                 avatarBgClass,
               )}
               aria-hidden="true"
             >
-              {getInitials(agentName)}
+              {agentName.charAt(0).toUpperCase()}
             </span>
           ) : (
             <span
-              className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-muted shrink-0"
+              className="inline-flex items-center justify-center w-3 h-3 rounded-[3px] bg-muted shrink-0"
               aria-hidden="true"
             />
           )}
@@ -319,6 +361,20 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           )}
         </div>
 
+        {/* File chips */}
+        {data.outputFiles && data.outputFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {data.outputFiles.map((f) => (
+              <span
+                key={f}
+                className="px-1.5 py-0.5 bg-[#1e1e1e] border border-border rounded-full text-[9px] text-primary truncate max-w-[120px]"
+              >
+                {f}
+              </span>
+            ))}
+          </div>
+        )}
+
         {isLiveStep && onOpenLive && !isEditMode && (
           <div className="mt-1">
             <button
@@ -331,7 +387,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
               }}
               aria-label="Open live session"
             >
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <Zap className="w-2 h-2" />
               Live
             </button>
           </div>
@@ -417,6 +473,23 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
             </button>
             {retryError && <p className="mt-0.5 text-[10px] text-red-600">{retryError}</p>}
           </div>
+        )}
+
+        {/* Progress bar at bottom of card */}
+        {isRunningStatus(resolvedStatus) ? (
+          <div
+            className="h-[3px] -mx-3 -mb-2 rounded-b-lg mt-2 overflow-hidden"
+            style={{
+              background: `linear-gradient(90deg, #2383e2 50%, #222 50%)`,
+            }}
+          />
+        ) : (
+          <div
+            className={cn(
+              "h-[3px] -mx-3 -mb-2 rounded-b-lg mt-2",
+              getStatusBarClass(resolvedStatus),
+            )}
+          />
         )}
 
         <Handle

@@ -594,6 +594,7 @@ export function TaskDetailSheet({ taskId, onClose, onTaskOpen }: TaskDetailSheet
                         liveStepIds={liveSession.liveStepIds}
                         onNodeSelect={handleNodeSelect}
                         selectedNodeId={selectedCanvasNodeId}
+                        files={displayFiles.map((f) => ({ name: f.name, stepId: f.stepId }))}
                       />
                     </div>
                   </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ExternalLink } from "lucide-react";
 
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { type ProviderLiveEvent } from "@/features/interactive/lib/providerLiveEvents";
@@ -13,6 +13,21 @@ function tryPrettyJson(text: string): string | null {
     return JSON.stringify(JSON.parse(trimmed), null, 2);
   } catch {
     return null;
+  }
+}
+
+function extractFilePathFromInput(toolInput: string | undefined): string | undefined {
+  if (!toolInput) return undefined;
+  try {
+    const parsed = JSON.parse(toolInput);
+    // Common field names for file path in tool input
+    return parsed.file_path ?? parsed.filePath ?? parsed.path ?? parsed.filename ?? undefined;
+  } catch {
+    // Try regex fallback for non-JSON input
+    const match = toolInput.match(
+      /(?:file_path|filePath|path|filename)\s*[=:]\s*["']?([^\s"',}]+)/,
+    );
+    return match?.[1] ?? undefined;
   }
 }
 
@@ -39,7 +54,13 @@ function hasTruncationMarker(text: string): boolean {
   return text.includes("[truncated,") || text.includes("[truncated]");
 }
 
-export function ProviderLiveEventRow({ event }: { event: ProviderLiveEvent }) {
+export function ProviderLiveEventRow({
+  event,
+  onOpenArtifact,
+}: {
+  event: ProviderLiveEvent;
+  onOpenArtifact?: (path: string) => void;
+}) {
   const isError = event.category === "error";
   const isTruncated =
     hasTruncationMarker(event.body ?? "") || hasTruncationMarker(event.rawJson ?? "");
@@ -49,6 +70,15 @@ export function ProviderLiveEventRow({ event }: { event: ProviderLiveEvent }) {
         minute: "2-digit",
       })
     : null;
+
+  // Detect write/file tool events and extract the file path for the "View" button
+  const isWriteFileEvent =
+    event.category === "tool" &&
+    event.toolName &&
+    (/write/i.test(event.toolName) || /file/i.test(event.toolName));
+  const artifactPath = isWriteFileEvent
+    ? (event.filePath ?? extractFilePathFromInput(event.toolInput))
+    : undefined;
 
   return (
     <article
@@ -79,6 +109,16 @@ export function ProviderLiveEventRow({ event }: { event: ProviderLiveEvent }) {
           </span>
         )}
         {timeLabel && <span className="ml-auto text-[10px] text-zinc-500">{timeLabel}</span>}
+        {artifactPath && onOpenArtifact && (
+          <button
+            type="button"
+            onClick={() => onOpenArtifact(artifactPath)}
+            className="flex items-center gap-1 px-2 py-0.5 bg-[#1e1e1e] border border-border rounded-full text-[10px] text-primary hover:bg-primary/10 transition-colors"
+          >
+            <ExternalLink className="w-2.5 h-2.5" />
+            View
+          </button>
+        )}
       </div>
 
       {event.toolInput && (
