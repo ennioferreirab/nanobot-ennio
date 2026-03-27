@@ -458,12 +458,15 @@ class TestTaskExecution:
 
         executor = TaskExecutor(mock_bridge)
 
+        from mc.application.execution.request import ExecutionResult
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(
+            return_value=ExecutionResult(success=True, output="Task completed successfully")
+        )
+
         with (
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                new_callable=AsyncMock,
-                return_value=("Task completed successfully", "mock_session_key", MagicMock()),
-            ),
+            patch.object(executor, "_build_execution_engine", return_value=mock_engine),
             patch.object(executor, "_load_agent_config", return_value=(None, None, None)),
             patch("asyncio.to_thread", side_effect=_to_thread_passthrough),
         ):
@@ -502,12 +505,13 @@ class TestTaskExecution:
 
         executor = TaskExecutor(mock_bridge)
 
+        from mc.application.execution.request import ExecutionResult
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=ExecutionResult(success=True, output="Done"))
+
         with (
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                new_callable=AsyncMock,
-                return_value=("Done", "mock_session_key", MagicMock()),
-            ),
+            patch.object(executor, "_build_execution_engine", return_value=mock_engine),
             patch.object(executor, "_load_agent_config", return_value=(None, None, None)),
             patch("asyncio.to_thread", side_effect=_to_thread_passthrough),
         ):
@@ -539,12 +543,15 @@ class TestTaskExecution:
 
         executor = TaskExecutor(mock_bridge)
 
+        from mc.application.execution.request import ExecutionResult
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(
+            return_value=ExecutionResult(success=True, output="Here is my work output")
+        )
+
         with (
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                new_callable=AsyncMock,
-                return_value=("Here is my work output", "mock_session_key", MagicMock()),
-            ),
+            patch.object(executor, "_build_execution_engine", return_value=mock_engine),
             patch.object(executor, "_load_agent_config", return_value=(None, None, None)),
             patch("asyncio.to_thread", side_effect=_to_thread_passthrough),
         ):
@@ -583,12 +590,13 @@ class TestTaskExecution:
 
         executor = TaskExecutor(mock_bridge)
 
+        from mc.application.execution.request import ExecutionResult
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=ExecutionResult(success=True, output="Done"))
+
         with (
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                new_callable=AsyncMock,
-                return_value=("Done", "mock_session_key", MagicMock()),
-            ),
+            patch.object(executor, "_build_execution_engine", return_value=mock_engine),
             patch.object(executor, "_load_agent_config", return_value=(None, None, None)),
             patch("asyncio.to_thread", side_effect=_to_thread_passthrough),
         ):
@@ -617,13 +625,21 @@ class TestTaskExecution:
 
         executor = TaskExecutor(mock_bridge)
 
+        from mc.application.execution.request import ErrorCategory, ExecutionResult
+
         crash_error = RuntimeError("Agent exploded")
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(
+            return_value=ExecutionResult(
+                success=False,
+                error_category=ErrorCategory.RUNNER,
+                error_message="Agent exploded",
+                error_exception=crash_error,
+            )
+        )
+
         with (
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                new_callable=AsyncMock,
-                side_effect=crash_error,
-            ),
+            patch.object(executor, "_build_execution_engine", return_value=mock_engine),
             patch.object(executor, "_load_agent_config", return_value=(None, None, None)),
             patch("asyncio.to_thread", side_effect=_to_thread_passthrough),
             patch.object(executor, "_agent_gateway") as mock_gw,
@@ -672,22 +688,9 @@ class TestLeadAgentExecutionGuards:
                 task_data={"board_id": "board_001"},
             )
 
-    @pytest.mark.asyncio
-    async def test_executor_rejects_orchestrator_agent_in_run_agent_on_task(self):
-        from mc.contexts.execution.executor import _run_agent_on_task
-        from mc.types import OrchestratorAgentExecutionError
-
-        with pytest.raises(
-            OrchestratorAgentExecutionError,
-            match="must never be passed to _run_agent_on_task",
-        ):
-            await _run_agent_on_task(
-                agent_name="orchestrator-agent",
-                agent_prompt=None,
-                agent_model=None,
-                task_title="Task",
-                task_description=None,
-            )
+    # Note: The old test_executor_rejects_orchestrator_agent_in_run_agent_on_task
+    # was removed because _run_agent_on_task no longer exists. The guard is now
+    # in _execute_task and is tested by the test above.
 
 
 # ---------------------------------------------------------------------------
@@ -719,12 +722,13 @@ class TestTrustLevelStatus:
 
         executor = TaskExecutor(mock_bridge)
 
+        from mc.application.execution.request import ExecutionResult
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=ExecutionResult(success=True, output="Reviewed"))
+
         with (
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                new_callable=AsyncMock,
-                return_value=("Reviewed", "mock_session_key", MagicMock()),
-            ),
+            patch.object(executor, "_build_execution_engine", return_value=mock_engine),
             patch.object(executor, "_load_agent_config", return_value=(None, None, None)),
             patch("asyncio.to_thread", side_effect=_to_thread_passthrough),
         ):
@@ -809,12 +813,13 @@ class TestKnownAssignedIdsCleanup:
         executor = TaskExecutor(mock_bridge)
         executor._known_assigned_ids.add("task_cleanup")
 
+        from mc.application.execution.request import ExecutionResult
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=ExecutionResult(success=True, output="Done"))
+
         with (
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                new_callable=AsyncMock,
-                return_value=("Done", "mock_session_key", MagicMock()),
-            ),
+            patch.object(executor, "_build_execution_engine", return_value=mock_engine),
             patch.object(executor, "_load_agent_config", return_value=(None, None, None)),
             patch("asyncio.to_thread", side_effect=_to_thread_passthrough),
         ):
@@ -844,12 +849,20 @@ class TestKnownAssignedIdsCleanup:
         executor = TaskExecutor(mock_bridge)
         executor._known_assigned_ids.add("task_crash_cleanup")
 
+        from mc.application.execution.request import ErrorCategory, ExecutionResult
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(
+            return_value=ExecutionResult(
+                success=False,
+                error_category=ErrorCategory.RUNNER,
+                error_message="boom",
+                error_exception=RuntimeError("boom"),
+            )
+        )
+
         with (
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                new_callable=AsyncMock,
-                side_effect=RuntimeError("boom"),
-            ),
+            patch.object(executor, "_build_execution_engine", return_value=mock_engine),
             patch.object(executor, "_load_agent_config", return_value=(None, None, None)),
             patch("asyncio.to_thread", side_effect=_to_thread_passthrough),
             patch.object(executor._agent_gateway, "handle_agent_crash", new_callable=AsyncMock),
@@ -1111,12 +1124,13 @@ class TestExecutorNoDuplicateActivity:
 
         executor = TaskExecutor(mock_bridge)
 
+        from mc.application.execution.request import ExecutionResult
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=ExecutionResult(success=True, output="Done"))
+
         with (
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                new_callable=AsyncMock,
-                return_value=("Done", "mock_session_key", MagicMock()),
-            ),
+            patch.object(executor, "_build_execution_engine", return_value=mock_engine),
             patch.object(executor, "_load_agent_config", return_value=(None, None, None)),
             patch("asyncio.to_thread", side_effect=_to_thread_passthrough),
         ):

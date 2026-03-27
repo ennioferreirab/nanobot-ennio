@@ -3,7 +3,6 @@
 from mc.contexts.interactive.adapters import (
     ClaudeCodeInteractiveAdapter,
     CodexInteractiveAdapter,
-    NanobotInteractiveAdapter,
 )
 from mc.contexts.interactive.coordinator import InteractiveSessionCoordinator
 from mc.contexts.interactive.errors import (
@@ -48,7 +47,6 @@ __all__ = [
     "InteractiveSessionStartupError",
     "InteractiveSupervisionEvent",
     "InteractiveSupervisionSink",
-    "NanobotInteractiveAdapter",
     "build_interactive_session_key",
     "build_tmux_session_name",
     "normalize_provider_event",

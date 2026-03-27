@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from mc.domain.utils import as_positive_int
 from mc.types import (
     HUMAN_AGENT_NAME,
-    NANOBOT_AGENT_NAME,
     ActivityEventType,
     ExecutionPlan,
     TaskStatus,
@@ -91,14 +90,11 @@ class PlanMaterializer:
             title = (step.title or step.description or f"Step {index}").strip()
             description = (step.description or title).strip()
             # Human workflow steps must keep "human" as the assigned agent
-            # so the UI renders them correctly instead of falling back to
-            # "nanobot".
+            # so the UI renders them correctly.
             if step.workflow_step_type == WorkflowStepType.HUMAN:
                 assigned_agent = HUMAN_AGENT_NAME
             else:
-                assigned_agent = (
-                    step.assigned_agent or NANOBOT_AGENT_NAME
-                ).strip() or NANOBOT_AGENT_NAME
+                assigned_agent = (step.assigned_agent or "").strip()
 
             entry: dict[str, object] = {
                 "temp_id": step.temp_id,

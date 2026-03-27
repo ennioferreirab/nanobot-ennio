@@ -77,9 +77,7 @@ class ClaudeCodeInteractiveAdapter:
         memory_workspace: Path | None = None,
         resume_session_id: str | None = None,
     ) -> InteractiveLaunchSpec:
-        from mc.types import NANOBOT_AGENT_NAME
-
-        if not board_name and agent.name != NANOBOT_AGENT_NAME:
+        if not board_name:
             raise InteractiveSessionBootstrapError(
                 f"Agent '{agent.name}' requires a board-scoped workspace — "
                 "no board_name provided for interactive session."

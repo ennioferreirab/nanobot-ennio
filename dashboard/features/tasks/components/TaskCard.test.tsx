@@ -94,7 +94,7 @@ describe("TaskCard — showApproveButton logic", () => {
           tempId: "step_1",
           title: "Workflow step",
           description: "Execute workflow",
-          assignedAgent: "nanobot",
+          assignedAgent: "test-agent",
           blockedBy: [],
           parallelGroup: 0,
           order: 0,

@@ -247,7 +247,7 @@ function normalizedStepsToPlanSteps(steps: NormalizedStep[]): EditablePlanStep[]
     tempId: s.stepId,
     title: s.title ?? "",
     description: s.description,
-    assignedAgent: s.isVisualOnly ? "" : (s.assignedAgent ?? "nanobot"),
+    assignedAgent: s.isVisualOnly ? "" : (s.assignedAgent ?? ""),
     blockedBy: s.dependencies,
     parallelGroup: typeof s.parallelGroup === "number" ? s.parallelGroup : 0,
     order: s.order,
@@ -280,7 +280,7 @@ function insertRootStepAfterMergeAlias(steps: EditablePlanStep[]): EditablePlanS
       tempId: newId,
       title: "",
       description: "",
-      assignedAgent: "nanobot",
+      assignedAgent: "",
       blockedBy: [],
       parallelGroup: 1,
       order: maxOrder + 1,
@@ -648,7 +648,7 @@ export function ExecutionPlanTab({
           onOpenLive: isVisualOnly ? undefined : onOpenLive,
           isLiveStep: Boolean(
             liveStepIdSet.has(n.id) ||
-              (matchedDisplayStep?.liveId != null && liveStepIdSet.has(matchedDisplayStep.liveId)),
+            (matchedDisplayStep?.liveId != null && liveStepIdSet.has(matchedDisplayStep.liveId)),
           ),
         },
       };

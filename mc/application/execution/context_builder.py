@@ -44,7 +44,6 @@ from mc.application.execution.roster_builder import (
 from mc.application.execution.thread_context_builder import build_thread_context
 from mc.application.execution.thread_journal_service import ThreadJournalService
 from mc.types import (
-    NANOBOT_AGENT_NAME,
     extract_cc_model_name,
     is_cc_model,
     is_orchestrator_agent,
@@ -387,9 +386,9 @@ class ContextBuilder:
             req.board_name = board_name
             req.memory_workspace = memory_workspace
             req.memory_mode = memory_mode
-        elif agent_name != NANOBOT_AGENT_NAME:
+        else:
             raise RuntimeError(
-                f"Task '{title}' has no board_id — non-nanobot agent '{agent_name}' "
+                f"Task '{title}' has no board_id — agent '{agent_name}' "
                 "requires a board-scoped workspace. Assign a board to the task."
             )
 
@@ -486,10 +485,6 @@ class ContextBuilder:
         # 9. Inject orientation
         agent_prompt = inject_orientation(agent_name, agent_prompt, bridge=self._bridge)
 
-        # System agents (nanobot) use SOUL.md -- skip prompt injection
-        if agent_name == NANOBOT_AGENT_NAME:
-            agent_prompt = None
-
         # Inject agent roster for orchestrator-agent context
         if is_orchestrator_agent(agent_name):
             roster = build_agent_roster()
@@ -538,15 +533,13 @@ class ContextBuilder:
         step_id = step.get("id", "")
         step_title = (step.get("title") or "Untitled Step").strip()
         step_description = step.get("description") or ""
-        agent_name = (step.get("assigned_agent") or NANOBOT_AGENT_NAME).strip()
+        agent_name = (step.get("assigned_agent") or "").strip()
 
         if is_orchestrator_agent(agent_name):
-            logger.warning(
-                "[context] Step '%s' assigned to orchestrator-agent; rerouting to '%s'",
-                step_title,
-                NANOBOT_AGENT_NAME,
+            raise RuntimeError(
+                f"Step '{step_title}' is assigned to orchestrator-agent '{agent_name}', "
+                "which cannot execute steps directly. Assign a concrete agent to the step."
             )
-            agent_name = NANOBOT_AGENT_NAME
 
         req = ExecutionRequest(
             entity_type=EntityType.STEP,
@@ -595,8 +588,6 @@ class ContextBuilder:
 
         # 5. Inject orientation
         agent_prompt = inject_orientation(agent_name, agent_prompt, bridge=self._bridge)
-        if agent_name == NANOBOT_AGENT_NAME:
-            agent_prompt = None
 
         # 6. Fetch task data + build file context
         task_data = await asyncio.to_thread(
@@ -615,9 +606,9 @@ class ContextBuilder:
             req.board_name = board_name
             req.memory_workspace = memory_workspace
             req.memory_mode = memory_mode
-        elif agent_name != NANOBOT_AGENT_NAME:
+        else:
             raise RuntimeError(
-                f"Task '{task_title}' has no board_id — non-nanobot agent '{agent_name}' "
+                f"Task '{task_title}' has no board_id — agent '{agent_name}' "
                 "requires a board-scoped workspace. Assign a board to the task."
             )
 

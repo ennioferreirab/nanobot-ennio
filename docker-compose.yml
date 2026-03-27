@@ -10,7 +10,6 @@ services:
       - "${CONVEX_PORT:-3210}:3210"
       - "${CONVEX_SITE_PORT:-3211}:3211"
       - "${INTERACTIVE_PORT:-8765}:8765"
-      - "${NANOBOT_PORT:-18790}:18790"
     volumes:
       # Source code — bind-mounted for live editing (no rebuild needed)
       - ./mc:/app/mc
@@ -106,7 +105,6 @@ services:
       - NEXT_PUBLIC_INTERACTIVE_PORT=${TEST_INTERACTIVE_PORT:-8865}
       - INTERACTIVE_HOST=0.0.0.0
       - CLAUDE_CODE_SETTING_SOURCES=project
-      - MC_SKIP_NANOBOT=1
       - WATCHPACK_POLLING=true
       - CHOKIDAR_USEPOLLING=true
     healthcheck:

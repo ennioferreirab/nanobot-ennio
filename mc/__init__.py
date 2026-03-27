@@ -1,5 +1,5 @@
 """
-nanobot Mission Control — Multi-agent orchestration platform.
+Open Control — Multi-agent orchestration platform.
 
 This package provides the Python-side components for Mission Control:
 - bridge: ConvexBridge for Convex backend communication
@@ -13,7 +13,6 @@ This package provides the Python-side components for Mission Control:
 
 from mc.bridge import ConvexBridge
 from mc.types import (
-    NANOBOT_AGENT_NAME,
     ORCHESTRATOR_AGENT_NAME,
     AgentData,
     AgentStatus,
@@ -30,7 +29,6 @@ from mc.types import (
 )
 
 __all__ = [
-    "NANOBOT_AGENT_NAME",
     "ORCHESTRATOR_AGENT_NAME",
     "AgentData",
     "AgentStatus",

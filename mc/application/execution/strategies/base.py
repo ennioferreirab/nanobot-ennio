@@ -1,7 +1,7 @@
 """RunnerStrategy protocol — common interface for all execution backends.
 
 Each strategy encapsulates the logic for running agent work through a
-specific backend (nanobot, claude-code, human). The ExecutionEngine
+specific backend (claude-code, provider-cli, human). The ExecutionEngine
 delegates to strategies based on the request's runner_type.
 """
 

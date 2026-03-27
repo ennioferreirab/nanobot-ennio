@@ -41,8 +41,7 @@ class AgentRepository:
             args["soul"] = agent_data.soul
         if agent_data.is_system:
             args["is_system"] = True
-        if agent_data.backend != "nanobot":
-            args["backend"] = agent_data.backend
+        args["backend"] = agent_data.backend
         if agent_data.interactive_provider is not None:
             args["interactive_provider"] = agent_data.interactive_provider
         cc_opts = agent_data.claude_code_opts
@@ -111,7 +110,7 @@ class AgentRepository:
         Args:
             name: Agent name.
             boards_data: List of dicts with board_name, memory_content, history_content.
-            global_data: Optional dict with memory_content, history_content for global workspace (nanobot only).
+            global_data: Optional dict with memory_content, history_content for global workspace.
         """
         args: dict[str, Any] = {
             "agent_name": name,

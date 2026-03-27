@@ -20,7 +20,6 @@ def _kill_stale_processes() -> None:
     dashboard_dir = str(_cli._find_dashboard_dir())
     patterns = [
         "mc.runtime.gateway",
-        "-m nanobot gateway",
     ]
     dashboard_patterns = [
         "next dev",
@@ -123,13 +122,8 @@ def register_lifecycle_commands(mc_app: typer.Typer) -> None:
             "--cloud",
             help="Use the hosted Convex cloud deployment (default behavior).",
         ),
-        no_nanobot: bool = typer.Option(
-            False,
-            "--no-nanobot",
-            help="Skip the nanobot gateway (channel integrations). Also set via MC_SKIP_NANOBOT=1.",
-        ),
     ):
-        """Start Open Control (dashboard + agent gateway + nanobot channels)."""
+        """Start Open Control (dashboard + agent gateway)."""
         import mc.cli as _cli
         from mc.cli.process_manager import ProcessManager
 
@@ -163,55 +157,16 @@ def register_lifecycle_commands(mc_app: typer.Typer) -> None:
         _cli.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
         _cli.PID_FILE.write_text(str(os.getpid()))
 
-        try:
-            from nanobot.config.loader import load_config
-
-            config = load_config()
-            enabled = []
-            if config.channels.telegram.enabled:
-                enabled.append("telegram")
-            if config.channels.whatsapp.enabled:
-                enabled.append("whatsapp")
-            if config.channels.discord.enabled:
-                enabled.append("discord")
-            if config.channels.slack.enabled:
-                enabled.append("slack")
-            if config.channels.email.enabled:
-                enabled.append("email")
-            if enabled:
-                _cli.console.print(f"[green]✓[/green] Nanobot channels: {', '.join(enabled)}")
-            else:
-                _cli.console.print("[yellow]⚠[/yellow] No nanobot channels enabled")
-        except Exception:
-            pass
-
-        if convex_mode == "cloud":
-            try:
-                bridge = _cli._get_bridge()
-                from mc.infrastructure.agent_bootstrap import sync_nanobot_default_model
-
-                if sync_nanobot_default_model(bridge):
-                    _cli.console.print(
-                        "[green]✓[/green] Synced nanobot default model from dashboard"
-                    )
-            except Exception:
-                pass
-
         async def _run():
             pm = ProcessManager(
                 dashboard_dir=resolved_dir,
                 convex_mode=convex_mode,
-                skip_nanobot=no_nanobot,
             )
             try:
                 await pm.start()
                 _cli.console.print("[green]Open Control is running[/green]")
                 _cli.console.print("  Dashboard: [cyan]http://localhost:3000[/cyan]")
                 _cli.console.print(f"  Convex:    [cyan]{convex_mode}[/cyan]")
-                if no_nanobot or os.environ.get("MC_SKIP_NANOBOT") == "1":
-                    _cli.console.print("  Nanobot:   [yellow]skipped[/yellow]")
-                else:
-                    _cli.console.print("  Nanobot:   [cyan]channels + agent gateway[/cyan]")
                 await pm.wait()
             finally:
                 await pm.stop()

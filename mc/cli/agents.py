@@ -148,7 +148,7 @@ def list_agents():
                     valid_agents.append(result)
 
     if not valid_agents:
-        console.print("No agents found. Create one with `nanobot mc agents create`")
+        console.print("No agents found. Create one with `open-control mc agents create`")
         return
 
     table = Table(title="Registered Agents")
@@ -617,7 +617,7 @@ def migrate_agents(
     agents_dir_path: str = typer.Option(
         "",
         "--agents-dir",
-        help="Path to agents directory (default: ~/.nanobot/agents).",
+        help="Path to agents directory (default: runtime home agents dir).",
     ),
 ) -> None:
     """Migrate existing agents to Agent Spec V2 in Convex.
@@ -683,7 +683,7 @@ def rename_lead_agent(
     runtime_home_path: str = typer.Option(
         "",
         "--runtime-home",
-        help="Path to runtime home (default: configured ~/.nanobot-compatible home).",
+        help="Path to runtime home (default: configured runtime home).",
     ),
 ) -> None:
     """Rename the legacy lead-agent to orchestrator-agent across Convex and runtime home."""

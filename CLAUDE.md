@@ -9,7 +9,7 @@ mc/                  Python backend — runtime, workers, orchestrator, bridge t
   runtime/           Gateway, orchestrator, workers (inbox, execution)
   contexts/          Domain logic — conversation, execution, routing, planning, agents
   bridge/            Python↔Convex communication layer (HTTP client, key conversion, repos)
-  cli/               CLI entry point (`uv run open-control mc start`; `nanobot` alias also works)
+  cli/               CLI entry point (`uv run open-control mc start`)
 dashboard/           Next.js app + Convex backend
   convex/            Convex functions (queries, mutations, actions) and schema
   convex/lib/        Pure logic extracted from Convex functions — testable units

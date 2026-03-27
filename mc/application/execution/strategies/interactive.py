@@ -110,7 +110,7 @@ class InteractiveTuiRunnerStrategy:
             display_name=request.agent_name,
             role="agent",
             model=request.model or request.agent_model,
-            backend="claude-code" if provider == "claude-code" else "nanobot",
+            backend="claude-code",
             interactive_provider=provider,
         )
 

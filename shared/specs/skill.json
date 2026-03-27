@@ -34,7 +34,7 @@
     "description":        { "type": "string",   "required": true,  "description": "What the skill does and when to use it.", "operations": ["register"] },
     "content":            { "type": "string",   "required": true,  "description": "Full skill content (SKILL.md body).", "operations": ["register"] },
     "source":             { "type": "string",   "enum": ["builtin", "workspace"], "default": "workspace", "description": "Skill source.", "operations": ["register"] },
-    "supportedProviders": { "type": "string[]", "enum": ["claude-code", "codex", "nanobot"], "default": ["claude-code"], "description": "Providers that support this skill.", "operations": ["register"] },
+    "supportedProviders": { "type": "string[]", "enum": ["claude-code", "codex"], "default": ["claude-code"], "description": "Providers that support this skill.", "operations": ["register"] },
     "available":          { "type": "boolean",  "default": true,   "description": "Whether the skill is available for use.", "operations": ["register"] },
     "always":             { "type": "boolean",  "default": false,  "description": "Whether the skill is always loaded.", "operations": ["register"] },
     "requires":           { "type": "string",   "description": "Optional requirement description.", "operations": ["register"] },

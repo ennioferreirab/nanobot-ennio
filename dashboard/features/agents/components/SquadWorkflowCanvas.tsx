@@ -74,7 +74,7 @@ function toPlanSteps(workflow: EditableWorkflow): EditablePlanStep[] {
     tempId: step.id,
     title: step.title,
     description: step.description ?? "",
-    assignedAgent: step.agentKey ?? "nanobot",
+    assignedAgent: step.agentKey ?? "",
     blockedBy: step.dependsOn,
     parallelGroup: depthMap.get(step.id) ?? index + 1,
     order: index + 1,
@@ -94,7 +94,7 @@ function fromPlanSteps(
     .map((planStep) => {
       const previous = previousByKey.get(planStep.tempId);
       const assignedAgent =
-        planStep.assignedAgent && planStep.assignedAgent !== "nanobot"
+        planStep.assignedAgent && planStep.assignedAgent !== ""
           ? planStep.assignedAgent
           : (previous?.agentKey ?? fallbackAgent);
 
@@ -303,7 +303,7 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
                 title: ps.title,
                 description: ps.description,
                 status: "planned",
-                assignedAgent: ps.assignedAgent === "nanobot" ? undefined : ps.assignedAgent,
+                assignedAgent: ps.assignedAgent,
                 parallelGroup: ps.parallelGroup,
               }))}
               onStepClick={(stepId) => setSelectedStepId(stepId)}

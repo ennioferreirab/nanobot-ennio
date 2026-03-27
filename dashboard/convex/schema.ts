@@ -174,11 +174,7 @@ export const executionInteractionStateValidator = v.union(
   v.literal("completed"),
   v.literal("crashed"),
 );
-export const skillProviderValidator = v.union(
-  v.literal("claude-code"),
-  v.literal("codex"),
-  v.literal("nanobot"),
-);
+export const skillProviderValidator = v.union(v.literal("claude-code"), v.literal("codex"));
 
 export default defineSchema({
   boards: defineTable({

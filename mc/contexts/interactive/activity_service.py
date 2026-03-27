@@ -1,6 +1,6 @@
 """Unified service for persisting interactive session state and activity events.
 
-Provides a single API for all runner strategies (nanobot, provider-cli, future
+Provides a single API for all runner strategies (provider-cli, interactive, future
 runners) to communicate with the dashboard Live tab infrastructure.
 
 Both ``interactiveSessions`` and ``sessionActivityLog`` Convex tables are

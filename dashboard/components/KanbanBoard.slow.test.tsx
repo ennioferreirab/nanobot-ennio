@@ -82,7 +82,7 @@ function makeStep(overrides: Record<string, unknown> = {}): Doc<"steps"> {
     taskId: "task_1" as Id<"tasks">,
     title: "Test step",
     description: "Test step description",
-    assignedAgent: "nanobot",
+    assignedAgent: "test-agent",
     status: "assigned",
     blockedBy: [],
     parallelGroup: 1,

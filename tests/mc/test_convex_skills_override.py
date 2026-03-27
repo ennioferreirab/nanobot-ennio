@@ -142,6 +142,7 @@ class TestExecutorSkillsOverride:
     @pytest.mark.asyncio
     async def test_convex_skills_override_when_present(self):
         """When Convex agent has skills list, those skills should be used instead of YAML skills."""
+        from mc.application.execution.request import ExecutionResult
         from mc.contexts.execution.executor import TaskExecutor
 
         bridge = _make_bridge()
@@ -149,20 +150,19 @@ class TestExecutorSkillsOverride:
 
         captured_skills = {}
 
-        async def fake_run_agent_on_task(**kwargs):
-            captured_skills["value"] = kwargs.get("agent_skills")
-            return ("result", "session-key", MagicMock())
+        async def fake_engine_run(request):
+            captured_skills["value"] = request.agent_skills
+            return ExecutionResult(success=True, output="result")
 
         req = _make_task_execution_request(agent_skills=["github", "memory"])
 
+        engine = MagicMock()
+        engine.run = AsyncMock(side_effect=fake_engine_run)
+
         with (
             _patch_task_context_builder(req),
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                side_effect=fake_run_agent_on_task,
-            ),
             patch.object(executor, "_load_agent_data", return_value=None),
-            patch("mc.contexts.execution.executor._snapshot_output_dir", return_value={}),
+            patch.object(executor, "_build_execution_engine", return_value=engine, create=True),
             patch("mc.contexts.execution.executor._collect_output_artifacts", return_value=[]),
             patch("mc.contexts.execution.executor.asyncio.to_thread", new=_sync_to_thread),
         ):
@@ -183,6 +183,7 @@ class TestExecutorSkillsOverride:
     @pytest.mark.asyncio
     async def test_yaml_skills_kept_when_convex_returns_none(self):
         """When Convex agent has no skills field (None), YAML skills should be used."""
+        from mc.application.execution.request import ExecutionResult
         from mc.contexts.execution.executor import TaskExecutor
 
         bridge = _make_bridge()
@@ -190,21 +191,20 @@ class TestExecutorSkillsOverride:
 
         captured_skills = {}
 
-        async def fake_run_agent_on_task(**kwargs):
-            captured_skills["value"] = kwargs.get("agent_skills")
-            return ("result", "session-key", MagicMock())
+        async def fake_engine_run(request):
+            captured_skills["value"] = request.agent_skills
+            return ExecutionResult(success=True, output="result")
 
         yaml_skills = ["yaml-skill-1", "yaml-skill-2"]
         req = _make_task_execution_request(agent_skills=yaml_skills)
 
+        engine = MagicMock()
+        engine.run = AsyncMock(side_effect=fake_engine_run)
+
         with (
             _patch_task_context_builder(req),
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                side_effect=fake_run_agent_on_task,
-            ),
             patch.object(executor, "_load_agent_data", return_value=None),
-            patch("mc.contexts.execution.executor._snapshot_output_dir", return_value={}),
+            patch.object(executor, "_build_execution_engine", return_value=engine, create=True),
             patch("mc.contexts.execution.executor._collect_output_artifacts", return_value=[]),
             patch("mc.contexts.execution.executor.asyncio.to_thread", new=_sync_to_thread),
         ):
@@ -225,6 +225,7 @@ class TestExecutorSkillsOverride:
     @pytest.mark.asyncio
     async def test_convex_empty_skills_overrides_yaml(self):
         """Empty list [] from Convex IS a valid override (meaning 'no skills')."""
+        from mc.application.execution.request import ExecutionResult
         from mc.contexts.execution.executor import TaskExecutor
 
         bridge = _make_bridge()
@@ -232,20 +233,19 @@ class TestExecutorSkillsOverride:
 
         captured_skills = {}
 
-        async def fake_run_agent_on_task(**kwargs):
-            captured_skills["value"] = kwargs.get("agent_skills")
-            return ("result", "session-key", MagicMock())
+        async def fake_engine_run(request):
+            captured_skills["value"] = request.agent_skills
+            return ExecutionResult(success=True, output="result")
 
         req = _make_task_execution_request(agent_skills=[])
 
+        engine = MagicMock()
+        engine.run = AsyncMock(side_effect=fake_engine_run)
+
         with (
             _patch_task_context_builder(req),
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task",
-                side_effect=fake_run_agent_on_task,
-            ),
             patch.object(executor, "_load_agent_data", return_value=None),
-            patch("mc.contexts.execution.executor._snapshot_output_dir", return_value={}),
+            patch.object(executor, "_build_execution_engine", return_value=engine, create=True),
             patch("mc.contexts.execution.executor._collect_output_artifacts", return_value=[]),
             patch("mc.contexts.execution.executor.asyncio.to_thread", new=_sync_to_thread),
         ):

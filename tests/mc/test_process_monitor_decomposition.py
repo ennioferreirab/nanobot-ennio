@@ -77,25 +77,10 @@ class TestSyncUtilitiesAccessible:
 
         assert callable(sync_agent_registry)
 
-    def test_sync_nanobot_default_model_importable(self) -> None:
-        from mc.infrastructure.agent_bootstrap import sync_nanobot_default_model
-
-        assert callable(sync_nanobot_default_model)
-
     def test_ensure_low_agent_importable(self) -> None:
         from mc.infrastructure.agent_bootstrap import ensure_low_agent
 
         assert callable(ensure_low_agent)
-
-    def test_ensure_nanobot_agent_importable(self) -> None:
-        from mc.infrastructure.agent_bootstrap import ensure_nanobot_agent
-
-        assert callable(ensure_nanobot_agent)
-
-    def test_fetch_bot_identity_importable(self) -> None:
-        from mc.infrastructure.agent_bootstrap import _fetch_bot_identity
-
-        assert callable(_fetch_bot_identity)
 
 
 class TestCleanupLogicAccessible:
@@ -157,34 +142,24 @@ class TestGatewayReExports:
 
     def test_gateway_reexports_bootstrap_functions(self) -> None:
         from mc.runtime.gateway import (
-            _NANOBOT_AGENT_CONFIG,
-            NANOBOT_AGENT_NAME,
             _cleanup_deleted_agents,
             _distribute_builtin_skills,
-            _fetch_bot_identity,
             _restore_archived_files,
             _sync_embedding_model,
             _sync_model_tiers,
             ensure_low_agent,
-            ensure_nanobot_agent,
             sync_agent_registry,
-            sync_nanobot_default_model,
             sync_skills,
         )
 
-        assert NANOBOT_AGENT_NAME is not None
-        assert _NANOBOT_AGENT_CONFIG is not None
         assert callable(ensure_low_agent)
-        assert callable(ensure_nanobot_agent)
         assert callable(sync_agent_registry)
-        assert callable(sync_nanobot_default_model)
         assert callable(sync_skills)
         assert callable(_sync_model_tiers)
         assert callable(_sync_embedding_model)
         assert callable(_distribute_builtin_skills)
         assert callable(_cleanup_deleted_agents)
         assert callable(_restore_archived_files)
-        assert callable(_fetch_bot_identity)
 
     def test_gateway_reexports_crash_handler(self) -> None:
         from mc.runtime.gateway import AgentGateway

@@ -48,7 +48,7 @@ docker compose down -v          # Stop + wipe Convex data (fresh start)
 
 ## Stack Architecture
 
-The system runs **four cooperating processes** inside a Docker container, managed by `ProcessManager` (`mc/cli/process_manager.py`). See [`service_architecture.md`](service_architecture.md) for full details.
+The system runs **three cooperating processes** inside a Docker container, managed by `ProcessManager` (`mc/cli/process_manager.py`). See [`service_architecture.md`](service_architecture.md) for full details.
 
 ```bash
 make start
@@ -57,7 +57,6 @@ make start
 #   1. Convex local backend  (:3210)
 #   2. Next.js frontend      (:3000)
 #   3. MC Gateway             (event loop, IPC socket, all workers)
-#   4. Nanobot Gateway        (channels: Telegram, Slack, etc.)
 ```
 
 ### Ports
@@ -68,7 +67,6 @@ make start
 | Convex local backend | `localhost:3210` | WebSocket |
 | Convex site | `localhost:3211` | HTTP |
 | Interactive runtime | `localhost:8765` | WebSocket |
-| Nanobot gateway | `localhost:18790` | HTTP |
 
 ### Hot Reload
 

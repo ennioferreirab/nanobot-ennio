@@ -26,7 +26,7 @@ def _step(
     parallel_group: int = 1,
     order: int = 1,
     blocked_by: list[str] | None = None,
-    assigned_agent: str = "nanobot",
+    assigned_agent: str = "test-agent",
     **extra_fields: Any,
 ) -> dict[str, Any]:
     step = {
@@ -125,7 +125,7 @@ def _make_step_execution_request(step: dict[str, Any]) -> Any:
 
     step_title = (step.get("title") or "Untitled Step").strip()
     step_description = step.get("description") or ""
-    agent_name = (step.get("assigned_agent") or "nanobot").strip()
+    agent_name = (step.get("assigned_agent") or "test-agent").strip()
     task_id = step.get("task_id", "task-1")
     step_id = step.get("id", "")
 

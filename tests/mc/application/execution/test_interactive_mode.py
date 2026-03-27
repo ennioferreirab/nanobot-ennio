@@ -10,7 +10,7 @@ from mc.types import AgentData
 
 
 def _request(
-    *, provider: str | None, backend: str = "nanobot", is_cc: bool = False
+    *, provider: str | None, backend: str = "claude-code", is_cc: bool = False
 ) -> ExecutionRequest:
     return ExecutionRequest(
         entity_type=EntityType.STEP,
@@ -48,10 +48,10 @@ def test_resolve_step_runner_type_supports_mc_interactive_provider() -> None:
     assert runner_type == RunnerType.PROVIDER_CLI
 
 
-def test_resolve_step_runner_type_keeps_noninteractive_agents_on_nanobot() -> None:
-    runner_type = resolve_step_runner_type(_request(provider=None, backend="nanobot"))
+def test_resolve_step_runner_type_keeps_noninteractive_agents_on_provider_cli() -> None:
+    runner_type = resolve_step_runner_type(_request(provider=None, backend="claude-code"))
 
-    assert runner_type == RunnerType.NANOBOT
+    assert runner_type == RunnerType.PROVIDER_CLI
 
 
 def test_resolve_step_runner_type_surfaces_disabled_interactive_execution() -> None:
