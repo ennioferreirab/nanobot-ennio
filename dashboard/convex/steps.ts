@@ -1217,10 +1217,16 @@ export const skipStep = mutation({
         status: "skipped",
       });
 
-      // Reconcile parent task status after skip
-      const task = await ctx.db.get(step.taskId);
-      if (task) {
-        await applyManualParentTaskTransition(ctx, { task, step, currentTaskSteps });
+      // Only reconcile parent task to 'done' if all steps are terminal.
+      // Never unpause a paused task — skip should not resume execution.
+      const nextTaskStatus = deriveManualParentTaskStatus(
+        currentTaskSteps.map((s) => ({ status: s.status })),
+      );
+      if (nextTaskStatus === "done") {
+        const task = await ctx.db.get(step.taskId);
+        if (task) {
+          await applyManualParentTaskTransition(ctx, { task, step, currentTaskSteps });
+        }
       }
 
       await logActivity(ctx, {
