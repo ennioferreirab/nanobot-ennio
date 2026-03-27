@@ -1,7 +1,7 @@
 """
 Agent-assisted YAML generation for Mission Control.
 
-Uses the nanobot LLM provider infrastructure to generate agent YAML
+Uses the LLM provider infrastructure to generate agent YAML
 configurations from natural language descriptions. Validates output
 with the Story 3.1 validator before presenting to the user.
 """
@@ -21,7 +21,7 @@ from mc.infrastructure.runtime_home import get_agents_dir
 # ---------------------------------------------------------------------------
 
 YAML_GENERATION_PROMPT = """\
-You are helping create a nanobot agent configuration.
+You are helping create an agent configuration.
 Based on the user's description, generate a valid YAML configuration file.
 
 Required fields:
@@ -102,7 +102,7 @@ async def generate_agent_yaml(
     feedback: str | None = None,
     model: str | None = None,
 ) -> str:
-    """Use the nanobot LLM provider to generate agent YAML.
+    """Use the LLM provider to generate agent YAML.
 
     Args:
         provider: An ``LLMProvider`` instance (e.g. ``LiteLLMProvider``).
@@ -145,7 +145,7 @@ async def generate_agent_yaml(
 DEFAULT_SOUL_TEMPLATE = """\
 # Soul
 
-I am {display_name}, a nanobot agent.
+I am {display_name}, an AI agent.
 
 ## Role
 {role}
@@ -190,7 +190,7 @@ def ensure_soul_md(agent_dir: Path, name: str, role: str, soul_override: str | N
 def create_agent_workspace(name: str, yaml_text: str) -> Path:
     """Create the agent workspace directory and write config.yaml.
 
-    Creates ``~/.nanobot/agents/{name}/`` with:
+    Creates ``<agents_dir>/{name}/`` with:
       - config.yaml
       - memory/
       - skills/
@@ -226,7 +226,7 @@ def create_agent_workspace(name: str, yaml_text: str) -> Path:
 
 
 def build_llm_provider():
-    """Build an LLM provider from the nanobot configuration.
+    """Build an LLM provider from the configuration.
 
     Returns:
         A ``LiteLLMProvider`` instance ready for chat calls.

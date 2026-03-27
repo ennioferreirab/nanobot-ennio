@@ -586,13 +586,13 @@ describe("logStepStatusChange", () => {
       stepTitle: "Deploy to staging",
       previousStatus: "assigned",
       nextStatus: "running",
-      assignedAgent: "nanobot",
+      assignedAgent: "test-agent",
       timestamp: "2026-01-01T00:00:00.000Z",
     });
 
     expect(insert).toHaveBeenCalledWith("activities", {
       taskId: "task-1",
-      agentName: "nanobot",
+      agentName: "test-agent",
       eventType: "step_status_changed",
       description: 'Step status changed from assigned to running: "Deploy to staging"',
       timestamp: "2026-01-01T00:00:00.000Z",

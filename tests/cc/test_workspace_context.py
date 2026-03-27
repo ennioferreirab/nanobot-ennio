@@ -1,7 +1,7 @@
 """Tests for CC-7: Context Parity — CC backend CLAUDE.md enrichment.
 
 Tests verify that CCWorkspaceManager._generate_claude_md() produces a rich
-context matching the nanobot ContextBuilder's output, including bootstrap
+context matching the ContextBuilder's output, including bootstrap
 files, memory, skills summary, runtime metadata, and workspace guidance.
 """
 

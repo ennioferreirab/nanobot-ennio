@@ -1,11 +1,10 @@
 """
 ProcessManager — Spawns and manages Mission Control subprocesses.
 
-Manages 4 child processes:
+Manages 3 child processes:
 1. Convex dev server (npm run dev:backend)
 2. Next.js dev server (npm run dev:frontend)
 3. Agent Gateway (python -m mc.runtime.gateway)
-4. Nanobot Gateway — channels/Telegram (python -m nanobot gateway)
 """
 
 from __future__ import annotations
@@ -62,14 +61,13 @@ class ProcessManager:
         project_root: str | Path | None = None,
         convex_mode: str = "local",
         on_crash: Callable[[str, int], Awaitable[None]] | None = None,
-        skip_nanobot: bool = False,
     ):
         """
         Initialize the process manager.
 
         Args:
             dashboard_dir: Absolute path to the dashboard/ directory
-            project_root: Absolute path to the nanobot project root
+            project_root: Absolute path to the project root
                           (defaults to dashboard_dir parent)
             on_crash: Optional async callback(process_label, exit_code)
                       called when a child crashes
@@ -82,7 +80,6 @@ class ProcessManager:
             raise ValueError(f"Unsupported convex_mode: {convex_mode}")
         self._convex_mode = convex_mode
         self._on_crash = on_crash
-        self._skip_nanobot = skip_nanobot or os.environ.get("MC_SKIP_NANOBOT", "") == "1"
         self._processes: list[ManagedProcess] = []
         self._running = False
         self._monitor_task: asyncio.Task | None = None
@@ -216,20 +213,12 @@ class ProcessManager:
                     f"{config.label} exited immediately with code {managed.process.returncode}"
                 )
 
-    def _get_venv_python(self) -> str:
-        """Return venv Python if available, otherwise sys.executable."""
-        venv_python = Path(self._project_root) / ".venv" / "bin" / "python3"
-        if venv_python.exists():
-            return str(venv_python)
-        return sys.executable
-
     def _get_process_configs(self) -> list[ProcessConfig]:
         """Return the process configurations in startup order.
 
         Start Convex and Next separately so frontend boot is not blocked by
         ``predev`` hooks attached to ``npm run dev``.
         """
-        venv_python = self._get_venv_python()
         convex_args = ["run", "dev:backend"]
         if self._convex_mode == "local":
             convex_args.extend(["--", "--local", "--local-force-upgrade"])
@@ -260,18 +249,6 @@ class ProcessManager:
                 cwd=self._project_root,
             ),
         ]
-        if not self._skip_nanobot:
-            configs.append(
-                ProcessConfig(
-                    label="nanobot",
-                    command=venv_python,
-                    args=["-m", "nanobot", "gateway"],
-                    cwd=self._project_root,
-                    critical=False,
-                ),
-            )
-        else:
-            logger.info("[MC] Skipping nanobot gateway (MC_SKIP_NANOBOT=1)")
         return configs
 
     def _build_process_env(self, config: ProcessConfig) -> dict[str, str]:

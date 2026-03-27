@@ -81,7 +81,7 @@ const mockQuery = vi.hoisted(() =>
           description: "Write content",
           source: "workspace",
           available: true,
-          supportedProviders: ["claude-code", "nanobot"],
+          supportedProviders: ["claude-code"],
         },
       ];
     }

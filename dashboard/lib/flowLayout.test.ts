@@ -6,7 +6,7 @@ function makeStep(overrides: Partial<EditablePlanStep> & { tempId: string }): Ed
   return {
     title: overrides.tempId,
     description: overrides.tempId,
-    assignedAgent: "nanobot",
+    assignedAgent: "test-agent",
     blockedBy: [],
     parallelGroup: 0,
     order: 0,

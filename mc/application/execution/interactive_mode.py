@@ -23,12 +23,12 @@ def _resolve_interactive_runner_type(request: Any) -> RunnerType:
     interactive_provider = getattr(agent, "interactive_provider", None) if agent else None
     backend = getattr(agent, "backend", None) if agent else None
     is_interactive = (
-        interactive_provider in {"claude-code", "codex", "mc"}
+        interactive_provider in {"claude-code", "codex"}
         or request.is_cc
         or backend == "claude-code"
     )
     if not is_interactive:
-        return RunnerType.NANOBOT
+        return RunnerType.PROVIDER_CLI
 
     mode = os.environ.get(INTERACTIVE_MODE_ENV, "provider-cli").strip().lower()
     if mode in {"disabled", "off", "headless-only"}:

@@ -79,9 +79,6 @@ with open('/root/.claude.json', 'w') as f:
 " && echo "[dev] Seeded sanitized Claude Code config"
 fi
 
-# ─── Remove stale PID file from previous container run ───────────
-rm -f /root/.nanobot/mc.pid
-
 # ─── Re-link Python editable installs (~1s) ─────────────────────
 echo "[dev] Syncing Python dependencies..."
 uv sync --frozen 2>&1 | tail -3

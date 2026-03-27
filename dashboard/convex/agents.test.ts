@@ -652,7 +652,7 @@ function makeRenameCtx() {
         displayName: "Lead Agent",
         role: "Lead Orchestrator",
         prompt: "You are the lead agent for Mission Control.",
-        soul: "I am Lead Agent, a nanobot agent.",
+        soul: "I am Lead Agent, an AI agent.",
       },
     ],
     boards: [
@@ -753,7 +753,7 @@ describe("agents.renameLeadAgentToOrchestrator", () => {
       displayName: "Orchestrator Agent",
       role: "Orchestrator Agent",
       prompt: "You are the Orchestrator Agent for Mission Control.",
-      soul: "I am Orchestrator Agent, a nanobot agent.",
+      soul: "I am Orchestrator Agent, an AI agent.",
     });
     expect(patches.get("board-1")).toMatchObject({
       enabledAgents: ["orchestrator-agent", "dev-agent"],
@@ -791,7 +791,7 @@ describe("agents.renameLeadAgentToOrchestrator", () => {
       displayName: "Orchestrator Agent",
       role: "Orchestrator Agent",
       prompt: "You are the Orchestrator Agent for Mission Control.",
-      soul: "I am Orchestrator Agent, a nanobot agent.",
+      soul: "I am Orchestrator Agent, an AI agent.",
     });
 
     const result = await handler(ctx, { dryRun: false });

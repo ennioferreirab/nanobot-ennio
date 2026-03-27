@@ -26,7 +26,7 @@ function makeStep(overrides: Record<string, unknown> = {}): Step {
     taskId: "task_1" as Id<"tasks">,
     title: "Test step",
     description: "Test step description",
-    assignedAgent: "nanobot",
+    assignedAgent: "test-agent",
     status: "assigned",
     blockedBy: [],
     parallelGroup: 1,
@@ -50,13 +50,13 @@ describe("stepStatusToColumnStatus", () => {
   });
 
   it("maps ai_workflow assigned steps to assigned while the parent task is in_progress", () => {
-    expect(stepStatusToColumnStatus("assigned", "in_progress", "nanobot", "ai_workflow")).toBe(
+    expect(stepStatusToColumnStatus("assigned", "in_progress", "test-agent", "ai_workflow")).toBe(
       "assigned",
     );
   });
 
   it("maps legacy workflow assigned steps to assigned while the parent task is in_progress", () => {
-    expect(stepStatusToColumnStatus("assigned", "in_progress", "nanobot", undefined, true)).toBe(
+    expect(stepStatusToColumnStatus("assigned", "in_progress", "test-agent", undefined, true)).toBe(
       "assigned",
     );
   });
@@ -303,7 +303,7 @@ describe("useBoardColumns", () => {
       makeStep({
         taskId: "task_1",
         status: "assigned",
-        assignedAgent: "nanobot",
+        assignedAgent: "test-agent",
         order: 1,
       }),
     ];

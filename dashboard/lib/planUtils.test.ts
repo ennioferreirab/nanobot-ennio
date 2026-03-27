@@ -12,7 +12,7 @@ function makeStep(overrides: Partial<EditablePlanStep> = {}): EditablePlanStep {
     tempId: "step_1",
     title: "Step One",
     description: "First step",
-    assignedAgent: "nanobot",
+    assignedAgent: "test-agent",
     blockedBy: [],
     parallelGroup: 1,
     order: 1,
@@ -29,7 +29,7 @@ describe("insertSequentialStep", () => {
     const newStep = result.find((s) => s.tempId !== "step_1")!;
     expect(newStep.blockedBy).toEqual(["step_1"]);
     expect(newStep.title).toBe("");
-    expect(newStep.assignedAgent).toBe("nanobot");
+    expect(newStep.assignedAgent).toBe("test-agent");
   });
 
   it("uses stepData when provided", () => {
@@ -72,7 +72,7 @@ describe("insertSequentialStep", () => {
     const newStep = result.find((s) => s.tempId !== "step_1")!;
     expect(newStep.title).toBe("");
     expect(newStep.description).toBe("");
-    expect(newStep.assignedAgent).toBe("nanobot");
+    expect(newStep.assignedAgent).toBe("test-agent");
   });
 });
 
@@ -144,7 +144,7 @@ describe("insertParallelStep", () => {
     const newStep = result.find((s) => s.tempId !== "step_1")!;
     expect(newStep.title).toBe("");
     expect(newStep.description).toBe("");
-    expect(newStep.assignedAgent).toBe("nanobot");
+    expect(newStep.assignedAgent).toBe("test-agent");
   });
 });
 
@@ -294,7 +294,7 @@ describe("insertMergeStep", () => {
     const mergeStep = result.find((s) => s.tempId !== "step_1" && s.tempId !== "step_2")!;
     expect(mergeStep.title).toBe("");
     expect(mergeStep.description).toBe("");
-    expect(mergeStep.assignedAgent).toBe("nanobot");
+    expect(mergeStep.assignedAgent).toBe("test-agent");
   });
 });
 

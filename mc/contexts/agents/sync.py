@@ -29,13 +29,6 @@ logger = logging.getLogger(__name__)
 
 
 # Lazy imports to avoid circular dependencies at module level.
-def ensure_nanobot_agent(agents_dir: Path) -> None:
-    """Delegate to gateway.ensure_nanobot_agent."""
-    from mc.infrastructure.agent_bootstrap import ensure_nanobot_agent as _impl
-
-    _impl(agents_dir)
-
-
 def ensure_low_agent(bridge: ConvexBridge) -> None:
     """Delegate to gateway.ensure_low_agent."""
     from mc.infrastructure.agent_bootstrap import ensure_low_agent as _impl
@@ -99,8 +92,6 @@ class AgentSyncService:
         resolved_default = default_model or _config_default_model()
 
         # Step 0: Ensure system agents exist
-        ensure_nanobot_agent(self._agents_dir)
-
         try:
             ensure_low_agent(self._bridge)
         except Exception:

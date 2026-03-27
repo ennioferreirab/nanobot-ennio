@@ -68,12 +68,13 @@ async def test_execute_task_completes_with_fresh_task_snapshot_transition() -> N
 
     executor = TaskExecutor(bridge, on_task_completed=None)
 
+    from mc.application.execution.request import ExecutionResult
+
+    mock_engine = MagicMock()
+    mock_engine.run = AsyncMock(return_value=ExecutionResult(success=True, output="Done"))
+
     with (
-        patch(
-            "mc.contexts.execution.executor._run_agent_on_task",
-            new_callable=AsyncMock,
-            return_value=("Done", "mock_session_key", MagicMock()),
-        ),
+        patch.object(executor, "_build_execution_engine", return_value=mock_engine),
         patch.object(executor, "_load_agent_config", return_value=(None, None, None)),
         patch("asyncio.to_thread", side_effect=_to_thread_passthrough),
     ):

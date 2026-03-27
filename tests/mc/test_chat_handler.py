@@ -672,8 +672,8 @@ class TestCCModelRouting:
         assert captured_requests[0].runner_type == RunnerType.CLAUDE_CODE
 
     @pytest.mark.asyncio
-    async def test_non_cc_model_routes_through_nanobot_engine(self, tmp_path):
-        """Non cc/ model goes through ExecutionEngine with NANOBOT runner."""
+    async def test_non_cc_model_routes_through_provider_cli_engine(self, tmp_path):
+        """Non cc/ model goes through ExecutionEngine with PROVIDER_CLI runner."""
         from mc.contexts.conversation.chat_handler import ChatHandler
 
         bridge = self._make_cc_bridge()
@@ -710,9 +710,9 @@ class TestCCModelRouting:
         # Engine was called
         mock_engine.run.assert_called_once()
 
-        # Request has nanobot runner type
+        # Request has provider-cli runner type
         req = mock_engine.run.call_args[0][0]
-        assert req.runner_type == RunnerType.NANOBOT
+        assert req.runner_type == RunnerType.PROVIDER_CLI
 
         # Response sent
         bridge.send_chat_response.assert_called_once()
@@ -974,14 +974,14 @@ class TestChatHandlerEngineIntegration:
         assert req.session_boundary_reason is None
 
     @pytest.mark.asyncio
-    async def test_nanobot_chat_routes_through_engine(self, tmp_path):
-        """Non-CC model chat should route through ExecutionEngine with NANOBOT runner."""
+    async def test_non_cc_chat_routes_through_provider_cli_engine(self, tmp_path):
+        """Non-CC model chat should route through ExecutionEngine with PROVIDER_CLI runner."""
         from mc.contexts.conversation.chat_handler import ChatHandler
 
         bridge = _make_bridge()
         bridge.get_agent_by_name = MagicMock(return_value=None)
         handler = ChatHandler(bridge)
-        msg = _make_pending_msg(agent_name="nb-agent", content="Hello nanobot!")
+        msg = _make_pending_msg(agent_name="nb-agent", content="Hello agent!")
 
         agents_dir = tmp_path / "agents"
         config_dir = agents_dir / "nb-agent"
@@ -990,7 +990,7 @@ class TestChatHandlerEngineIntegration:
 
         engine_result = ExecutionResult(
             success=True,
-            output="Nanobot response",
+            output="Agent response",
             session_id="nb-sess-1",
         )
 
@@ -1018,14 +1018,14 @@ class TestChatHandlerEngineIntegration:
         # ExecutionEngine.run() was called
         mock_engine.run.assert_called_once()
 
-        # The request has NANOBOT runner type
+        # The request has PROVIDER_CLI runner type
         req = mock_engine.run.call_args[0][0]
         assert isinstance(req, ExecutionRequest)
-        assert req.runner_type == RunnerType.NANOBOT
+        assert req.runner_type == RunnerType.PROVIDER_CLI
         assert req.agent_name == "nb-agent"
 
         # Response was sent
         bridge.send_chat_response.assert_called_once()
         call_args = bridge.send_chat_response.call_args[0]
         assert call_args[0] == "nb-agent"
-        assert call_args[1] == "Nanobot response"
+        assert call_args[1] == "Agent response"

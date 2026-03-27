@@ -21,7 +21,6 @@ from mc.application.execution.strategies.claude_code import (
 )
 from mc.application.execution.strategies.human import HumanRunnerStrategy
 from mc.application.execution.strategies.interactive import InteractiveTuiRunnerStrategy
-from mc.application.execution.strategies.nanobot import NanobotRunnerStrategy
 from mc.application.execution.strategies.provider_cli import ProviderCliRunnerStrategy
 from mc.memory.service import consolidate_task_output, resolve_consolidation_model
 
@@ -80,77 +79,6 @@ async def relocate_invalid_memory_hook(
         request.task_id,
         result.memory_workspace,
     )
-
-
-async def nanobot_memory_consolidation_hook(
-    request: ExecutionRequest,
-    result: ExecutionResult,
-) -> None:
-    """End the nanobot task session in the background after execution."""
-    if request.session_boundary_reason is None:
-        _log_consolidation_event(
-            agent_name=request.agent_name,
-            backend=RunnerType.NANOBOT.value,
-            channel="mc",
-            trigger_type="session_boundary",
-            boundary_reason=None,
-            memory_workspace=result.memory_workspace,
-            artifacts_workspace=result.memory_workspace,
-            action="skipped",
-            skip_reason="no_session_boundary",
-        )
-        return
-
-    if result.session_loop is None or not result.session_id:
-        _log_consolidation_event(
-            agent_name=request.agent_name,
-            backend=RunnerType.NANOBOT.value,
-            channel="mc",
-            trigger_type="session_boundary",
-            boundary_reason=request.session_boundary_reason,
-            memory_workspace=result.memory_workspace,
-            artifacts_workspace=result.memory_workspace,
-            action="skipped",
-            skip_reason="missing_session_state",
-        )
-        return
-
-    async def _consolidate() -> None:
-        try:
-            if result.session_loop is None:
-                return
-            await result.session_loop.end_task_session(result.session_id)
-            _log_consolidation_event(
-                agent_name=request.agent_name,
-                backend=RunnerType.NANOBOT.value,
-                channel="mc",
-                trigger_type="session_boundary",
-                boundary_reason=request.session_boundary_reason,
-                memory_workspace=result.memory_workspace,
-                artifacts_workspace=result.memory_workspace,
-                action="consolidated",
-                files_touched=_memory_files_touched(result.memory_workspace),
-            )
-        except Exception:
-            _log_consolidation_event(
-                agent_name=request.agent_name,
-                backend=RunnerType.NANOBOT.value,
-                channel="mc",
-                trigger_type="session_boundary",
-                boundary_reason=request.session_boundary_reason,
-                memory_workspace=result.memory_workspace,
-                artifacts_workspace=result.memory_workspace,
-                action="failed",
-                skip_reason="exception",
-            )
-            logger.warning(
-                "[execution] Memory consolidation failed for task '%s' session '%s'",
-                request.task_id,
-                result.session_id,
-                exc_info=True,
-            )
-
-    create_background_task(_consolidate())
 
 
 def build_cc_task_memory_consolidation_hook(
@@ -412,7 +340,6 @@ def build_execution_engine(
 
     return ExecutionEngine(
         strategies={
-            RunnerType.NANOBOT: NanobotRunnerStrategy(bridge=bridge),
             RunnerType.CLAUDE_CODE: ClaudeCodeRunnerStrategy(
                 bridge=bridge,
                 cron_service=cron_service,
@@ -439,7 +366,6 @@ def build_execution_engine(
         },
         post_execution_hooks=[
             relocate_invalid_memory_hook,
-            nanobot_memory_consolidation_hook,
             build_cc_task_memory_consolidation_hook(bridge=bridge),
             build_interactive_memory_consolidation_hook(bridge=bridge),
         ],

@@ -1,8 +1,8 @@
 # =============================================================================
 # Open Control — Multi-stage Dockerfile
 #
-# Runs all 4 processes (Convex, Next.js, MC Gateway, Nanobot Gateway) in one
-# container. Named stages allow extracting individual services later.
+# Runs all processes (Convex, Next.js, MC Gateway) in one container.
+# Named stages allow extracting individual services later.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -69,8 +69,8 @@ RUN npm install -g @anthropic-ai/claude-code && \
 # Create config directory
 RUN mkdir -p /root/.nanobot
 
-# Ports: Next.js(3000) Convex(3210) ConvexSite(3211) Interactive(8765) Nanobot(18790)
-EXPOSE 3000 3210 3211 8765 18790
+# Ports: Next.js(3000) Convex(3210) ConvexSite(3211) Interactive(8765)
+EXPOSE 3000 3210 3211 8765
 
 # No ENTRYPOINT — source/scripts are bind-mounted; entrypoint set in docker-compose.yml
 
@@ -106,7 +106,7 @@ RUN mkdir -p /root/.nanobot
 RUN chmod +x scripts/init-convex.sh scripts/docker-entrypoint.sh && \
     bash scripts/init-convex.sh
 
-# Ports: Next.js(3000) Convex(3210) ConvexSite(3211) Interactive(8765) Nanobot(18790)
-EXPOSE 3000 3210 3211 8765 18790
+# Ports: Next.js(3000) Convex(3210) ConvexSite(3211) Interactive(8765)
+EXPOSE 3000 3210 3211 8765
 
 ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]

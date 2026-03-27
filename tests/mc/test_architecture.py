@@ -114,13 +114,6 @@ EXECUTOR_PRIVATE_ALLOWED = {
 }
 
 EXECUTOR_PRIVATE_PATTERNS = [
-    r"executor\._run_agent_on_task",
-    r"executor\._collect_output_artifacts",
-    r"executor\._relocate_invalid_memory_files",
-    r"executor\._background_tasks",
-    r"executor\._snapshot_output_dir",
-    r"executor\._make_provider",
-    r"executor\._human_size",
     r"executor\._build_thread_context",
     r"executor\._build_tag_attributes_context",
 ]
@@ -370,11 +363,6 @@ def test_canonical_layers_do_not_import_removed_root_modules() -> None:
                 violations.append(f"{py_file.relative_to(MC_ROOT.parent)}: {bad}")
 
     assert violations == [], "\n".join(violations)
-
-
-def test_nanobot_agent_name_canonical_in_types() -> None:
-    source = (MC_ROOT / "types.py").read_text(encoding="utf-8")
-    assert re.search(r"^NANOBOT_AGENT_NAME\s*=", source, re.MULTILINE)
 
 
 def test_task_status_canonical_in_types() -> None:

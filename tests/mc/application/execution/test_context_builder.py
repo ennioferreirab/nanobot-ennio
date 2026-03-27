@@ -843,7 +843,7 @@ class TestHumanStepContext:
             "id": "step_1",
             "title": "Review design",
             "description": "Human review of design doc",
-            "assigned_agent": "nanobot",
+            "assigned_agent": "test-agent",
         }
         req = await builder.build_step_context("task_123", step)
         # Should have the basic structure

@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, Any
 from mc.application.execution.completion_status import resolve_completion_status
 from mc.application.execution.interactive_mode import resolve_step_runner_type
 from mc.types import (
-    NANOBOT_AGENT_NAME,
     ActivityEventType,
     AuthorType,
     MessageType,
@@ -139,7 +138,7 @@ async def _run_step_agent(
             reasoning_level=reasoning_level,
             board_name=board_name,
             memory_workspace=memory_workspace,
-            runner_type=runner_type or RunnerType.NANOBOT,
+            runner_type=runner_type or RunnerType.PROVIDER_CLI,
         )
     elif runner_type is not None:
         execution_request.runner_type = runner_type
@@ -378,7 +377,7 @@ class StepDispatcher:
                         self._bridge,
                         task_data,
                         TaskStatus.CRASHED,
-                        agent_name=NANOBOT_AGENT_NAME,
+                        agent_name="System",
                         reason="One or more steps crashed",
                     )
                 else:
@@ -582,14 +581,13 @@ class StepDispatcher:
 
         step_title = (step.get("title") or "Untitled Step").strip()
 
-        agent_name = (step.get("assigned_agent") or NANOBOT_AGENT_NAME).strip()
+        agent_name = (step.get("assigned_agent") or "").strip()
         if is_orchestrator_agent(agent_name):
             logger.warning(
-                "[dispatcher] Step '%s' assigned to orchestrator-agent; rerouting to '%s'",
+                "[dispatcher] Step '%s' assigned to orchestrator-agent; clearing assignment",
                 step_title,
-                NANOBOT_AGENT_NAME,
             )
-            agent_name = NANOBOT_AGENT_NAME
+            agent_name = ""
 
         await asyncio.to_thread(
             self._bridge.create_activity,

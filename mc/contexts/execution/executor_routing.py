@@ -8,7 +8,6 @@ from typing import Any
 
 from mc.contexts.routing.llm_delegator import LLMDelegationRouter
 from mc.types import (
-    NANOBOT_AGENT_NAME,
     AuthorType,
     MessageType,
     StepStatus,
@@ -91,7 +90,7 @@ async def pickup_task(
     task_id = task_data["id"]
     title = task_data.get("title", "Untitled")
     description = task_data.get("description")
-    agent_name = task_data.get("assigned_agent") or NANOBOT_AGENT_NAME
+    agent_name = task_data.get("assigned_agent") or ""
     trust_level = task_data.get("trust_level", TrustLevel.AUTONOMOUS)
     try:
         if is_orchestrator_agent(agent_name):
@@ -175,12 +174,11 @@ async def reroute_orchestrator_agent_task(
     except RuntimeError as exc:
         logger.warning(
             "[executor] LLM delegation failed for orchestrator-agent reroute on task '%s': %s; "
-            "falling back to '%s'",
+            "no fallback agent available",
             title,
             exc,
-            NANOBOT_AGENT_NAME,
         )
-        rerouted_agent = NANOBOT_AGENT_NAME
+        rerouted_agent = ""
 
     transition_result = await _transition_task_from_snapshot(
         bridge,

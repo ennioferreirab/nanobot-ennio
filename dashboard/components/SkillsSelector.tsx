@@ -40,7 +40,7 @@ export function SkillsSelector({ selected, onChange, onViewSkill }: SkillsSelect
     if (!metadata) return null;
     try {
       const parsed = JSON.parse(metadata);
-      return parsed?.nanobot?.emoji || parsed?.openclaw?.emoji || null;
+      return parsed?.opencontrol?.emoji || parsed?.openclaw?.emoji || null;
     } catch {
       return null;
     }

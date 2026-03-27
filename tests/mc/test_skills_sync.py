@@ -261,4 +261,4 @@ class TestSyncSkills:
 
         upsert_call = mock_bridge.mutation.call_args_list[0]
         args = upsert_call[0][1]
-        assert args["supportedProviders"] == ["claude-code", "codex", "nanobot"]
+        assert args["supportedProviders"] == ["claude-code", "codex"]

@@ -2,7 +2,7 @@
 Chat Handler -- processes direct chat messages between users and agents.
 
 Polls Convex for pending chat messages and routes them through
-ExecutionEngine.run() for both CC and nanobot backends.
+ExecutionEngine.run() for CC and provider-cli backends.
 Sessions persist across messages (no end_task_session call).
 
 Story 10.2 -- Task 5.  Migrated to ExecutionEngine in Story 20.1.
@@ -264,11 +264,6 @@ class ChatHandler:
 
             agent_prompt = inject_orientation(agent_name, agent_prompt, bridge=self._bridge)
 
-            from mc.types import NANOBOT_AGENT_NAME
-
-            if agent_name == NANOBOT_AGENT_NAME:
-                agent_prompt = None
-
             # Resolve tier references
             from mc.types import is_cc_model, is_tier_reference
 
@@ -293,7 +288,7 @@ class ChatHandler:
                     channel_board=channel_board,
                 )
             else:
-                engine_result = await self._run_nanobot_chat(
+                engine_result = await self._run_provider_cli_chat(
                     agent_name=agent_name,
                     agent_model=agent_model,
                     agent_prompt=agent_prompt,
@@ -468,7 +463,7 @@ class ChatHandler:
 
         return engine_result
 
-    async def _run_nanobot_chat(
+    async def _run_provider_cli_chat(
         self,
         *,
         agent_name: str,
@@ -478,7 +473,7 @@ class ChatHandler:
         content: str,
         channel_board: dict[str, Any] | None,
     ) -> ExecutionResult:
-        """Execute nanobot chat through ExecutionEngine.
+        """Execute provider-cli chat through ExecutionEngine.
 
         Uses a chat-specific session key format so sessions persist
         across messages (no end_task_session call).
@@ -503,19 +498,13 @@ class ChatHandler:
             agent_prompt=agent_prompt,
             agent_model=agent_model,
             agent_skills=agent_skills,
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
             session_key=session_key,
         )
 
-        from mc.application.execution.strategies.nanobot import (
-            NanobotRunnerStrategy,
-        )
+        from mc.application.execution.post_processing import build_execution_engine
 
-        nanobot_strategy = NanobotRunnerStrategy(bridge=self._bridge)
-
-        engine = ExecutionEngine(
-            strategies={RunnerType.NANOBOT: nanobot_strategy},
-        )
+        engine = build_execution_engine(bridge=self._bridge)
 
         return await engine.run(request)
 

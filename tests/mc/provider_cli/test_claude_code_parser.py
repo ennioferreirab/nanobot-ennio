@@ -146,7 +146,7 @@ def test_parse_output_returns_tool_use_event() -> None:
     assert "Bash" in tool_events[0].text
 
 
-def test_parse_output_returns_ask_user_requested_for_nanobot_mcp_tool() -> None:
+def test_parse_output_returns_ask_user_requested_for_mcp_tool() -> None:
     parser = ClaudeCodeCLIParser()
     line = json.dumps(
         {

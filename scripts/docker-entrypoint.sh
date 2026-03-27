@@ -71,9 +71,6 @@ if [ "$CONVEX_LOCAL" = true ]; then
     fi
 fi
 
-# Remove stale PID file from previous container run
-rm -f /root/.nanobot/mc.pid
-
 # Start the full stack
 if [ "$CONVEX_LOCAL" = true ]; then
     exec /app/.venv/bin/nanobot mc start --local "${MC_EXTRA_ARGS[@]}"

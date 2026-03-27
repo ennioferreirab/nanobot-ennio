@@ -800,27 +800,27 @@ class TestAskAgentTierResolution:
     """Tier-based model references must be resolved before create_provider is called."""
 
     @pytest.fixture
-    def agents_dir_with_nanobot(self, agents_dir: Path) -> Path:
-        """agents_dir with a nanobot agent using a tier model."""
-        nanobot_dir = agents_dir / "nanobot"
-        nanobot_dir.mkdir(parents=True, exist_ok=True)
-        (nanobot_dir / "config.yaml").write_text(
-            "name: nanobot\nrole: Assistant\nprompt: You are nanobot.\nmodel: tier:standard-medium\n"
+    def agents_dir_with_tier_agent(self, agents_dir: Path) -> Path:
+        """agents_dir with an agent using a tier model."""
+        agent_dir = agents_dir / "tier-agent"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        (agent_dir / "config.yaml").write_text(
+            "name: tier-agent\nrole: Assistant\nprompt: You are a tier agent.\nmodel: tier:standard-medium\n"
         )
         return agents_dir
 
     @pytest.mark.asyncio
     async def test_tier_model_resolved_before_provider_creation(
-        self, agents_dir_with_nanobot: Path
+        self, agents_dir_with_tier_agent: Path
     ) -> None:
         """tier:standard-medium is resolved to a real model ID before create_provider."""
         bridge = _make_bridge()
         tool = _make_tool(bridge=bridge)
-        agent_data = _make_agent_data("nanobot")
+        agent_data = _make_agent_data("tier-agent")
         agent_data.model = "tier:standard-medium"  # real tier string triggers resolution
 
         with (
-            patch("mc.infrastructure.config.AGENTS_DIR", agents_dir_with_nanobot),
+            patch("mc.infrastructure.config.AGENTS_DIR", agents_dir_with_tier_agent),
             patch(
                 "mc.infrastructure.agents.yaml_validator.validate_agent_file",
                 return_value=agent_data,
@@ -839,7 +839,7 @@ class TestAskAgentTierResolution:
             mock_inst.process_direct = AsyncMock(return_value="OK")
             MockLoop.return_value = mock_inst
 
-            await tool.execute(target_agent="nanobot", question="Help?")
+            await tool.execute(target_agent="tier-agent", question="Help?")
 
         assert mock_create.called, "create_provider was never called"
         called_model = mock_create.call_args[0][0]
@@ -850,21 +850,21 @@ class TestAskAgentTierResolution:
 
     @pytest.mark.asyncio
     async def test_tier_model_without_bridge_returns_error(
-        self, agents_dir_with_nanobot: Path
+        self, agents_dir_with_tier_agent: Path
     ) -> None:
         """Without a bridge, tier resolution is impossible — return a clear error."""
         tool = _make_tool(bridge=None)
-        agent_data = _make_agent_data("nanobot")
+        agent_data = _make_agent_data("tier-agent")
         agent_data.model = "tier:standard-medium"
 
         with (
-            patch("mc.infrastructure.config.AGENTS_DIR", agents_dir_with_nanobot),
+            patch("mc.infrastructure.config.AGENTS_DIR", agents_dir_with_tier_agent),
             patch(
                 "mc.infrastructure.agents.yaml_validator.validate_agent_file",
                 return_value=agent_data,
             ),
         ):
-            result = await tool.execute(target_agent="nanobot", question="Help?")
+            result = await tool.execute(target_agent="tier-agent", question="Help?")
 
         assert "tier" in result.lower()
         assert "tier:standard-medium" in result

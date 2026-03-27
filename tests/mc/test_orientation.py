@@ -14,11 +14,6 @@ class TestLoadOrientation:
         result = load_orientation("orchestrator-agent")
         assert result is None
 
-    def test_returns_none_for_nanobot(self) -> None:
-        """nanobot should never receive orientation."""
-        result = load_orientation("nanobot")
-        assert result is None
-
     def test_returns_none_when_file_missing(self, tmp_path: Path) -> None:
         """No orientation file -> None."""
         with patch(

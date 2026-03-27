@@ -87,11 +87,11 @@ class TestInboxWorkerProcessTask:
             "id": "task-2",
             "title": "Assigned task",
             "description": "Details",
-            "assigned_agent": "nanobot",
+            "assigned_agent": "test-agent",
             "is_manual": False,
         }
 
-        mock_router = _mock_llm_router("nanobot", reason_code="explicit_assignment")
+        mock_router = _mock_llm_router("test-agent", reason_code="explicit_assignment")
         with (
             patch("mc.runtime.workers.inbox.asyncio.to_thread", new=_sync_to_thread),
             patch("mc.runtime.workers.inbox.LLMDelegationRouter", return_value=mock_router),
@@ -231,7 +231,7 @@ class TestInboxWorkerProcessTask:
                         "temp_id": "step_1",
                         "title": "Do thing",
                         "description": "Do the thing",
-                        "assigned_agent": "nanobot",
+                        "assigned_agent": "test-agent",
                         "blocked_by": [],
                         "parallel_group": 1,
                         "order": 1,

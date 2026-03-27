@@ -425,7 +425,7 @@ describe("ExecutionPlanTab", () => {
             _id: "live-old-1",
             title: "Merge task A with B",
             description: "Plano antigo materializado",
-            assignedAgent: "nanobot",
+            assignedAgent: "test-agent",
             status: "completed",
             parallelGroup: 0,
             order: 1,

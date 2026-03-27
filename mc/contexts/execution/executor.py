@@ -22,7 +22,6 @@ from mc.contexts.execution.agent_runner import (  # noqa: F401
     AgentRunResult,
     _coerce_agent_run_result,
     _make_provider,
-    _run_agent_on_task,
 )
 from mc.contexts.execution.cc_executor import CCExecutorMixin
 from mc.contexts.execution.completion_reporting import append_task_completion_heartbeat
@@ -458,11 +457,7 @@ class TaskExecutor(CCExecutorMixin):
         agent_model = req.agent_model
         agent_skills = req.agent_skills
 
-        # Route to Claude Code backend:
-        # - If agent is configured with backend: claude-code (YAML config)
-        # - Or if unified pipeline detected a cc/ model prefix
         agent_data = self._load_agent_data(agent_name)
-        is_cc_backend = agent_data and agent_data.backend == "claude-code"
 
         if agent_skills is not None:
             logger.info(
@@ -495,26 +490,23 @@ class TaskExecutor(CCExecutorMixin):
                 RunnerType,
             )
 
-            if req.is_cc or is_cc_backend:
-                req.runner_type = RunnerType.CLAUDE_CODE
-                if agent_data is None:
-                    cc_model_name = req.model if req.is_cc else agent_model
-                    agent_data = AgentData(
-                        name=agent_name,
-                        display_name=agent_name,
-                        role="agent",
-                        model=cc_model_name,
-                        backend="claude-code",
-                    )
-                else:
-                    agent_data.backend = "claude-code"
-                    if req.is_cc and req.model:
-                        agent_data.model = req.model
-                req.agent = agent_data
-                req.is_cc = True
-                req.runner_type = resolve_task_runner_type(req)
+            req.runner_type = RunnerType.CLAUDE_CODE
+            if agent_data is None:
+                cc_model_name = req.model if req.is_cc else agent_model
+                agent_data = AgentData(
+                    name=agent_name,
+                    display_name=agent_name,
+                    role="agent",
+                    model=cc_model_name,
+                    backend="claude-code",
+                )
             else:
-                req.runner_type = RunnerType.NANOBOT
+                agent_data.backend = "claude-code"
+                if req.is_cc and req.model:
+                    agent_data.model = req.model
+            req.agent = agent_data
+            req.is_cc = True
+            req.runner_type = resolve_task_runner_type(req)
 
             req.session_boundary_reason = "task_completion"
             engine = self._build_execution_engine()

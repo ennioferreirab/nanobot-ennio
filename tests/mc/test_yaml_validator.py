@@ -315,23 +315,22 @@ class TestBackendField:
         assert result.claude_code_opts.allowed_tools == ["Bash", "Edit"]
         assert result.claude_code_opts.disallowed_tools == ["WebFetch"]
 
-    def test_valid_backend_nanobot_explicit(self, tmp_path: Path) -> None:
+    def test_valid_backend_claude_code_explicit(self, tmp_path: Path) -> None:
         path = _write_yaml(
             tmp_path,
             "agent.yaml",
             """\
-            name: nano-agent
-            role: Nanobot Agent
-            prompt: "You are a nanobot agent."
-            backend: nanobot
+            name: cc-agent
+            role: Claude Code Agent
+            prompt: "You are a claude-code agent."
+            backend: claude-code
         """,
         )
         result = validate_agent_file(path)
         assert isinstance(result, AgentData)
-        assert result.backend == "nanobot"
-        assert result.claude_code_opts is None
+        assert result.backend == "claude-code"
 
-    def test_missing_backend_defaults_to_nanobot(self, tmp_path: Path) -> None:
+    def test_missing_backend_defaults_to_claude_code(self, tmp_path: Path) -> None:
         path = _write_yaml(
             tmp_path,
             "agent.yaml",
@@ -343,8 +342,7 @@ class TestBackendField:
         )
         result = validate_agent_file(path)
         assert isinstance(result, AgentData)
-        assert result.backend == "nanobot"
-        assert result.claude_code_opts is None
+        assert result.backend == "claude-code"
 
     def test_invalid_backend_value(self, tmp_path: Path) -> None:
         path = _write_yaml(
@@ -362,7 +360,7 @@ class TestBackendField:
         assert any("backend" in e.lower() for e in result)
         assert any("invalid" in e.lower() for e in result)
 
-    def test_interactive_provider_can_enable_codex_tui_without_changing_backend(
+    def test_interactive_provider_can_enable_codex_tui_with_claude_code_backend(
         self, tmp_path: Path
     ) -> None:
         path = _write_yaml(
@@ -372,16 +370,16 @@ class TestBackendField:
             name: codex-agent
             role: Agent
             prompt: "You are a codex-backed agent."
-            backend: nanobot
+            backend: claude-code
             interactive_provider: codex
         """,
         )
         result = validate_agent_file(path)
         assert isinstance(result, AgentData)
-        assert result.backend == "nanobot"
+        assert result.backend == "claude-code"
         assert result.interactive_provider == "codex"
 
-    def test_interactive_provider_can_enable_mc_live_without_changing_backend(
+    def test_interactive_provider_can_enable_mc_live_with_claude_code_backend(
         self, tmp_path: Path
     ) -> None:
         path = _write_yaml(
@@ -391,13 +389,13 @@ class TestBackendField:
             name: mc-agent
             role: Agent
             prompt: "You are an MC-backed interactive agent."
-            backend: nanobot
+            backend: claude-code
             interactive_provider: mc
         """,
         )
         result = validate_agent_file(path)
         assert isinstance(result, AgentData)
-        assert result.backend == "nanobot"
+        assert result.backend == "claude-code"
         assert result.interactive_provider == "mc"
 
     def test_invalid_interactive_provider_value(self, tmp_path: Path) -> None:
@@ -415,7 +413,8 @@ class TestBackendField:
         assert isinstance(result, list)
         assert any("interactive_provider" in e.lower() for e in result)
 
-    def test_claude_code_section_with_nanobot_backend_ignored(self, tmp_path: Path) -> None:
+    def test_nanobot_backend_rejected_as_invalid(self, tmp_path: Path) -> None:
+        """backend: nanobot is no longer a valid backend value."""
         path = _write_yaml(
             tmp_path,
             "agent.yaml",
@@ -424,19 +423,14 @@ class TestBackendField:
             role: Agent
             prompt: "You are an agent."
             backend: nanobot
-            claude_code:
-              max_budget_usd: 5.0
-              max_turns: 10
         """,
         )
         result = validate_agent_file(path)
-        assert isinstance(result, AgentData)
-        assert result.backend == "nanobot"
-        # claude_code section is ignored when backend is nanobot
-        assert result.claude_code_opts is None
+        assert isinstance(result, list)
+        assert any("backend" in e.lower() for e in result)
 
-    def test_claude_code_section_with_backend_omitted_ignored(self, tmp_path: Path) -> None:
-        """When backend is omitted, it defaults to nanobot and claude_code is ignored."""
+    def test_claude_code_section_with_backend_omitted_uses_defaults(self, tmp_path: Path) -> None:
+        """When backend is omitted, it defaults to claude-code and claude_code opts are parsed."""
         path = _write_yaml(
             tmp_path,
             "agent.yaml",
@@ -451,9 +445,9 @@ class TestBackendField:
         )
         result = validate_agent_file(path)
         assert isinstance(result, AgentData)
-        assert result.backend == "nanobot"
-        # claude_code section is ignored when backend is not explicitly "claude-code"
-        assert result.claude_code_opts is None
+        assert result.backend == "claude-code"
+        assert result.claude_code_opts is not None
+        assert result.claude_code_opts.max_budget_usd == 5.0
 
     def test_claude_code_invalid_budget_type_returns_error(self, tmp_path: Path) -> None:
         """Non-numeric max_budget_usd should return a validation error."""

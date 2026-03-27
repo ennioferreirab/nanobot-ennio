@@ -27,7 +27,6 @@ from mc.contexts.interactive import (
     InteractiveSessionCoordinator,
     InteractiveSessionIdentity,
     InteractiveSessionRegistry,
-    NanobotInteractiveAdapter,
 )
 from mc.contexts.interactive.agent_loader import load_interactive_agent
 from mc.infrastructure.interactive import TerminalSize, TmuxSessionManager
@@ -187,7 +186,6 @@ def build_interactive_runtime(
             supervision_sink=supervisor,
         ),
         "codex": CodexInteractiveAdapter(supervision_sink=supervisor),
-        "mc": NanobotInteractiveAdapter(),
     }
     service = InteractiveSessionCoordinator(
         registry=registry,

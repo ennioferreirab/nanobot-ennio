@@ -74,12 +74,12 @@ def load_orientation(agent_name: str, bridge: Any | None = None) -> str | None:
     2. ``mc/agent-orientation.md`` in the configured runtime home (fallback file)
 
     Returns None if:
-    - agent is orchestrator-agent or nanobot
+    - agent is orchestrator-agent
     - orientation file doesn't exist or is empty
     """
-    from mc.types import NANOBOT_AGENT_NAME, is_orchestrator_agent
+    from mc.types import is_orchestrator_agent
 
-    if is_orchestrator_agent(agent_name) or agent_name == NANOBOT_AGENT_NAME:
+    if is_orchestrator_agent(agent_name):
         return None
 
     orientation = _read_saved_orientation(bridge)

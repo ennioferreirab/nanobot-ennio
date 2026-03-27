@@ -386,10 +386,8 @@ class CCExecutorMixin:
     ) -> tuple[str | None, str]:
         """Resolve board-scoped workspace for CC. Returns (board_name, memory_mode).
 
-        Raises RuntimeError for non-nanobot agents when board_id is missing.
+        Raises RuntimeError when board_id is missing.
         """
-        from mc.types import NANOBOT_AGENT_NAME
-
         _cc_board_name: str | None = None
         _cc_memory_mode: str = "clean"
         _board_id = (task_data or {}).get("board_id")
@@ -414,11 +412,10 @@ class CCExecutorMixin:
                     title,
                     exc_info=True,
                 )
-                if agent_name != NANOBOT_AGENT_NAME:
-                    raise
-        elif agent_name != NANOBOT_AGENT_NAME:
+                raise
+        else:
             raise RuntimeError(
-                f"Task '{title}' has no board_id — non-nanobot agent '{agent_name}' "
+                f"Task '{title}' has no board_id — agent '{agent_name}' "
                 "requires a board-scoped workspace."
             )
         return _cc_board_name, _cc_memory_mode

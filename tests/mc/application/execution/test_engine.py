@@ -90,21 +90,21 @@ class TestExecutionEngine:
     def engine(self) -> ExecutionEngine:
         return ExecutionEngine(
             strategies={
-                RunnerType.NANOBOT: FakeSuccessStrategy(),
+                RunnerType.PROVIDER_CLI: FakeSuccessStrategy(),
                 RunnerType.CLAUDE_CODE: FakeSuccessStrategy(),
                 RunnerType.HUMAN: FakeSuccessStrategy(),
             }
         )
 
     @pytest.fixture()
-    def nanobot_request(self) -> ExecutionRequest:
+    def provider_cli_request(self) -> ExecutionRequest:
         return ExecutionRequest(
             entity_type=EntityType.TASK,
             entity_id="task_1",
             task_id="task_1",
             title="Write Report",
-            agent_name="nanobot",
-            runner_type=RunnerType.NANOBOT,
+            agent_name="test-agent",
+            runner_type=RunnerType.PROVIDER_CLI,
         )
 
     @pytest.fixture()
@@ -130,10 +130,10 @@ class TestExecutionEngine:
         )
 
     @pytest.mark.asyncio()
-    async def test_run_nanobot_success(
-        self, engine: ExecutionEngine, nanobot_request: ExecutionRequest
+    async def test_run_provider_cli_success(
+        self, engine: ExecutionEngine, provider_cli_request: ExecutionRequest
     ) -> None:
-        result = await engine.run(nanobot_request)
+        result = await engine.run(provider_cli_request)
         assert result.success is True
         assert "Write Report" in result.output
 
@@ -155,23 +155,23 @@ class TestExecutionEngine:
     @pytest.mark.asyncio()
     async def test_strategy_selection_by_runner_type(self) -> None:
         """Engine selects correct strategy based on runner_type."""
-        nanobot_strategy = FakeSuccessStrategy()
+        provider_cli_strategy = FakeSuccessStrategy()
         cc_strategy = FakeErrorStrategy()
 
         engine = ExecutionEngine(
             strategies={
-                RunnerType.NANOBOT: nanobot_strategy,
+                RunnerType.PROVIDER_CLI: provider_cli_strategy,
                 RunnerType.CLAUDE_CODE: cc_strategy,
             }
         )
 
-        req_nb = ExecutionRequest(
+        req_pcli = ExecutionRequest(
             entity_type=EntityType.TASK,
             entity_id="t1",
             task_id="t1",
-            title="NB",
-            agent_name="nb",
-            runner_type=RunnerType.NANOBOT,
+            title="PCLI",
+            agent_name="test-agent",
+            runner_type=RunnerType.PROVIDER_CLI,
         )
         req_cc = ExecutionRequest(
             entity_type=EntityType.TASK,
@@ -182,10 +182,10 @@ class TestExecutionEngine:
             runner_type=RunnerType.CLAUDE_CODE,
         )
 
-        result_nb = await engine.run(req_nb)
+        result_pcli = await engine.run(req_pcli)
         result_cc = await engine.run(req_cc)
 
-        assert result_nb.success is True
+        assert result_pcli.success is True
         assert result_cc.success is False
 
     @pytest.mark.asyncio()
@@ -198,7 +198,7 @@ class TestExecutionEngine:
             task_id="t1",
             title="Test",
             agent_name="a",
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
         )
         result = await engine.run(req)
         assert result.success is False
@@ -207,14 +207,14 @@ class TestExecutionEngine:
     @pytest.mark.asyncio()
     async def test_strategy_crash_is_caught(self) -> None:
         """Unexpected strategy exceptions are caught and categorized (AC3)."""
-        engine = ExecutionEngine(strategies={RunnerType.NANOBOT: FakeCrashStrategy()})
+        engine = ExecutionEngine(strategies={RunnerType.PROVIDER_CLI: FakeCrashStrategy()})
         req = ExecutionRequest(
             entity_type=EntityType.TASK,
             entity_id="t1",
             task_id="t1",
             title="Crash Test",
             agent_name="a",
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
         )
         result = await engine.run(req)
         assert result.success is False
@@ -224,14 +224,14 @@ class TestExecutionEngine:
     @pytest.mark.asyncio()
     async def test_tier_error_in_strategy_crash(self) -> None:
         """Tier-related ValueError in strategy is categorized as TIER (AC3)."""
-        engine = ExecutionEngine(strategies={RunnerType.NANOBOT: FakeProviderCrashStrategy()})
+        engine = ExecutionEngine(strategies={RunnerType.PROVIDER_CLI: FakeProviderCrashStrategy()})
         req = ExecutionRequest(
             entity_type=EntityType.TASK,
             entity_id="t1",
             task_id="t1",
             title="Tier Test",
             agent_name="a",
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
         )
         result = await engine.run(req)
         assert result.success is False
@@ -240,14 +240,14 @@ class TestExecutionEngine:
     @pytest.mark.asyncio()
     async def test_error_strategy_returns_error_result(self) -> None:
         """Strategy-reported errors are passed through."""
-        engine = ExecutionEngine(strategies={RunnerType.NANOBOT: FakeErrorStrategy()})
+        engine = ExecutionEngine(strategies={RunnerType.PROVIDER_CLI: FakeErrorStrategy()})
         req = ExecutionRequest(
             entity_type=EntityType.TASK,
             entity_id="t1",
             task_id="t1",
             title="Fail",
             agent_name="a",
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
         )
         result = await engine.run(req)
         assert result.success is False
@@ -256,14 +256,14 @@ class TestExecutionEngine:
 
     def test_get_strategy(self, engine: ExecutionEngine) -> None:
         """get_strategy returns the correct strategy."""
-        strategy = engine.get_strategy(RunnerType.NANOBOT)
+        strategy = engine.get_strategy(RunnerType.PROVIDER_CLI)
         assert isinstance(strategy, FakeSuccessStrategy)
 
     def test_get_strategy_missing(self) -> None:
         """get_strategy raises KeyError for missing type."""
         engine = ExecutionEngine(strategies={})
         with pytest.raises(KeyError, match="No strategy registered"):
-            engine.get_strategy(RunnerType.NANOBOT)
+            engine.get_strategy(RunnerType.PROVIDER_CLI)
 
 
 # ── Post-execution pipeline tests (AC4) ─────────────────────────────
@@ -281,7 +281,7 @@ class TestPostExecution:
             calls.append((req.task_id, res.success))
 
         engine = ExecutionEngine(
-            strategies={RunnerType.NANOBOT: FakeSuccessStrategy()},
+            strategies={RunnerType.PROVIDER_CLI: FakeSuccessStrategy()},
             post_execution_hooks=[hook],
         )
         req = ExecutionRequest(
@@ -290,7 +290,7 @@ class TestPostExecution:
             task_id="t1",
             title="Test",
             agent_name="a",
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
         )
         await engine.run(req)
 
@@ -306,7 +306,7 @@ class TestPostExecution:
             calls.append((req.task_id, res.success))
 
         engine = ExecutionEngine(
-            strategies={RunnerType.NANOBOT: FakeErrorStrategy()},
+            strategies={RunnerType.PROVIDER_CLI: FakeErrorStrategy()},
             post_execution_hooks=[hook],
         )
         req = ExecutionRequest(
@@ -315,7 +315,7 @@ class TestPostExecution:
             task_id="t_fail",
             title="Fail",
             agent_name="a",
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
         )
         await engine.run(req)
 
@@ -331,7 +331,7 @@ class TestPostExecution:
             calls.append((req.task_id, res.success))
 
         engine = ExecutionEngine(
-            strategies={RunnerType.NANOBOT: FakeCrashStrategy()},
+            strategies={RunnerType.PROVIDER_CLI: FakeCrashStrategy()},
             post_execution_hooks=[hook],
         )
         req = ExecutionRequest(
@@ -340,7 +340,7 @@ class TestPostExecution:
             task_id="t_crash",
             title="Crash",
             agent_name="a",
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
         )
         await engine.run(req)
 
@@ -362,7 +362,7 @@ class TestPostExecution:
             order.append(3)
 
         engine = ExecutionEngine(
-            strategies={RunnerType.NANOBOT: FakeSuccessStrategy()},
+            strategies={RunnerType.PROVIDER_CLI: FakeSuccessStrategy()},
             post_execution_hooks=[hook1, hook2, hook3],
         )
         req = ExecutionRequest(
@@ -371,7 +371,7 @@ class TestPostExecution:
             task_id="t1",
             title="Test",
             agent_name="a",
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
         )
         await engine.run(req)
 
@@ -390,7 +390,7 @@ class TestPostExecution:
             calls.append(2)
 
         engine = ExecutionEngine(
-            strategies={RunnerType.NANOBOT: FakeSuccessStrategy()},
+            strategies={RunnerType.PROVIDER_CLI: FakeSuccessStrategy()},
             post_execution_hooks=[failing_hook, ok_hook],
         )
         req = ExecutionRequest(
@@ -399,7 +399,7 @@ class TestPostExecution:
             task_id="t1",
             title="Test",
             agent_name="a",
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
         )
         result = await engine.run(req)
 
@@ -416,7 +416,7 @@ class TestPostExecution:
             calls.append(req.step_id)
 
         engine = ExecutionEngine(
-            strategies={RunnerType.NANOBOT: FakeSuccessStrategy()},
+            strategies={RunnerType.PROVIDER_CLI: FakeSuccessStrategy()},
             post_execution_hooks=[hook],
         )
 
@@ -427,7 +427,7 @@ class TestPostExecution:
             task_id="t1",
             title="Task",
             agent_name="a",
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
         )
         await engine.run(task_req)
 
@@ -438,7 +438,7 @@ class TestPostExecution:
             task_id="t1",
             title="Step",
             agent_name="a",
-            runner_type=RunnerType.NANOBOT,
+            runner_type=RunnerType.PROVIDER_CLI,
             step_id="step_42",
         )
         await engine.run(step_req)

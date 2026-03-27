@@ -14,7 +14,6 @@ from enum import StrEnum
 from typing import Any
 
 ORCHESTRATOR_AGENT_NAME = "orchestrator-agent"
-NANOBOT_AGENT_NAME = "nanobot"
 LOW_AGENT_NAME = "low-agent"
 HUMAN_AGENT_NAME = "human"
 
@@ -222,7 +221,7 @@ class ExecutionPlanStep:
     temp_id: str
     title: str
     description: str
-    assigned_agent: str = NANOBOT_AGENT_NAME
+    assigned_agent: str = "claude-code"
     blocked_by: list[str] = field(default_factory=list)
     parallel_group: int = 1
     order: int = 1
@@ -296,7 +295,7 @@ class ExecutionPlan:
             temp_id = raw_step.get("temp_id") or raw_step.get("step_id") or f"step_{index}"
             title = raw_step.get("title") or raw_step.get("description") or temp_id
             description = raw_step.get("description") or title
-            assigned_agent = raw_step.get("assigned_agent") or NANOBOT_AGENT_NAME
+            assigned_agent = raw_step.get("assigned_agent") or None
             blocked_by = raw_step.get("blocked_by") or raw_step.get("depends_on") or []
             if isinstance(blocked_by, str):
                 blocked_by_list = [blocked_by] if blocked_by else []
@@ -364,7 +363,7 @@ class AgentData:
     is_system: bool = False  # System agents cannot be deleted/deactivated
     last_active_at: str | None = None
     id: str | None = None  # Convex _id (populated on read)
-    backend: str = "nanobot"
+    backend: str = "claude-code"
     claude_code_opts: ClaudeCodeOpts | None = None
     interactive_provider: str | None = None
 

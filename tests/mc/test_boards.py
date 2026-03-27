@@ -141,48 +141,14 @@ class TestResolveBoardWorkspace:
 
 
 class TestBoardSessionKey:
-    async def test_run_agent_uses_board_session_key(self, tmp_path):
-        """_run_agent_on_task uses board-scoped session key when board_name provided."""
-        from unittest.mock import AsyncMock, patch
+    """Board-scoped session key tests.
 
-        from mc.contexts.execution.executor import _run_agent_on_task
+    The old test_run_agent_uses_board_session_key tested nanobot's AgentLoop
+    session key format via the removed _run_agent_on_task function.
+    Session keys are now managed by ExecutionEngine runner strategies.
+    """
 
-        captured_session_key = {}
-
-        direct_result = MagicMock()
-        direct_result.content = "done"
-        direct_result.is_error = False
-        direct_result.error_message = None
-
-        async def fake_process_direct_result(
-            content, session_key, channel, chat_id, task_id=None, on_progress=None
-        ):
-            captured_session_key["key"] = session_key
-            return direct_result
-
-        mock_loop = MagicMock()
-        mock_loop.process_direct_result = fake_process_direct_result
-        mock_loop.end_task_session = AsyncMock()
-
-        with (
-            patch("pathlib.Path.home", return_value=tmp_path),
-            patch(
-                "mc.contexts.execution.executor._make_provider", return_value=(MagicMock(), "model")
-            ),
-            patch("nanobot.agent.loop.AgentLoop", return_value=mock_loop),
-            patch("nanobot.bus.queue.MessageBus"),
-        ):
-            (tmp_path / ".nanobot" / "agents" / "worker").mkdir(parents=True)
-            await _run_agent_on_task(
-                agent_name="worker",
-                agent_prompt=None,
-                agent_model=None,
-                task_title="task",
-                task_description=None,
-                board_name="sprint-1",
-            )
-
-        assert captured_session_key.get("key") == "mc:board:sprint-1:task:worker"
+    pass
 
 
 # ---------------------------------------------------------------------------

@@ -68,10 +68,8 @@ class TestSyncAgentRegistry:
 
     @patch("mc.contexts.agents.sync.validate_agent_file")
     @patch("mc.contexts.agents.sync.ensure_low_agent")
-    @patch("mc.contexts.agents.sync.ensure_nanobot_agent")
     def test_syncs_valid_agents(
         self,
-        mock_ensure_nanobot: MagicMock,
         mock_ensure_low: MagicMock,
         mock_validate: MagicMock,
         service: AgentSyncService,
@@ -99,10 +97,8 @@ class TestSyncAgentRegistry:
     @patch("mc.contexts.agents.sync._config_default_model", return_value="anthropic/default")
     @patch("mc.contexts.agents.sync.validate_agent_file")
     @patch("mc.contexts.agents.sync.ensure_low_agent")
-    @patch("mc.contexts.agents.sync.ensure_nanobot_agent")
     def test_reports_validation_errors(
         self,
-        mock_ensure_nanobot: MagicMock,
         mock_ensure_low: MagicMock,
         mock_validate: MagicMock,
         mock_default_model: MagicMock,
@@ -120,10 +116,8 @@ class TestSyncAgentRegistry:
     @patch("mc.contexts.agents.sync._config_default_model", return_value="anthropic/default")
     @patch("mc.contexts.agents.sync.validate_agent_file")
     @patch("mc.contexts.agents.sync.ensure_low_agent")
-    @patch("mc.contexts.agents.sync.ensure_nanobot_agent")
     def test_deactivates_removed_agents(
         self,
-        mock_ensure_nanobot: MagicMock,
         mock_ensure_low: MagicMock,
         mock_validate: MagicMock,
         mock_default_model: MagicMock,
@@ -274,10 +268,8 @@ class TestProjectionProtection:
 
     @patch("mc.contexts.agents.sync.validate_agent_file")
     @patch("mc.contexts.agents.sync.ensure_low_agent")
-    @patch("mc.contexts.agents.sync.ensure_nanobot_agent")
     def test_skips_upsert_for_projection_backed_agent(
         self,
-        mock_ensure_nanobot: MagicMock,
         mock_ensure_low: MagicMock,
         mock_validate: MagicMock,
         service: AgentSyncService,
@@ -317,10 +309,8 @@ class TestProjectionProtection:
 
     @patch("mc.contexts.agents.sync.validate_agent_file")
     @patch("mc.contexts.agents.sync.ensure_low_agent")
-    @patch("mc.contexts.agents.sync.ensure_nanobot_agent")
     def test_allows_upsert_for_legacy_agent(
         self,
-        mock_ensure_nanobot: MagicMock,
         mock_ensure_low: MagicMock,
         mock_validate: MagicMock,
         service: AgentSyncService,
@@ -351,10 +341,8 @@ class TestProjectionProtection:
 
     @patch("mc.contexts.agents.sync.validate_agent_file")
     @patch("mc.contexts.agents.sync.ensure_low_agent")
-    @patch("mc.contexts.agents.sync.ensure_nanobot_agent")
     def test_allows_upsert_for_new_agent_not_in_convex(
         self,
-        mock_ensure_nanobot: MagicMock,
         mock_ensure_low: MagicMock,
         mock_validate: MagicMock,
         service: AgentSyncService,

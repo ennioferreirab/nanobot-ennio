@@ -12,9 +12,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from mc.contexts.execution.executor import (
     _build_thread_context,
@@ -301,7 +299,7 @@ class TestBuildThreadContextWithArtifacts:
         artifacts: list[dict] | None = None,
     ) -> dict[str, Any]:
         msg: dict[str, Any] = {
-            "author_name": "nanobot",
+            "author_name": "test-agent",
             "author_type": "agent",
             "message_type": "work",
             "type": "step_completion",
@@ -399,7 +397,7 @@ class TestBuildThreadContextWithArtifacts:
     def test_non_step_completion_message_not_labeled(self):
         messages = [
             {
-                "author_name": "nanobot",
+                "author_name": "test-agent",
                 "author_type": "agent",
                 "message_type": "work",
                 "timestamp": "2026-01-01T10:00:00Z",
@@ -431,58 +429,3 @@ class TestBuildThreadContextWithArtifacts:
             self._step_completion_msg("Some work done."),
         ]
         assert _build_thread_context(messages) == ""
-
-
-# ── delegate_task removal in MC step execution ────────────────────────
-
-
-class TestDelegateTaskNotAvailableInMCSteps:
-    """Agents executing MC steps must NOT have delegate_task in their toolset.
-
-    This prevents circular delegation loops (e.g. youtube-summarizer
-    delegating a cron job to itself instead of using the cron tool directly).
-    """
-
-    @pytest.mark.asyncio
-    async def test_delegate_task_removed_before_agent_runs(self):
-        """_run_agent_on_task must unregister delegate_task from the AgentLoop."""
-        from mc.contexts.execution.executor import _run_agent_on_task
-
-        captured_loop = {}
-
-        # Patch AgentLoop to capture the instance and skip actual LLM execution
-
-        class FakeAgentLoop:
-            def __init__(self, **kwargs):
-                from nanobot.agent.tools.mc_delegate import McDelegateTool
-                from nanobot.agent.tools.registry import ToolRegistry
-
-                self.tools = ToolRegistry()
-                # Simulate what the real __init__ does: register delegate_task
-                self.tools.register(McDelegateTool())
-                captured_loop["instance"] = self
-
-            async def process_direct_result(self, **kwargs):
-                from types import SimpleNamespace
-
-                return SimpleNamespace(content="mocked result", is_error=False, error_message=None)
-
-        with (
-            patch("nanobot.agent.loop.AgentLoop", FakeAgentLoop),
-            patch.dict("sys.modules", {"nanobot.agent.loop": MagicMock(AgentLoop=FakeAgentLoop)}),
-            patch(
-                "mc.contexts.execution.executor._make_provider",
-                return_value=(MagicMock(), "mock-model"),
-            ),
-        ):
-            await _run_agent_on_task(
-                agent_name="youtube-summarizer",
-                agent_prompt="You are a test agent",
-                agent_model="mock-model",
-                task_title="Test task",
-            )
-
-        loop = captured_loop["instance"]
-        assert "delegate_task" not in loop.tools, (
-            "delegate_task should be removed from agent tools in MC step execution"
-        )
