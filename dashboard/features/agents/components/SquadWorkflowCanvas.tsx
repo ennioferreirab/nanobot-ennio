@@ -216,13 +216,20 @@ export function SquadWorkflowCanvas(props: SquadWorkflowCanvasProps) {
     isEditing,
     (stepId) => setSelectedStepId(stepId),
     (stepId) => {
+      const deletedStep = workflow.steps.find((step) => step.id === stepId);
+      const deletedStepDeps = deletedStep?.dependsOn ?? [];
       const nextSteps = workflow.steps.filter((step) => step.id !== stepId);
       onChange({
         ...workflow,
-        steps: nextSteps.map((step) => ({
-          ...step,
-          dependsOn: step.dependsOn.filter((dependency) => dependency !== stepId),
-        })),
+        steps: nextSteps.map((step) => {
+          if (!step.dependsOn.includes(stepId)) return step;
+          // Reroute: replace deleted step with its own predecessors
+          const newDeps = [
+            ...step.dependsOn.filter((dep) => dep !== stepId),
+            ...deletedStepDeps.filter((dep) => !step.dependsOn.includes(dep)),
+          ];
+          return { ...step, dependsOn: newDeps };
+        }),
       });
       setSelectedStepId(nextSteps[0]?.id ?? null);
     },

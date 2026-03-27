@@ -541,12 +541,19 @@ export function ExecutionPlanTab({
           setEditStepError("Cannot delete the last step. A plan must have at least one step.");
           return;
         }
+        const deletedStep = currentSteps.find((s) => s.tempId === stepId);
+        const deletedStepDeps = deletedStep?.blockedBy ?? [];
         const updatedSteps = currentSteps
           .filter((s) => s.tempId !== stepId)
-          .map((s) => ({
-            ...s,
-            blockedBy: s.blockedBy.filter((dep) => dep !== stepId),
-          }));
+          .map((s) => {
+            if (!s.blockedBy.includes(stepId)) return s;
+            // Reroute: replace deleted step with its own predecessors
+            const newDeps = [
+              ...s.blockedBy.filter((dep) => dep !== stepId),
+              ...deletedStepDeps.filter((dep) => !s.blockedBy.includes(dep)),
+            ];
+            return { ...s, blockedBy: newDeps };
+          });
         const updatedPlan: ExecutionPlan = {
           steps: updatedSteps,
           generatedAt: currentPlan?.generatedAt ?? new Date().toISOString(),
