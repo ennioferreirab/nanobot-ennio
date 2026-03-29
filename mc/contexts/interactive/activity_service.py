@@ -294,6 +294,8 @@ class SessionActivityService:
                     tool_input_str = raw_tool_input
                 else:
                     tool_input_str = json.dumps(raw_tool_input, ensure_ascii=True, sort_keys=True)
+        elif event_kind == "tool_result":
+            summary = event_text
         elif event_kind == "error":
             error_str = event_text or "Provider CLI error"
         else:
