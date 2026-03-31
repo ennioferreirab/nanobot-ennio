@@ -42,7 +42,7 @@ describe("applyStepTransition", () => {
       taskId: "task-1",
       title: "Draft report",
       status: "running",
-      assignedAgent: "nanobot",
+      assignedAgent: "test-agent",
       stateVersion: 4,
       startedAt: "2026-03-16T10:00:00.000Z",
     };
@@ -76,7 +76,7 @@ describe("applyStepTransition", () => {
       taskId: "task-1",
       title: "Draft report",
       status: "waiting_human",
-      assignedAgent: "nanobot",
+      assignedAgent: "test-agent",
       stateVersion: 2,
     };
 
@@ -106,7 +106,7 @@ describe("applyStepTransition", () => {
       taskId: "task-1",
       title: "Draft report",
       status: "running",
-      assignedAgent: "nanobot",
+      assignedAgent: "test-agent",
       stateVersion: 3,
     };
 
@@ -136,7 +136,7 @@ describe("applyStepTransition", () => {
       taskId: "task-1",
       title: "Draft report",
       status: "review",
-      assignedAgent: "nanobot",
+      assignedAgent: "test-agent",
       stateVersion: 3,
     };
 

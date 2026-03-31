@@ -5,12 +5,11 @@ Extracted from mc.gateway so that internal modules can access agent bootstrap
 helpers without depending on the gateway composition root.
 
 Contains:
-- ensure_nanobot_agent / ensure_low_agent
-- sync_agent_registry / sync_skills / sync_nanobot_default_model
+- ensure_low_agent
+- sync_agent_registry / sync_skills
 - _sync_model_tiers / _sync_embedding_model
 - _distribute_builtin_skills
-- _cleanup_deleted_agents / _write_back_convex_agents / _restore_archived_files
-- _fetch_bot_identity
+- _cleanup_deleted_agents / _restore_archived_files
 """
 
 from __future__ import annotations
@@ -19,8 +18,6 @@ import json
 import logging
 import os
 import shutil
-import tempfile
-from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -28,10 +25,9 @@ import yaml
 
 from mc.infrastructure.config import (
     _config_default_model,
-    _parse_utc_timestamp,
     _read_file_or_none,
 )
-from mc.infrastructure.runtime_home import get_boards_dir, get_runtime_path, get_workspace_dir
+from mc.infrastructure.runtime_home import get_boards_dir, get_runtime_path
 
 if TYPE_CHECKING:
     from mc.bridge import ConvexBridge
@@ -39,28 +35,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-NANOBOT_AGENT_NAME = "nanobot"  # Re-exported for backward compat; canonical in types.py
-_SKILL_PROVIDER_ORDER = ("claude-code", "codex", "nanobot")
-_NANOBOT_AGENT_CONFIG = """\
-name: nanobot
-role: "{role}"
-display_name: "{display_name}"
-is_system: true
-prompt: |
-  You are the fallback agent for Mission Control task delegation.
-  When the Orchestrator Agent cannot find a specialist agent for a task,
-  it is routed to you.
-
-  Your identity, personality, and memory come from your SOUL.md and
-  workspace files — do NOT invent a new persona.
-
-  Focus on completing the delegated task using your tools and knowledge.
-skills:
-  - mc
-  - create-agent
-  - create-squad
-  - create-workflow-mc
-"""
+_SKILL_PROVIDER_ORDER = ("claude-code", "codex")
 
 
 def _parse_skill_metadata_json(raw: str | None) -> dict[str, Any]:
@@ -74,7 +49,7 @@ def _parse_skill_metadata_json(raw: str | None) -> dict[str, Any]:
 
 
 def _detect_supported_providers(skill_info: dict[str, Any], metadata_str: str | None) -> list[str]:
-    providers: set[str] = {"claude-code", "nanobot"}
+    providers: set[str] = {"claude-code"}
     skill_md_path = Path(str(skill_info["path"]))
     skill_dir = skill_md_path.parent
 
@@ -87,119 +62,11 @@ def _detect_supported_providers(skill_info: dict[str, Any], metadata_str: str | 
         configured = adapters.get("providers")
         if isinstance(configured, list):
             providers = {str(value) for value in configured if str(value) in _SKILL_PROVIDER_ORDER}
-            providers.update({"claude-code", "nanobot"})
+            providers.add("claude-code")
             if (skill_dir / "agents" / "openai.yaml").exists():
                 providers.add("codex")
 
     return [provider for provider in _SKILL_PROVIDER_ORDER if provider in providers]
-
-
-def _fetch_bot_identity() -> dict[str, str]:
-    """Fetch the Telegram bot identity (name + role).
-
-    Raises RuntimeError if Telegram is not configured or the API call fails.
-    The nanobot agent MUST mirror the Telegram bot — no silent fallback.
-    """
-    import httpx
-    from nanobot.config.loader import load_config
-
-    config = load_config()
-    if not config.channels.telegram.enabled or not config.channels.telegram.token:
-        raise RuntimeError(
-            "Telegram channel is not enabled or token is missing in "
-            "~/.nanobot/config.json. "
-            "The nanobot agent requires a configured Telegram bot to "
-            "mirror its identity."
-        )
-
-    token = config.channels.telegram.token
-    proxy = config.channels.telegram.proxy
-
-    kwargs: dict[str, Any] = {"timeout": 5.0}
-    if proxy:
-        kwargs["proxy"] = proxy
-
-    try:
-        with httpx.Client(**kwargs) as client:
-            resp = client.get(f"https://api.telegram.org/bot{token}/getMe")
-            resp.raise_for_status()
-            data = resp.json()
-            if not data.get("ok") or "result" not in data:
-                raise RuntimeError(f"Telegram getMe returned unexpected response: {data}")
-            first_name = data["result"].get("first_name")
-            if not first_name:
-                raise RuntimeError("Telegram bot has no first_name set")
-            return {
-                "name": first_name,
-                "role": "Personal Assistant and Task Delegation Fallback",
-            }
-    except httpx.HTTPError as e:
-        raise RuntimeError(f"Failed to fetch Telegram bot identity: {e}") from e
-
-
-def ensure_nanobot_agent(agents_dir: Path) -> None:
-    """Ensure the nanobot agent YAML definition exists on disk and links to the global workspace.
-
-    Creates the directory and config.yaml if missing. Links SOUL.md, memory, and skills
-    to the global workspace so the Mission Control agent shares the same persona and context
-    as the Telegram bot.
-
-    Raises RuntimeError if the Telegram bot identity cannot be fetched.
-    """
-    agent_dir = agents_dir / NANOBOT_AGENT_NAME
-    config_path = agent_dir / "config.yaml"
-
-    workspace = get_workspace_dir()
-
-    # Fetch identity from Telegram — raises RuntimeError on failure (no fallback)
-    identity = _fetch_bot_identity()
-    bot_name = identity["name"]
-    bot_role = identity["role"]
-
-    if not config_path.is_file():
-        agent_dir.mkdir(parents=True, exist_ok=True)
-        config_content = _NANOBOT_AGENT_CONFIG.format(
-            role=bot_role,
-            display_name=bot_name,
-        )
-        config_path.write_text(config_content, encoding="utf-8")
-        logger.info(
-            "Created nanobot agent definition at %s (Identity: %s)",
-            config_path,
-            bot_name,
-        )
-
-    # Always try to fix up symlinks (for upgrades/retrofits)
-    for item in ["memory", "skills", "SOUL.md"]:
-        agent_path = agent_dir / item
-        global_path = workspace / item
-
-        # Global paths MUST already exist — they are created by 'nanobot onboard'.
-        # memory/ and skills/ dirs are safe to create if missing, but SOUL.md must exist.
-        if not global_path.exists():
-            if item == "SOUL.md":
-                raise RuntimeError(
-                    f"Global workspace SOUL.md not found at {global_path}. "
-                    "Run 'nanobot onboard' first to initialize the workspace."
-                )
-            else:
-                global_path.mkdir(parents=True, exist_ok=True)
-
-        # If the local item is an empty directory (from older versions), remove it
-        if agent_path.is_dir() and not agent_path.is_symlink() and not any(agent_path.iterdir()):
-            shutil.rmtree(agent_path)
-
-        # Remove broken symlinks before recreating
-        if agent_path.is_symlink() and not agent_path.exists():
-            agent_path.unlink()
-
-        # Create symlink if missing
-        if not agent_path.exists():
-            try:
-                os.symlink(global_path, agent_path)
-                logger.info("Symlinked %s to global workspace for %s", item, bot_name)
-            except Exception as e:
-                logger.warning("Failed to symlink %s for nanobot agent: %s", item, e)
 
 
 def ensure_low_agent(bridge: ConvexBridge) -> None:
@@ -229,7 +96,7 @@ def _restore_archived_files(agent_dir: Path, archive: dict) -> None:
     """Write archived memory/history/session files back to disk (legacy compat).
 
     Args:
-        agent_dir: Path to the agent's local directory (e.g. ~/.nanobot/agents/{name}/).
+        agent_dir: Path to the agent's local directory.
         archive: Dict with optional keys memory_content, history_content, session_data.
     """
     memory_dir = agent_dir / "memory"
@@ -257,8 +124,6 @@ def _restore_memory_from_backup(bridge: ConvexBridge, agent_name: str, agent_dir
 
     Checks each board in the backup — if the board workspace memory directory
     is missing locally, recreates it and writes MEMORY.md + HISTORY.md.
-    Also restores global workspace memory for nanobot.
-
     Archive data is never cleared — it persists as a permanent backup.
     """
     try:
@@ -307,21 +172,6 @@ def _restore_memory_from_backup(bridge: ConvexBridge, agent_name: str, agent_dir
             board_name,
         )
 
-    # Restore global workspace memory (nanobot)
-    global_mem = backup.get("global_memory_content")
-    global_hist = backup.get("global_history_content")
-    if global_mem or global_hist:
-        global_memory_dir = agent_dir / "memory"
-        # Remove broken symlinks left over from previous runs
-        if global_memory_dir.is_symlink() and not global_memory_dir.exists():
-            global_memory_dir.unlink()
-        global_memory_dir.mkdir(parents=True, exist_ok=True)
-        if global_mem and not (global_memory_dir / "MEMORY.md").exists():
-            (global_memory_dir / "MEMORY.md").write_text(global_mem, encoding="utf-8")
-            restored_count += 1
-        if global_hist and not (global_memory_dir / "HISTORY.md").exists():
-            (global_memory_dir / "HISTORY.md").write_text(global_hist, encoding="utf-8")
-
     if restored_count:
         logger.info(
             "Restored memory for agent '%s' from backup (%d items)", agent_name, restored_count
@@ -331,8 +181,7 @@ def _restore_memory_from_backup(bridge: ConvexBridge, agent_name: str, agent_dir
 def _backup_agent_memory(bridge: ConvexBridge, agents_dir: Path) -> int:
     """Back up all agent memory to Convex.
 
-    Regular agents: scans board workspaces for MEMORY.md and HISTORY.md.
-    Nanobot: reads from global workspace.
+    Scans board workspaces for MEMORY.md and HISTORY.md.
 
     Returns count of agents backed up.
     """
@@ -356,44 +205,25 @@ def _backup_agent_memory(bridge: ConvexBridge, agents_dir: Path) -> int:
             continue
 
         try:
-            if name == NANOBOT_AGENT_NAME:
-                # Nanobot uses global workspace
-                workspace = get_workspace_dir()
-                global_mem = _read_file_or_none(workspace / "memory" / "MEMORY.md")
-                global_hist = _read_file_or_none(workspace / "memory" / "HISTORY.md")
-                if global_mem is not None or global_hist is not None:
-                    bridge.backup_agent_memory(
-                        name,
-                        boards_data=[],
-                        global_data={
-                            "memory_content": global_mem,
-                            "history_content": global_hist,
-                        },
-                    )
-                    backed_up += 1
-                    logger.info("Backed up nanobot global memory")
-            else:
-                # Regular agents — collect per-board memory
-                boards_data: list[dict[str, Any]] = []
-                board_workspaces = list_agent_board_workspaces(name)
-                for board_name, board_ws in board_workspaces:
-                    memory_dir = board_ws / "memory"
-                    mem = _read_file_or_none(memory_dir / "MEMORY.md")
-                    hist = _read_file_or_none(memory_dir / "HISTORY.md")
-                    if mem is not None or hist is not None:
-                        entry: dict[str, Any] = {"board_name": board_name}
-                        if mem is not None:
-                            entry["memory_content"] = mem
-                        if hist is not None:
-                            entry["history_content"] = hist
-                        boards_data.append(entry)
+            # Collect per-board memory
+            boards_data: list[dict[str, Any]] = []
+            board_workspaces = list_agent_board_workspaces(name)
+            for board_name, board_ws in board_workspaces:
+                memory_dir = board_ws / "memory"
+                mem = _read_file_or_none(memory_dir / "MEMORY.md")
+                hist = _read_file_or_none(memory_dir / "HISTORY.md")
+                if mem is not None or hist is not None:
+                    entry: dict[str, Any] = {"board_name": board_name}
+                    if mem is not None:
+                        entry["memory_content"] = mem
+                    if hist is not None:
+                        entry["history_content"] = hist
+                    boards_data.append(entry)
 
-                if boards_data:
-                    bridge.backup_agent_memory(name, boards_data)
-                    backed_up += 1
-                    logger.info(
-                        "Backed up memory for agent '%s' (%d boards)", name, len(boards_data)
-                    )
+            if boards_data:
+                bridge.backup_agent_memory(name, boards_data)
+                backed_up += 1
+                logger.info("Backed up memory for agent '%s' (%d boards)", name, len(boards_data))
         except Exception:
             logger.exception("Failed to backup memory for agent '%s'", name)
 
@@ -405,7 +235,7 @@ def _cleanup_deleted_agents(bridge: ConvexBridge, agents_dir: Path) -> None:
 
     For each deleted agent that still has a local folder:
     1. Scan board workspaces for per-board MEMORY.md and HISTORY.md.
-    2. Read global agent memory (for fallback/nanobot).
+    2. Read global agent memory.
     3. Back up to Convex via upsertMemoryBackup (must succeed before deletion).
     4. Delete local agent folder and board workspace directories.
 
@@ -443,7 +273,7 @@ def _cleanup_deleted_agents(bridge: ConvexBridge, agents_dir: Path) -> None:
                     entry["history_content"] = hist
                 boards_data.append(entry)
 
-        # Collect global agent memory (fallback)
+        # Collect global agent memory
         global_mem = _read_file_or_none(agent_dir / "memory" / "MEMORY.md")
         global_hist = _read_file_or_none(agent_dir / "memory" / "HISTORY.md")
         global_data: dict[str, str | None] | None = None
@@ -482,66 +312,6 @@ def _cleanup_deleted_agents(bridge: ConvexBridge, agents_dir: Path) -> None:
                 "Failed to remove local folder for agent '%s' — will retry on next sync",
                 name,
             )
-
-
-def _write_back_convex_agents(bridge: ConvexBridge, agents_dir: Path) -> None:
-    """Write-back Convex -> local for agents where Convex is newer.
-
-    Both timestamps are compared as UTC-aware datetime objects.
-    After writing config.yaml, checks if board memory directories are missing
-    and restores from Convex backup if available. Archive is never cleared.
-    """
-    from datetime import datetime
-
-    try:
-        convex_agents = bridge.list_agents()
-    except Exception:
-        logger.exception("Failed to list agents from Convex for write-back")
-        return
-
-    for agent_data in convex_agents:
-        name = agent_data.get("name")
-        if not name:
-            continue
-
-        # System agents (e.g. low-agent) are Convex-only — skip local write-back
-        if agent_data.get("is_system"):
-            continue
-
-        config_path = agents_dir / name / "config.yaml"
-        last_active = agent_data.get("last_active_at")
-        if not last_active:
-            continue
-
-        convex_ts = _parse_utc_timestamp(last_active)
-        if convex_ts is None:
-            logger.warning(
-                "Write-back: skipping agent '%s' — unparseable timestamp '%s'",
-                name,
-                last_active,
-            )
-            continue
-
-        if config_path.is_file():
-            local_mtime = datetime.fromtimestamp(config_path.stat().st_mtime, tz=UTC)
-            if convex_ts > local_mtime:
-                try:
-                    bridge.write_agent_config(agent_data, agents_dir)
-                    logger.info("Write-back: updated local config for agent '%s'", name)
-                except Exception:
-                    logger.exception("Write-back failed for agent '%s'", name)
-        else:
-            # Agent exists in Convex but has no local YAML — create it
-            try:
-                bridge.write_agent_config(agent_data, agents_dir)
-                logger.info("Write-back: created local config for agent '%s'", name)
-            except Exception:
-                logger.exception("Write-back failed for new agent '%s'", name)
-                continue
-
-        # Restore memory from backup if board workspaces are missing on disk.
-        # Archive data is kept persistent — never cleared after restore.
-        _restore_memory_from_backup(bridge, name, agents_dir / name)
 
 
 def _sync_model_tiers(bridge: ConvexBridge) -> None:
@@ -629,7 +399,7 @@ def _sync_embedding_model(bridge: ConvexBridge) -> None:
         os.environ.pop("NANOBOT_MEMORY_EMBEDDING_MODEL", None)
         logger.info("[gateway] Memory embedding model cleared (FTS-only)")
 
-    # Persist to memory_settings.json so standalone nanobot (Telegram) can read it
+    # Persist to memory_settings.json for external consumers
     try:
         settings_path = get_runtime_path("memory_settings.json")
         existing: dict = {}
@@ -660,9 +430,6 @@ def sync_agent_registry(
 
     resolved_default = default_model or _config_default_model()
 
-    # Step 0: Ensure system agents exist on disk
-    ensure_nanobot_agent(agents_dir)
-
     # Ensure low-agent system agent exists in Convex
     try:
         ensure_low_agent(bridge)
@@ -671,9 +438,6 @@ def sync_agent_registry(
 
     # Step 0a: Cleanup — archive and remove local folders for soft-deleted agents
     _cleanup_deleted_agents(bridge, agents_dir)
-
-    # Step 0b: Write-back — Convex → local for dashboard-edited agents
-    _write_back_convex_agents(bridge, agents_dir)
 
     # Step 1: Validate agent YAML in each subdirectory
     valid_agents: list[AgentData] = []
@@ -770,7 +534,7 @@ def sync_skills(
     bridge: ConvexBridge,
     builtin_skills_dir: Path | None = None,
 ) -> list[str]:
-    """Sync nanobot skills to Convex via SkillsLoader public API.
+    """Sync skills to Convex via SkillsLoader public API.
 
     Returns list of synced skill names.
     """
@@ -853,156 +617,6 @@ def sync_skills(
         logger.exception("Failed to deactivate removed skills")
 
     return synced_names
-
-
-def sync_nanobot_default_model(bridge: ConvexBridge) -> bool:
-    """Sync config.json default model from the canonical Convex system agent."""
-    agent = bridge.get_agent_by_name(NANOBOT_AGENT_NAME)
-    if not agent:
-        logger.warning(
-            "[gateway] Skipping %s model sync: agent not found in Convex",
-            NANOBOT_AGENT_NAME,
-        )
-        return False
-
-    convex_model: str | None = None
-    if isinstance(agent, dict):
-        model_val = agent.get("model")
-        if isinstance(model_val, str):
-            convex_model = model_val.strip()
-    else:
-        model_val = getattr(agent, "model", None)
-        if isinstance(model_val, str):
-            convex_model = model_val.strip()
-
-    if not convex_model:
-        logger.warning(
-            "[gateway] Skipping %s model sync: missing model in Convex",
-            NANOBOT_AGENT_NAME,
-        )
-        return False
-
-    # Resolve tier references (e.g. "tier:standard-low" → "anthropic/claude-haiku-4-5")
-    if convex_model.startswith("tier:"):
-        from mc.infrastructure.providers.tier_resolver import TierResolver
-
-        try:
-            resolver = TierResolver(bridge)
-            resolved = resolver.resolve_model(convex_model)
-            if not resolved:
-                logger.warning(
-                    "[gateway] Skipping %s model sync: tier '%s' resolved to None",
-                    NANOBOT_AGENT_NAME,
-                    convex_model,
-                )
-                return False
-            logger.info(
-                "[gateway] Resolved %s model tier: %s -> %s",
-                NANOBOT_AGENT_NAME,
-                convex_model,
-                resolved,
-            )
-            convex_model = resolved
-        except Exception:
-            logger.warning(
-                "[gateway] Skipping %s model sync: failed to resolve tier '%s'",
-                NANOBOT_AGENT_NAME,
-                convex_model,
-                exc_info=True,
-            )
-            return False
-
-    from nanobot.config.loader import get_config_path
-
-    config_path = get_config_path()
-    if not config_path.exists():
-        logger.warning(
-            "[gateway] Skipping %s model sync: config not found at %s",
-            NANOBOT_AGENT_NAME,
-            config_path,
-        )
-        return False
-
-    try:
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-    except Exception:
-        logger.warning(
-            "[gateway] Skipping %s model sync: could not read %s",
-            NANOBOT_AGENT_NAME,
-            config_path,
-            exc_info=True,
-        )
-        return False
-
-    if not isinstance(config, dict):
-        logger.warning(
-            "[gateway] Skipping %s model sync: invalid config format",
-            NANOBOT_AGENT_NAME,
-        )
-        return False
-
-    agents_cfg = config.setdefault("agents", {})
-    if not isinstance(agents_cfg, dict):
-        logger.warning(
-            "[gateway] Skipping %s model sync: invalid agents config",
-            NANOBOT_AGENT_NAME,
-        )
-        return False
-
-    defaults_cfg = agents_cfg.setdefault("defaults", {})
-    if not isinstance(defaults_cfg, dict):
-        logger.warning(
-            "[gateway] Skipping %s model sync: invalid agents.defaults config",
-            NANOBOT_AGENT_NAME,
-        )
-        return False
-
-    old_model = defaults_cfg.get("model")
-    if old_model == convex_model:
-        logger.debug(
-            "[gateway] %s default model already in sync: %s",
-            NANOBOT_AGENT_NAME,
-            convex_model,
-        )
-        return False
-
-    defaults_cfg["model"] = convex_model
-
-    tmp_path: str | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=config_path.parent,
-            prefix=f"{config_path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as tmp_file:
-            tmp_path = tmp_file.name
-            json.dump(config, tmp_file, indent=2, ensure_ascii=False)
-            tmp_file.write("\n")
-        os.replace(tmp_path, config_path)
-    except Exception:
-        logger.error(
-            "[gateway] Failed to sync %s default model to %s",
-            NANOBOT_AGENT_NAME,
-            config_path,
-            exc_info=True,
-        )
-        if tmp_path:
-            try:
-                Path(tmp_path).unlink(missing_ok=True)
-            except OSError:
-                pass
-        return False
-
-    logger.info(
-        "[gateway] Updated %s default model: %s → %s",
-        NANOBOT_AGENT_NAME,
-        old_model,
-        convex_model,
-    )
-    return True
 
 
 def cleanup_orphaned_tasks(bridge: ConvexBridge) -> int:

@@ -2,8 +2,7 @@
 
 Covers:
 - Backend routing: claude-code → _execute_cc_task
-- Nanobot backend → existing nanobot path
-- No backend field → existing nanobot path
+- Provider CLI backend → engine execution path
 - Workspace preparation failure → crash
 - IPC server failure → crash
 - CC execution failure → crash
@@ -178,22 +177,29 @@ class TestBackendRouting:
         assert request.agent_name == "my-cc-agent"
 
     @pytest.mark.asyncio
-    async def test_nanobot_backend_skips_cc_task(self):
+    async def test_provider_cli_backend_routes_through_engine(self):
         executor = _make_executor()
-        agent_data = _cc_agent(backend="nanobot")
+        agent_data = _cc_agent(backend="claude-code")
 
-        from mc.application.execution.request import EntityType, ExecutionRequest
+        from mc.application.execution.request import (
+            EntityType,
+            ExecutionRequest,
+            ExecutionResult,
+        )
 
         req = ExecutionRequest(
             entity_type=EntityType.TASK,
             entity_id="t2",
             task_id="t2",
-            title="Nanobot task",
+            title="Provider CLI task",
             agent_name="my-cc-agent",
             is_cc=False,
             files_dir="/tmp/test-files",
             output_dir="/tmp/test-output",
         )
+
+        engine = MagicMock()
+        engine.run = AsyncMock(return_value=ExecutionResult(success=True, output="result"))
 
         with (
             patch(
@@ -202,30 +208,34 @@ class TestBackendRouting:
                 return_value=req,
             ),
             patch.object(executor, "_load_agent_data", return_value=agent_data),
-            patch.object(executor, "_execute_cc_task", new_callable=AsyncMock) as mock_cc,
-            # Patch the nanobot path so it doesn't actually run
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task", new_callable=AsyncMock
-            ) as mock_run,
-            patch("mc.contexts.execution.executor._snapshot_output_dir", return_value={}),
+            patch.object(
+                executor,
+                "_build_execution_engine",
+                return_value=engine,
+                create=True,
+            ),
             patch("mc.contexts.execution.executor._collect_output_artifacts", return_value=[]),
         ):
-            mock_run.return_value = ("result", "key", MagicMock())
             await executor._execute_task(
                 task_id="t2",
-                title="Nanobot task",
+                title="Provider CLI task",
                 description=None,
                 agent_name="my-cc-agent",
                 trust_level="autonomous",
             )
 
-        mock_cc.assert_not_awaited()
+        engine.run.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_no_agent_data_skips_cc_task(self):
+    async def test_no_agent_data_routes_through_engine(self):
+        """When no agent data exists, executor still routes through ExecutionEngine."""
         executor = _make_executor()
 
-        from mc.application.execution.request import EntityType, ExecutionRequest
+        from mc.application.execution.request import (
+            EntityType,
+            ExecutionRequest,
+            ExecutionResult,
+        )
 
         req = ExecutionRequest(
             entity_type=EntityType.TASK,
@@ -238,6 +248,9 @@ class TestBackendRouting:
             output_dir="/tmp/test-output",
         )
 
+        engine = MagicMock()
+        engine.run = AsyncMock(return_value=ExecutionResult(success=True, output="result"))
+
         with (
             patch(
                 "mc.application.execution.context_builder.ContextBuilder.build_task_context",
@@ -245,14 +258,14 @@ class TestBackendRouting:
                 return_value=req,
             ),
             patch.object(executor, "_load_agent_data", return_value=None),
-            patch.object(executor, "_execute_cc_task", new_callable=AsyncMock) as mock_cc,
-            patch(
-                "mc.contexts.execution.executor._run_agent_on_task", new_callable=AsyncMock
-            ) as mock_run,
-            patch("mc.contexts.execution.executor._snapshot_output_dir", return_value={}),
+            patch.object(
+                executor,
+                "_build_execution_engine",
+                return_value=engine,
+                create=True,
+            ),
             patch("mc.contexts.execution.executor._collect_output_artifacts", return_value=[]),
         ):
-            mock_run.return_value = ("result", "key", MagicMock())
             await executor._execute_task(
                 task_id="t3",
                 title="Unregistered agent",
@@ -261,7 +274,7 @@ class TestBackendRouting:
                 trust_level="autonomous",
             )
 
-        mock_cc.assert_not_awaited()
+        engine.run.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -894,13 +907,13 @@ class TestCCModelRouting:
         bridge = _make_bridge()
         executor = _make_executor(bridge)
 
-        # Agent has nanobot backend but model set to cc/claude-sonnet-4-6
-        nanobot_agent = AgentData(
+        # Agent with model set to cc/claude-sonnet-4-6
+        cc_agent = AgentData(
             name="test-agent",
             display_name="Test Agent",
             role="worker",
             model="cc/claude-sonnet-4-6",
-            backend="nanobot",
+            backend="claude-code",
         )
 
         # ContextBuilder detects cc/ prefix and sets is_cc=True
@@ -921,7 +934,7 @@ class TestCCModelRouting:
             agent_model="cc/claude-sonnet-4-6",
             is_cc=True,
             model="claude-sonnet-4-6",
-            agent=nanobot_agent,
+            agent=cc_agent,
             files_dir="/tmp/test-files",
             output_dir="/tmp/test-output",
         )
@@ -934,7 +947,7 @@ class TestCCModelRouting:
                 new_callable=AsyncMock,
                 return_value=req,
             ),
-            patch.object(executor, "_load_agent_data", return_value=nanobot_agent),
+            patch.object(executor, "_load_agent_data", return_value=cc_agent),
             patch.object(
                 executor,
                 "_build_execution_engine",
@@ -954,7 +967,7 @@ class TestCCModelRouting:
         engine.run.assert_awaited_once()
         request = engine.run.await_args.args[0]
         assert request.runner_type == RunnerType.PROVIDER_CLI
-        assert request.agent is nanobot_agent
+        assert request.agent is cc_agent
         assert request.agent.model == "claude-sonnet-4-6"
         assert request.agent.backend == "claude-code"
         assert request.session_boundary_reason == "task_completion"

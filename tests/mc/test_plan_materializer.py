@@ -20,7 +20,7 @@ def _step(
         temp_id=temp_id,
         title=title,
         description=description,
-        assigned_agent="nanobot",
+        assigned_agent="test-agent",
         blocked_by=blocked_by or [],
         parallel_group=1,
         order=1,

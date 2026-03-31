@@ -14,8 +14,8 @@ import {
   ExternalLink,
   Lock,
   Paperclip,
+  SkipForward,
   Trash2,
-  User,
 } from "lucide-react";
 import { Doc } from "@/convex/_generated/dataModel";
 import { STEP_STATUS_COLORS, type StepStatus } from "@/lib/constants";
@@ -31,18 +31,20 @@ interface StepCardProps {
 
 export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: StepCardProps) {
   const shouldReduceMotion = useReducedMotion();
-  const { deleteStep, acceptHumanStep, manualMoveStep } = useStepCardActions();
+  const { deleteStep, acceptHumanStep, manualMoveStep, skipStep } = useStepCardActions();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showSkipConfirm, setShowSkipConfirm] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isActioning, setIsActioning] = useState(false);
   const [actionError, setActionError] = useState("");
   const colors = STEP_STATUS_COLORS[step.status as StepStatus] ?? STEP_STATUS_COLORS.assigned;
   const assignedAgentName = step.assignedAgent ?? "Unassigned";
   const isHuman = step.assignedAgent === "human";
-  const isWorkflowGate =
-    step.workflowStepType === "human" || step.workflowStepType === "checkpoint";
+  const isWorkflowGate = step.workflowStepType === "human";
   const isWaitingHuman = step.status === "waiting_human";
   const isRunningGateStep = step.status === "running" && (isHuman || isWorkflowGate);
+  const isSkipped = step.status === "skipped";
+  const isSkippable = ["assigned", "blocked", "review", "skipped"].includes(step.status);
   const assignedAgentInitials = step.assignedAgent
     ? step.assignedAgent
         .split(/[\s-_]+/)
@@ -83,11 +85,12 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
       >
         <Card
           className={[
-            "rounded-[10px] border-l-[3px] p-3 transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            "rounded-[10px] p-3 transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
             colors.border,
             isInteractive ? "cursor-pointer" : "",
             isHuman && !isWaitingHuman ? "cursor-grab" : "",
             isDragging ? "opacity-50 shadow-lg" : "",
+            isSkipped ? "opacity-60" : "",
           ].join(" ")}
           onClick={onClick}
           onKeyDown={handleKeyDown}
@@ -116,7 +119,12 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
           </div>
 
           <div className="mb-1.5 flex items-start justify-between gap-2">
-            <h3 className="min-w-0 text-[13px] font-medium text-foreground line-clamp-2">
+            <h3
+              className={[
+                "min-w-0 text-[13px] font-medium text-foreground line-clamp-2",
+                isSkipped ? "line-through" : "",
+              ].join(" ")}
+            >
               {step.title}
             </h3>
             <div className="mt-0.5 flex shrink-0 items-center gap-1">
@@ -152,6 +160,33 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
                 {step.attachedFiles.length}
               </span>
             )}
+            {isSkippable && (
+              <SkipForward
+                className={[
+                  "h-3.5 w-3.5 transition-colors",
+                  isActioning ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+                  isSkipped
+                    ? "text-slate-500 hover:text-foreground"
+                    : "text-muted-foreground hover:text-slate-600",
+                ].join(" ")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isActioning) return;
+                  if (isSkipped) {
+                    setIsActioning(true);
+                    setActionError("");
+                    skipStep({ stepId: step._id, skip: false })
+                      .catch((err) =>
+                        setActionError(err instanceof Error ? err.message : String(err)),
+                      )
+                      .finally(() => setIsActioning(false));
+                  } else {
+                    setShowSkipConfirm((prev) => !prev);
+                  }
+                }}
+                aria-label={isSkipped ? "Un-skip step" : "Skip step"}
+              />
+            )}
             <Trash2
               className="ml-auto h-3.5 w-3.5 cursor-pointer text-muted-foreground transition-colors hover:text-red-500"
               onClick={(e) => {
@@ -179,7 +214,7 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
                   }
                 }}
               >
-                <User className="h-3 w-3 mr-1" />
+                <CheckCircle className="h-3 w-3 mr-1" />
                 Accept
               </Button>
             </div>
@@ -210,6 +245,29 @@ export function StepCard({ step, parentTaskTitle, onClick, onNavigateToTask }: S
           )}
           {actionError && <p className="mt-1 text-[10px] text-red-600 truncate">{actionError}</p>}
           <AnimatePresence>
+            {showSkipConfirm && (
+              <div onClick={(e) => e.stopPropagation()}>
+                <InlineConfirm
+                  message="Skip this step?"
+                  onConfirm={() => {
+                    setIsActioning(true);
+                    setActionError("");
+                    skipStep({ stepId: step._id, skip: true })
+                      .catch((err) =>
+                        setActionError(err instanceof Error ? err.message : String(err)),
+                      )
+                      .finally(() => {
+                        setIsActioning(false);
+                        setShowSkipConfirm(false);
+                      });
+                  }}
+                  onCancel={() => setShowSkipConfirm(false)}
+                  confirmLabel="Skip"
+                  cancelLabel="Cancel"
+                  variant="default"
+                />
+              </div>
+            )}
             {showDeleteConfirm && (
               <div onClick={(e) => e.stopPropagation()}>
                 <InlineConfirm

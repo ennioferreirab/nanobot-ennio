@@ -1,7 +1,7 @@
 """Unified execution result data model.
 
 Captures the output of an execution (task or step) including artifacts,
-session info, and status. Used by both nanobot and CC execution paths.
+session info, and status. Used by all execution paths.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ class ExecutionResult:
     # Artifacts produced during execution
     artifacts: list[dict[str, Any]] = field(default_factory=list)
 
-    # Session tracking (for nanobot memory consolidation)
+    # Session tracking (for memory consolidation)
     session_key: str | None = None
 
     # CC-specific fields

@@ -82,7 +82,9 @@ const BOARD_COLUMNS: readonly BoardColumn[] = [
  * Compute UI flags from a task and its steps.
  */
 export function computeUiFlags(task: TaskForFlags, steps: StepForFlags[]): UiFlags {
-  const hasNonCompletedSteps = steps.some((s) => s.status !== "completed");
+  const hasNonCompletedSteps = steps.some(
+    (s) => s.status !== "completed" && s.status !== "skipped",
+  );
   const reviewPhase = task.reviewPhase;
   const isAwaitingKickoff =
     reviewPhase === "plan_review" || (reviewPhase === undefined && task.awaitingKickoff === true);
@@ -92,7 +94,9 @@ export function computeUiFlags(task: TaskForFlags, steps: StepForFlags[]): UiFla
       reviewPhase === undefined &&
       !isAwaitingKickoff &&
       hasNonCompletedSteps);
-  const hasUnexecutedSteps = steps.some((s) => s.status !== "completed" && s.status !== "deleted");
+  const hasUnexecutedSteps = steps.some(
+    (s) => s.status !== "completed" && s.status !== "skipped" && s.status !== "deleted",
+  );
 
   return {
     isAwaitingKickoff,

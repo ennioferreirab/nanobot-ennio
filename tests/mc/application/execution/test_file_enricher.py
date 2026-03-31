@@ -102,8 +102,8 @@ class TestResolveThreadJournalPaths:
 
     def test_uses_expected_file_names(self) -> None:
         journal_path, state_path = resolve_thread_journal_paths("task_123")
-        assert journal_path.endswith("/THREAD_JOURNAL.md")
-        assert state_path.endswith("/THREAD_COMPACTION_STATE.json")
+        assert journal_path.endswith("/.internal/THREAD_JOURNAL.md")
+        assert state_path.endswith("/.internal/THREAD_COMPACTION_STATE.json")
 
 
 class TestBuildFileContextTask:

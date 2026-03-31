@@ -24,7 +24,7 @@ def _make_workflow_step(
         temp_id=temp_id,
         title=title,
         description=description,
-        assigned_agent="nanobot",
+        assigned_agent="test-agent",
         blocked_by=blocked_by or [],
         parallel_group=1,
         order=1,
@@ -86,30 +86,6 @@ def test_human_step_type_survives_materialization() -> None:
     _, payload = bridge.batch_create_steps.call_args[0]
     assert payload[0]["workflow_step_type"] == "human"
     assert payload[0]["workflow_step_id"] == "review-docs"
-    assert payload[0]["assigned_agent"] == "human"
-
-
-def test_checkpoint_step_type_survives_materialization() -> None:
-    """Checkpoint step type is preserved."""
-    bridge = MagicMock()
-    bridge.batch_create_steps.return_value = ["step-a"]
-
-    plan = ExecutionPlan(
-        steps=[
-            _make_workflow_step(
-                "step_1",
-                "Checkpoint",
-                "Quality gate checkpoint",
-                workflow_step_type=WorkflowStepType.CHECKPOINT,
-                workflow_step_id="quality-gate",
-            )
-        ]
-    )
-
-    PlanMaterializer(bridge).materialize("task-1", plan)
-
-    _, payload = bridge.batch_create_steps.call_args[0]
-    assert payload[0]["workflow_step_type"] == "checkpoint"
     assert payload[0]["assigned_agent"] == "human"
 
 
@@ -188,7 +164,7 @@ def test_plain_steps_without_workflow_metadata_unaffected() -> None:
                 temp_id="step_1",
                 title="Analyze",
                 description="Analyze requirements",
-                assigned_agent="nanobot",
+                assigned_agent="test-agent",
                 blocked_by=[],
                 parallel_group=1,
                 order=1,
@@ -197,7 +173,7 @@ def test_plain_steps_without_workflow_metadata_unaffected() -> None:
                 temp_id="step_2",
                 title="Implement",
                 description="Implement changes",
-                assigned_agent="nanobot",
+                assigned_agent="test-agent",
                 blocked_by=["step_1"],
                 parallel_group=2,
                 order=2,

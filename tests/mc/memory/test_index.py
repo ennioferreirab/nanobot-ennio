@@ -263,11 +263,11 @@ def test_index_reads_embedding_model_from_env(tmp_path, monkeypatch):
 
 
 def test_sync_canonicalizes_shared_symlink_paths(tmp_path):
-    global_memory = tmp_path / "agents" / "nanobot" / "memory"
+    global_memory = tmp_path / "agents" / "test-agent" / "memory"
     global_memory.mkdir(parents=True)
     (global_memory / "MEMORY.md").write_text("Shared banana memory.", encoding="utf-8")
 
-    board_memory = tmp_path / "boards" / "default" / "agents" / "nanobot" / "memory"
+    board_memory = tmp_path / "boards" / "default" / "agents" / "test-agent" / "memory"
     board_memory.mkdir(parents=True)
     (board_memory / "MEMORY.md").symlink_to(global_memory / "MEMORY.md")
     (board_memory / "memory-index.sqlite").symlink_to(global_memory / "memory-index.sqlite")
@@ -297,12 +297,12 @@ def test_sync_canonicalizes_shared_symlink_paths(tmp_path):
 
 
 def test_sync_prunes_legacy_duplicates_for_equivalent_shared_paths(tmp_path):
-    global_memory = tmp_path / "agents" / "nanobot" / "memory"
+    global_memory = tmp_path / "agents" / "test-agent" / "memory"
     global_memory.mkdir(parents=True)
     shared_file = global_memory / "MEMORY.md"
     shared_file.write_text("Shared banana memory.", encoding="utf-8")
 
-    board_memory = tmp_path / "boards" / "default" / "agents" / "nanobot" / "memory"
+    board_memory = tmp_path / "boards" / "default" / "agents" / "test-agent" / "memory"
     board_memory.mkdir(parents=True)
     board_file = board_memory / "MEMORY.md"
     board_file.symlink_to(shared_file)
@@ -351,12 +351,12 @@ def test_sync_prunes_legacy_duplicates_for_equivalent_shared_paths(tmp_path):
 
 
 def test_sync_preserves_clean_board_isolation_for_same_content(tmp_path):
-    global_memory = tmp_path / "agents" / "nanobot" / "memory"
+    global_memory = tmp_path / "agents" / "test-agent" / "memory"
     global_memory.mkdir(parents=True)
     global_file = global_memory / "MEMORY.md"
     global_file.write_text("Shared banana memory.", encoding="utf-8")
 
-    board_memory = tmp_path / "boards" / "clean-board" / "agents" / "nanobot" / "memory"
+    board_memory = tmp_path / "boards" / "clean-board" / "agents" / "test-agent" / "memory"
     board_memory.mkdir(parents=True)
     board_file = board_memory / "MEMORY.md"
     board_file.write_text("Shared banana memory.", encoding="utf-8")

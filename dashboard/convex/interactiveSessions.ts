@@ -82,6 +82,9 @@ export const upsert = internalMutation({
     controlMode: v.optional(interactiveSessionControlModeValidator),
     manualTakeoverAt: v.optional(v.string()),
     manualCompletionRequestedAt: v.optional(v.string()),
+    hasLiveTranscript: v.optional(v.boolean()),
+    liveStorageMode: v.optional(v.union(v.literal("convex"), v.literal("dual"), v.literal("file"))),
+    liveEventCount: v.optional(v.number()),
     bootstrapPrompt: v.optional(v.string()),
     providerSessionId: v.optional(v.string()),
     lastControlCommand: v.optional(v.string()),
@@ -123,6 +126,9 @@ export const upsert = internalMutation({
         controlMode: args.controlMode,
         manualTakeoverAt: args.manualTakeoverAt,
         manualCompletionRequestedAt: args.manualCompletionRequestedAt,
+        hasLiveTranscript: args.hasLiveTranscript,
+        liveStorageMode: args.liveStorageMode,
+        liveEventCount: args.liveEventCount,
         bootstrapPrompt: args.bootstrapPrompt,
         providerSessionId: args.providerSessionId,
         lastControlCommand: args.lastControlCommand,
@@ -162,6 +168,9 @@ export const upsert = internalMutation({
       controlMode: args.controlMode,
       manualTakeoverAt: args.manualTakeoverAt,
       manualCompletionRequestedAt: args.manualCompletionRequestedAt,
+      hasLiveTranscript: args.hasLiveTranscript,
+      liveStorageMode: args.liveStorageMode,
+      liveEventCount: args.liveEventCount,
       bootstrapPrompt: args.bootstrapPrompt,
       providerSessionId: args.providerSessionId,
       lastControlCommand: args.lastControlCommand,
@@ -198,9 +207,18 @@ export const getForRuntime = internalQuery({
 export const listSessions = query({
   args: {
     agentName: v.optional(v.string()),
+    taskId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const agentName = args.agentName;
+    const { taskId, agentName } = args;
+    if (typeof taskId === "string") {
+      const sessions = await ctx.db
+        .query("interactiveSessions")
+        .withIndex("by_taskId", (q) => q.eq("taskId", taskId))
+        .collect();
+      return sessions.map(omitAttachToken);
+    }
+
     if (typeof agentName === "string") {
       const sessions = await ctx.db
         .query("interactiveSessions")

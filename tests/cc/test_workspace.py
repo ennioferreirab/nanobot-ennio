@@ -145,6 +145,9 @@ class TestClaudeMdGeneration:
         ctx = manager.prepare("test-agent", agent, "task123")
 
         content = ctx.claude_md.read_text()
+        assert "AskUserQuestion" in content
+        assert "disabled in Mission Control sessions" in content
+        assert "mcp__mc__ask_user" in content
         assert "structured questions array" in content
         assert "free-text fallback" in content
 
@@ -511,7 +514,9 @@ class TestMcpConfigGeneration:
         server = data["mcpServers"]["openmc"]
 
         assert server["command"] == "uv"
-        assert server["args"] == ["run", "python", "-m", "mc.runtime.mcp.bridge"]
+        assert server["args"][:2] == ["run", "--project"]
+        # args[2] is the resolved project root path (varies per host)
+        assert server["args"][3:] == ["python", "-m", "mc.runtime.mcp.bridge"]
         assert "env" in server
 
     def test_mcp_json_env_vars(self, tmp_path: Path) -> None:

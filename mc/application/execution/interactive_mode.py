@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
 from mc.application.execution.request import RunnerType
+
+logger = logging.getLogger(__name__)
 
 INTERACTIVE_MODE_ENV = "MC_INTERACTIVE_EXECUTION_MODE"
 
@@ -23,12 +26,12 @@ def _resolve_interactive_runner_type(request: Any) -> RunnerType:
     interactive_provider = getattr(agent, "interactive_provider", None) if agent else None
     backend = getattr(agent, "backend", None) if agent else None
     is_interactive = (
-        interactive_provider in {"claude-code", "codex", "mc"}
+        interactive_provider in {"claude-code", "codex"}
         or request.is_cc
         or backend == "claude-code"
     )
     if not is_interactive:
-        return RunnerType.NANOBOT
+        return RunnerType.PROVIDER_CLI
 
     mode = os.environ.get(INTERACTIVE_MODE_ENV, "provider-cli").strip().lower()
     if mode in {"disabled", "off", "headless-only"}:
@@ -37,7 +40,13 @@ def _resolve_interactive_runner_type(request: Any) -> RunnerType:
         )
 
     # Explicit legacy escape hatch: interactive-tui routes to the PTY/tmux runtime.
+    # TUI should only be used for authoring sessions (create squad, etc.).
     if mode == "interactive-tui":
+        logger.warning(
+            "[interactive-mode] Legacy TUI escape hatch active for '%s'. "
+            "TUI should only be used for authoring sessions (create squad).",
+            request.agent_name,
+        )
         return RunnerType.INTERACTIVE_TUI
 
     # All other values (provider-cli, interactive-first, or unrecognised) default

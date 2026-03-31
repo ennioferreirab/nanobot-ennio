@@ -21,7 +21,6 @@ from mc.application.execution.strategies.base import RunnerStrategy
 from mc.application.execution.strategies.claude_code import ClaudeCodeRunnerStrategy
 from mc.application.execution.strategies.human import HumanRunnerStrategy
 from mc.application.execution.strategies.interactive import InteractiveTuiRunnerStrategy
-from mc.application.execution.strategies.nanobot import NanobotRunnerStrategy
 from mc.application.execution.strategies.provider_cli import ProviderCliRunnerStrategy
 
 logger = logging.getLogger(__name__)
@@ -102,7 +101,6 @@ class ExecutionEngine:
             _provider_parser = ClaudeCodeCLIParser(supervisor=_provider_supervisor)
 
             self._strategies = {
-                RunnerType.NANOBOT: NanobotRunnerStrategy(),
                 RunnerType.CLAUDE_CODE: ClaudeCodeRunnerStrategy(),
                 RunnerType.HUMAN: HumanRunnerStrategy(),
                 RunnerType.INTERACTIVE_TUI: InteractiveTuiRunnerStrategy(
@@ -113,7 +111,7 @@ class ExecutionEngine:
                     parser=_provider_parser,
                     registry=_provider_registry,
                     supervisor=_provider_supervisor,
-                    command=["claude", "--verbose", "--output-format", "stream-json", "-p"],
+                    command=["claude", "--verbose", "--output-format", "stream-json"],
                     cwd=".",
                 ),
             }

@@ -332,7 +332,7 @@ async def test_interactive_socket_server_passes_prompt_to_coordinator() -> None:
     )
     load_agent = MagicMock(
         return_value=AgentData(
-            name="nanobot",
+            name="test-agent",
             display_name="Bento",
             role="Assistant",
             backend="claude-code",
@@ -348,7 +348,7 @@ async def test_interactive_socket_server_passes_prompt_to_coordinator() -> None:
     connection = SimpleNamespace(
         request=SimpleNamespace(
             path=(
-                "/interactive?provider=claude-code&agentName=nanobot"
+                "/interactive?provider=claude-code&agentName=test-agent"
                 "&scopeKind=chat&scopeId=create-agent:abc&surface=chat&taskId=create-agent:abc"
                 "&columns=120&rows=40"
                 "&prompt=Use+the+create-agent+skill"

@@ -110,7 +110,7 @@ class TestReviewWorkflowIntegration:
             # ── PHASE 1: TaskExecutor picks up → in_progress → review ────
             executor = TaskExecutor(bridge)
             # Mock only the execution engine strategy — everything else is real
-            fake_engine_strategies = {RunnerType.NANOBOT: _FakeStrategy("Work completed.")}
+            fake_engine_strategies = {RunnerType.PROVIDER_CLI: _FakeStrategy("Work completed.")}
             executor._build_execution_engine = lambda: __import__(  # type: ignore[assignment]
                 "mc.application.execution.engine", fromlist=["ExecutionEngine"]
             ).ExecutionEngine(strategies=fake_engine_strategies, post_execution_hooks=[])
@@ -214,7 +214,7 @@ class TestReviewWorkflowIntegration:
             # ── PHASE 3: TaskExecutor picks up re-assigned task ──────────
             # Worker drives: assigned → in_progress → review (again)
             executor._known_assigned_ids.clear()
-            fake_engine_strategies[RunnerType.NANOBOT] = _FakeStrategy(
+            fake_engine_strategies[RunnerType.PROVIDER_CLI] = _FakeStrategy(
                 "Revision completed: addressed naming and error handling issues."
             )
 

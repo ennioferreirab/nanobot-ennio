@@ -6,7 +6,7 @@ function makeStep(overrides: Partial<EditablePlanStep> & { tempId: string }): Ed
   return {
     title: overrides.tempId,
     description: overrides.tempId,
-    assignedAgent: "nanobot",
+    assignedAgent: "test-agent",
     blockedBy: [],
     parallelGroup: 0,
     order: 0,
@@ -25,7 +25,7 @@ describe("stepsToNodesAndEdges", () => {
     expect(nodes.find((n) => n.id === "__end__")).toBeDefined();
   });
 
-  it("creates edges from blockedBy", () => {
+  it("creates edges from blockedBy with transitive reduction", () => {
     const steps = [
       makeStep({ tempId: "A" }),
       makeStep({ tempId: "B", blockedBy: ["A"] }),
@@ -37,10 +37,10 @@ describe("stepsToNodesAndEdges", () => {
       (e) => e.source !== "__start__" && e.target !== "__end__" && e.source !== "__start__",
     );
     const depEdges = stepEdges.filter((e) => e.source !== "__start__" && e.target !== "__end__");
-    expect(depEdges).toHaveLength(3);
+    // Transitive reduction removes A→C because A→B→C already exists
+    expect(depEdges).toHaveLength(2);
     expect(depEdges[0]).toMatchObject({ source: "A", target: "B" });
-    expect(depEdges[1]).toMatchObject({ source: "A", target: "C" });
-    expect(depEdges[2]).toMatchObject({ source: "B", target: "C" });
+    expect(depEdges[1]).toMatchObject({ source: "B", target: "C" });
   });
 
   it("uses flowStep node type for step nodes", () => {
@@ -104,17 +104,17 @@ describe("layoutWithDagre", () => {
     }
   });
 
-  it("places dependent nodes to the right of their blockers (LR direction)", () => {
+  it("places dependent nodes below their blockers (TB direction)", () => {
     const steps = [makeStep({ tempId: "A" }), makeStep({ tempId: "B", blockedBy: ["A"] })];
     const { nodes, edges } = stepsToNodesAndEdges(steps);
     const positioned = layoutWithDagre(nodes, edges);
 
     const nodeA = positioned.find((n) => n.id === "A")!;
     const nodeB = positioned.find((n) => n.id === "B")!;
-    expect(nodeB.position.x).toBeGreaterThan(nodeA.position.x);
+    expect(nodeB.position.y).toBeGreaterThan(nodeA.position.y);
   });
 
-  it("places parallel nodes at the same x level (same rank in LR)", () => {
+  it("places parallel nodes at the same y level (same rank in TB)", () => {
     const steps = [
       makeStep({ tempId: "A" }),
       makeStep({ tempId: "B", blockedBy: ["A"] }),
@@ -125,7 +125,7 @@ describe("layoutWithDagre", () => {
 
     const nodeB = positioned.find((n) => n.id === "B")!;
     const nodeC = positioned.find((n) => n.id === "C")!;
-    expect(nodeB.position.x).toBe(nodeC.position.x);
+    expect(nodeB.position.y).toBe(nodeC.position.y);
   });
 
   it("handles diamond dependency pattern", () => {
@@ -142,9 +142,9 @@ describe("layoutWithDagre", () => {
     const nodeB = positioned.find((n) => n.id === "B")!;
     const nodeD = positioned.find((n) => n.id === "D")!;
 
-    // A at left, B/C in middle, D at right
-    expect(nodeB.position.x).toBeGreaterThan(nodeA.position.x);
-    expect(nodeD.position.x).toBeGreaterThan(nodeB.position.x);
+    // A at top, B/C in middle, D at bottom (TB layout)
+    expect(nodeB.position.y).toBeGreaterThan(nodeA.position.y);
+    expect(nodeD.position.y).toBeGreaterThan(nodeB.position.y);
   });
 
   it("does not mutate original nodes", () => {

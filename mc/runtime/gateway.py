@@ -20,7 +20,6 @@ import asyncio
 import logging
 import os
 import signal
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mc.application.execution.interactive_mode import INTERACTIVE_MODE_ENV
@@ -28,22 +27,16 @@ from mc.application.execution.interactive_mode import INTERACTIVE_MODE_ENV
 # Re-export AgentGateway from crash_handler for backward compatibility
 from mc.contexts.execution.crash_recovery import AgentGateway  # noqa: F401
 from mc.infrastructure.agent_bootstrap import (  # noqa: F401
-    _NANOBOT_AGENT_CONFIG,
-    NANOBOT_AGENT_NAME,
     _backup_agent_memory,
     _cleanup_deleted_agents,
     _distribute_builtin_skills,
-    _fetch_bot_identity,
     _restore_archived_files,
     _restore_memory_from_backup,
     _sync_embedding_model,
     _sync_model_tiers,
-    _write_back_convex_agents,
     cleanup_orphaned_tasks,
     ensure_low_agent,
-    ensure_nanobot_agent,
     sync_agent_registry,
-    sync_nanobot_default_model,
     sync_skills,
 )
 
@@ -413,13 +406,6 @@ async def main() -> None:
                 for err in errs:
                     logger.warning("[gateway] Agent sync error (%s): %s", filename, err)
 
-        try:
-            updated = sync_nanobot_default_model(bridge)
-            if updated:
-                logger.info("[gateway] Nanobot default model synced from Convex")
-        except Exception:
-            logger.exception("[gateway] Nanobot model sync failed")
-
         # Distribute builtin skills to workspace before sync (Story SK.1)
         try:
             from nanobot.config.loader import load_config as _lc
@@ -427,10 +413,7 @@ async def main() -> None:
             from mc.skills import MC_SKILLS_DIR
 
             _ws = _lc().workspace_path
-            _builtin_dir = (
-                Path(__file__).parent.parent / "vendor" / "nanobot" / "nanobot" / "skills"
-            )
-            _distribute_builtin_skills(_ws / "skills", _builtin_dir, MC_SKILLS_DIR)
+            _distribute_builtin_skills(_ws / "skills", MC_SKILLS_DIR)
         except Exception:
             logger.exception("[gateway] Builtin skill distribution failed")
 

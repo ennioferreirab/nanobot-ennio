@@ -40,6 +40,9 @@ type InteractiveSessionDoc = {
   controlMode?: string;
   manualTakeoverAt?: string;
   manualCompletionRequestedAt?: string;
+  hasLiveTranscript?: boolean;
+  liveStorageMode?: string;
+  liveEventCount?: number;
 };
 
 const takeoverSessionBase: InteractiveSessionDoc = {
@@ -100,10 +103,12 @@ function makeGetCtx(session: InteractiveSessionDoc | null) {
   return { ctx: { db: { query } } };
 }
 
-function makeListCtx(sessions: InteractiveSessionDoc[]) {
+function makeListCtx(sessions: InteractiveSessionDoc[], expectedIndex?: string) {
   const collect = vi.fn(async () => sessions);
   const withIndex = vi.fn((indexName: string) => {
-    expect(indexName).toBe("by_agentName");
+    if (expectedIndex) {
+      expect(indexName).toBe(expectedIndex);
+    }
     return { collect };
   });
   const query = vi.fn((table: string) => {
@@ -111,7 +116,7 @@ function makeListCtx(sessions: InteractiveSessionDoc[]) {
     return { withIndex, collect };
   });
 
-  return { ctx: { db: { query } } };
+  return { ctx: { db: { query } }, withIndex };
 }
 
 function getUpsertHandler() {
@@ -264,6 +269,9 @@ describe("interactiveSessions.upsert", () => {
       taskId: "task-123",
       stepId: "step-456",
       supervisionState: "idle",
+      hasLiveTranscript: true,
+      liveStorageMode: "file",
+      liveEventCount: 12,
     });
 
     expect(inserts).toHaveLength(1);
@@ -281,6 +289,9 @@ describe("interactiveSessions.upsert", () => {
       taskId: "task-123",
       stepId: "step-456",
       supervisionState: "idle",
+      hasLiveTranscript: true,
+      liveStorageMode: "file",
+      liveEventCount: 12,
     });
     expect(inserts[0].value).not.toHaveProperty("output");
     expect(inserts[0].value).not.toHaveProperty("pendingInput");
@@ -321,6 +332,9 @@ describe("interactiveSessions.upsert", () => {
       finalResult: "Implemented the requested step.",
       finalResultSource: "codex-app-server",
       finalResultAt: "2026-03-13T01:12:00.000Z",
+      hasLiveTranscript: true,
+      liveStorageMode: "file",
+      liveEventCount: 13,
     });
 
     expect(inserts).toHaveLength(0);
@@ -340,6 +354,9 @@ describe("interactiveSessions.upsert", () => {
         finalResult: "Implemented the requested step.",
         finalResultSource: "codex-app-server",
         finalResultAt: "2026-03-13T01:12:00.000Z",
+        hasLiveTranscript: true,
+        liveStorageMode: "file",
+        liveEventCount: 13,
       },
     });
     expect(patches[0].patch).not.toHaveProperty("output");
@@ -385,11 +402,61 @@ describe("interactiveSessions queries", () => {
         updatedAt: "2026-03-12T22:00:00.000Z",
       },
     ];
-    const { ctx } = makeListCtx(sessions);
+    const { ctx } = makeListCtx(sessions, "by_agentName");
 
     const result = await handler(ctx, { agentName: "claude-pair" });
 
     expect(result).toEqual(sessions);
+  });
+
+  it("lists sessions filtered by taskId using the by_taskId index", async () => {
+    const handler = getListHandler();
+    const sessions = [
+      {
+        sessionId: "session-456",
+        agentName: "claude-pair",
+        provider: "claude-code",
+        scopeKind: "task",
+        surface: "step",
+        tmuxSession: "mc-int-456",
+        status: "attached",
+        capabilities: ["tui"],
+        createdAt: "2026-03-12T22:00:00.000Z",
+        updatedAt: "2026-03-12T22:00:00.000Z",
+        taskId: "task-789",
+      },
+    ];
+    const { ctx, withIndex } = makeListCtx(sessions, "by_taskId");
+
+    const result = await handler(ctx, { taskId: "task-789" });
+
+    expect(result).toEqual(sessions);
+    expect(withIndex).toHaveBeenCalledWith("by_taskId", expect.any(Function));
+  });
+
+  it("prefers taskId filter over agentName when both are provided", async () => {
+    const handler = getListHandler();
+    const sessions = [
+      {
+        sessionId: "session-789",
+        agentName: "claude-pair",
+        provider: "claude-code",
+        scopeKind: "task",
+        surface: "step",
+        tmuxSession: "mc-int-789",
+        status: "ready",
+        capabilities: ["tui"],
+        createdAt: "2026-03-12T22:00:00.000Z",
+        updatedAt: "2026-03-12T22:00:00.000Z",
+        taskId: "task-abc",
+      },
+    ];
+    const { ctx, withIndex } = makeListCtx(sessions, "by_taskId");
+
+    const result = await handler(ctx, { taskId: "task-abc", agentName: "claude-pair" });
+
+    expect(result).toEqual(sessions);
+    expect(withIndex).toHaveBeenCalledWith("by_taskId", expect.any(Function));
   });
 });
 

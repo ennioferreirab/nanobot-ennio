@@ -1,6 +1,7 @@
 "use client";
 
-import { Loader2, Paperclip, RotateCcw, SendHorizontal } from "lucide-react";
+import { Loader2, RotateCcw, SendHorizontal } from "lucide-react";
+import { AttachButton } from "@/components/AttachButton";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { AgentMentionAutocomplete } from "@/components/AgentMentionAutocomplete";
 import { FileChip } from "@/components/FileChip";
@@ -161,20 +162,13 @@ export function ThreadInput({ task, onMessageSent, mode = "default" }: ThreadInp
               >
                 <SendHorizontal className="h-4 w-4" />
               </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-[38px] w-10"
-                onClick={openFilePicker}
-                disabled={isSubmitting || isUploading}
-                title="Attach files"
-              >
-                {isUploading ? (
+              {isUploading ? (
+                <Button size="icon" variant="ghost" className="h-[38px] w-10" disabled>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Paperclip className="h-4 w-4" />
-                )}
-              </Button>
+                </Button>
+              ) : (
+                <AttachButton onClick={openFilePicker} disabled={isSubmitting || isUploading} />
+              )}
             </div>
           </div>
           <input
@@ -206,7 +200,7 @@ export function ThreadInput({ task, onMessageSent, mode = "default" }: ThreadInp
               <SelectContent>
                 {filteredAgents?.map((agent) => (
                   <SelectItem key={agent._id} value={agent.name} className="text-xs">
-                    {agent.displayName || agent.name}
+                    {agent.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -253,20 +247,13 @@ export function ThreadInput({ task, onMessageSent, mode = "default" }: ThreadInp
             >
               <SendHorizontal className="h-4 w-4" />
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-[38px] w-10"
-              onClick={openFilePicker}
-              disabled={isSubmitting || isUploading}
-              title="Attach files"
-            >
-              {isUploading ? (
+            {isUploading ? (
+              <Button size="icon" variant="ghost" className="h-[38px] w-10" disabled>
                 <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Paperclip className="h-4 w-4" />
-              )}
-            </Button>
+              </Button>
+            ) : (
+              <AttachButton onClick={openFilePicker} disabled={isSubmitting || isUploading} />
+            )}
           </div>
           {mentionQuery !== null && !isPlanChatMode && !isReplyOnlyThread && filteredAgents && (
             <AgentMentionAutocomplete

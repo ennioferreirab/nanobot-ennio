@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from claude_code.ipc_server import MCSocketServer
+from claude_code.tool_policy import merge_mc_disallowed_tools
 from claude_code.workspace import CCWorkspaceManager
 
 from mc.contexts.interactive.errors import (
@@ -77,9 +78,7 @@ class ClaudeCodeInteractiveAdapter:
         memory_workspace: Path | None = None,
         resume_session_id: str | None = None,
     ) -> InteractiveLaunchSpec:
-        from mc.types import NANOBOT_AGENT_NAME
-
-        if not board_name and agent.name != NANOBOT_AGENT_NAME:
+        if not board_name:
             raise InteractiveSessionBootstrapError(
                 f"Agent '{agent.name}' requires a board-scoped workspace — "
                 "no board_name provided for interactive session."
@@ -163,7 +162,7 @@ class ClaudeCodeInteractiveAdapter:
         for tool in allowed_tools:
             cmd.extend(["--allowedTools", tool])
 
-        for tool in (cc and cc.disallowed_tools) or []:
+        for tool in merge_mc_disallowed_tools((cc and cc.disallowed_tools) or None):
             cmd.extend(["--disallowedTools", tool])
 
         if cc and cc.effort_level:

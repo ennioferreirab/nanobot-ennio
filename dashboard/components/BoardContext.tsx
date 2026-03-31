@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { Id } from "@/convex/_generated/dataModel";
 import { useBoardProviderData } from "@/features/boards/hooks/useBoardProviderData";
 
-const LOCAL_STORAGE_KEY = "nanobot-active-board";
+const LOCAL_STORAGE_KEY = "oc-active-board";
 
 const MAX_OPEN_TERMINALS = 4;
 

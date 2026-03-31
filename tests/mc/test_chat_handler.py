@@ -106,7 +106,7 @@ class TestProcessChatMessage:
                 agents_dir,
             ),
             patch(
-                "mc.contexts.conversation.chat_handler.ExecutionEngine",
+                "mc.application.execution.post_processing.build_execution_engine",
                 return_value=mock_engine,
             ),
         ):
@@ -157,7 +157,7 @@ class TestProcessChatMessage:
             ),
             patch("mc.infrastructure.config.AGENTS_DIR", agents_dir),
             patch(
-                "mc.contexts.conversation.chat_handler.ExecutionEngine",
+                "mc.application.execution.post_processing.build_execution_engine",
                 return_value=mock_engine,
             ),
             patch(
@@ -244,7 +244,7 @@ class TestProcessChatMessageErrors:
                 agents_dir,
             ),
             patch(
-                "mc.contexts.conversation.chat_handler.ExecutionEngine",
+                "mc.application.execution.post_processing.build_execution_engine",
                 return_value=mock_engine,
             ),
         ):
@@ -614,7 +614,7 @@ class TestCCModelRouting:
             ),
             patch("mc.infrastructure.config.AGENTS_DIR", agents_dir),
             patch(
-                "mc.contexts.conversation.chat_handler.ExecutionEngine",
+                "mc.application.execution.post_processing.build_execution_engine",
                 return_value=mock_engine,
             ),
         ):
@@ -633,8 +633,8 @@ class TestCCModelRouting:
         bridge.mark_chat_done.assert_called_once_with("chat123")
 
     @pytest.mark.asyncio
-    async def test_cc_request_has_claude_code_runner_type(self, tmp_path):
-        """CC chat request should have RunnerType.CLAUDE_CODE."""
+    async def test_cc_request_has_provider_cli_runner_type(self, tmp_path):
+        """CC chat request should use RunnerType.PROVIDER_CLI (headless)."""
         from mc.contexts.conversation.chat_handler import ChatHandler
 
         bridge = self._make_cc_bridge()
@@ -662,18 +662,18 @@ class TestCCModelRouting:
             ),
             patch("mc.infrastructure.config.AGENTS_DIR", agents_dir),
             patch(
-                "mc.contexts.conversation.chat_handler.ExecutionEngine",
+                "mc.application.execution.post_processing.build_execution_engine",
                 return_value=mock_engine,
             ),
         ):
             await handler._process_chat_message(msg)
 
         assert len(captured_requests) == 1
-        assert captured_requests[0].runner_type == RunnerType.CLAUDE_CODE
+        assert captured_requests[0].runner_type == RunnerType.PROVIDER_CLI
 
     @pytest.mark.asyncio
-    async def test_non_cc_model_routes_through_nanobot_engine(self, tmp_path):
-        """Non cc/ model goes through ExecutionEngine with NANOBOT runner."""
+    async def test_non_cc_model_routes_through_provider_cli_engine(self, tmp_path):
+        """Non cc/ model goes through ExecutionEngine with PROVIDER_CLI runner."""
         from mc.contexts.conversation.chat_handler import ChatHandler
 
         bridge = self._make_cc_bridge()
@@ -701,7 +701,7 @@ class TestCCModelRouting:
             ),
             patch("mc.infrastructure.config.AGENTS_DIR", agents_dir),
             patch(
-                "mc.contexts.conversation.chat_handler.ExecutionEngine",
+                "mc.application.execution.post_processing.build_execution_engine",
                 return_value=mock_engine,
             ),
         ):
@@ -710,9 +710,9 @@ class TestCCModelRouting:
         # Engine was called
         mock_engine.run.assert_called_once()
 
-        # Request has nanobot runner type
+        # Request has provider-cli runner type
         req = mock_engine.run.call_args[0][0]
-        assert req.runner_type == RunnerType.NANOBOT
+        assert req.runner_type == RunnerType.PROVIDER_CLI
 
         # Response sent
         bridge.send_chat_response.assert_called_once()
@@ -753,7 +753,7 @@ class TestCCModelRouting:
             ),
             patch("mc.infrastructure.config.AGENTS_DIR", agents_dir),
             patch(
-                "mc.contexts.conversation.chat_handler.ExecutionEngine",
+                "mc.application.execution.post_processing.build_execution_engine",
                 return_value=mock_engine,
             ),
         ):
@@ -813,8 +813,8 @@ class TestChatHandlerEngineIntegration:
     """Verify chat_handler routes CC and nanobot execution through ExecutionEngine."""
 
     @pytest.mark.asyncio
-    async def test_cc_chat_routes_through_engine(self, tmp_path):
-        """CC-model chat messages should route through ExecutionEngine.run()."""
+    async def test_cc_chat_routes_through_headless_provider_cli(self, tmp_path):
+        """CC-model chat messages should route through headless PROVIDER_CLI engine."""
         from mc.contexts.conversation.chat_handler import ChatHandler
 
         bridge = _make_bridge()
@@ -849,7 +849,7 @@ class TestChatHandlerEngineIntegration:
             ),
             patch("mc.infrastructure.config.AGENTS_DIR", agents_dir),
             patch(
-                "mc.contexts.conversation.chat_handler.ExecutionEngine",
+                "mc.application.execution.post_processing.build_execution_engine",
                 return_value=mock_engine,
             ),
         ):
@@ -861,7 +861,7 @@ class TestChatHandlerEngineIntegration:
         # The request is correctly typed
         req = mock_engine.run.call_args[0][0]
         assert isinstance(req, ExecutionRequest)
-        assert req.runner_type == RunnerType.CLAUDE_CODE
+        assert req.runner_type == RunnerType.PROVIDER_CLI
         assert req.agent_name == "cc-agent"
 
         # Response was sent
@@ -910,7 +910,7 @@ class TestChatHandlerEngineIntegration:
             ),
             patch("mc.infrastructure.config.AGENTS_DIR", agents_dir),
             patch(
-                "mc.contexts.conversation.chat_handler.ExecutionEngine",
+                "mc.application.execution.post_processing.build_execution_engine",
                 return_value=mock_engine,
             ),
         ):
@@ -959,7 +959,7 @@ class TestChatHandlerEngineIntegration:
             ),
             patch("mc.infrastructure.config.AGENTS_DIR", agents_dir),
             patch(
-                "mc.contexts.conversation.chat_handler.ExecutionEngine",
+                "mc.application.execution.post_processing.build_execution_engine",
                 return_value=mock_engine,
             ),
             patch(
@@ -974,14 +974,14 @@ class TestChatHandlerEngineIntegration:
         assert req.session_boundary_reason is None
 
     @pytest.mark.asyncio
-    async def test_nanobot_chat_routes_through_engine(self, tmp_path):
-        """Non-CC model chat should route through ExecutionEngine with NANOBOT runner."""
+    async def test_non_cc_chat_routes_through_provider_cli_engine(self, tmp_path):
+        """Non-CC model chat should route through ExecutionEngine with PROVIDER_CLI runner."""
         from mc.contexts.conversation.chat_handler import ChatHandler
 
         bridge = _make_bridge()
         bridge.get_agent_by_name = MagicMock(return_value=None)
         handler = ChatHandler(bridge)
-        msg = _make_pending_msg(agent_name="nb-agent", content="Hello nanobot!")
+        msg = _make_pending_msg(agent_name="nb-agent", content="Hello agent!")
 
         agents_dir = tmp_path / "agents"
         config_dir = agents_dir / "nb-agent"
@@ -990,7 +990,7 @@ class TestChatHandlerEngineIntegration:
 
         engine_result = ExecutionResult(
             success=True,
-            output="Nanobot response",
+            output="Agent response",
             session_id="nb-sess-1",
         )
 
@@ -1009,7 +1009,7 @@ class TestChatHandlerEngineIntegration:
             ),
             patch("mc.infrastructure.config.AGENTS_DIR", agents_dir),
             patch(
-                "mc.contexts.conversation.chat_handler.ExecutionEngine",
+                "mc.application.execution.post_processing.build_execution_engine",
                 return_value=mock_engine,
             ),
         ):
@@ -1018,14 +1018,14 @@ class TestChatHandlerEngineIntegration:
         # ExecutionEngine.run() was called
         mock_engine.run.assert_called_once()
 
-        # The request has NANOBOT runner type
+        # The request has PROVIDER_CLI runner type
         req = mock_engine.run.call_args[0][0]
         assert isinstance(req, ExecutionRequest)
-        assert req.runner_type == RunnerType.NANOBOT
+        assert req.runner_type == RunnerType.PROVIDER_CLI
         assert req.agent_name == "nb-agent"
 
         # Response was sent
         bridge.send_chat_response.assert_called_once()
         call_args = bridge.send_chat_response.call_args[0]
         assert call_args[0] == "nb-agent"
-        assert call_args[1] == "Nanobot response"
+        assert call_args[1] == "Agent response"

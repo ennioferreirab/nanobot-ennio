@@ -94,10 +94,6 @@ vi.mock("@/features/agents/components/SquadSidebarSection", () => ({
   ),
 }));
 
-vi.mock("@/features/agents/hooks/useNanobotProvider", () => ({
-  useNanobotProvider: () => "claude-code",
-}));
-
 vi.mock("@/features/agents/components/AgentTerminal", () => ({
   AgentTerminal: () => <div data-testid="agent-terminal-container" />,
 }));

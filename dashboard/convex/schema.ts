@@ -24,6 +24,7 @@ export const stepStatusValidator = v.union(
   v.literal("running"),
   v.literal("review"),
   v.literal("completed"),
+  v.literal("skipped"),
   v.literal("crashed"),
   v.literal("blocked"),
   v.literal("waiting_human"),
@@ -75,6 +76,7 @@ export const activityEventTypeValidator = v.union(
   v.literal("step_dispatched"),
   v.literal("step_started"),
   v.literal("step_completed"),
+  v.literal("step_skipped"),
   v.literal("step_created"),
   v.literal("step_status_changed"),
   v.literal("step_unblocked"),
@@ -110,7 +112,6 @@ export const reviewScopeValidator = v.union(
 export const workflowStepTypeValidator = v.union(
   v.literal("agent"),
   v.literal("human"),
-  v.literal("checkpoint"),
   v.literal("review"),
   v.literal("system"),
 );
@@ -133,6 +134,9 @@ export const taskFileMetadataValidator = v.object({
   subfolder: v.string(),
   uploadedAt: v.string(),
   restoredAt: v.optional(v.string()),
+  stepId: v.optional(v.id("steps")),
+  isFavorite: v.optional(v.boolean()),
+  isArchived: v.optional(v.boolean()),
 });
 
 export const taskFilesValidator = v.optional(v.array(taskFileMetadataValidator));
@@ -175,7 +179,7 @@ export const executionInteractionStateValidator = v.union(
 export const skillProviderValidator = v.union(
   v.literal("claude-code"),
   v.literal("codex"),
-  v.literal("nanobot"),
+  v.literal("nanobot"), // legacy — kept for existing data compatibility
 );
 
 export default defineSchema({
@@ -245,6 +249,8 @@ export default defineSchema({
     workflowSpecId: v.optional(v.id("workflowSpecs")),
     createdAt: v.string(),
     updatedAt: v.string(),
+    startedAt: v.optional(v.string()),
+    completedAt: v.optional(v.string()),
   })
     .index("by_status", ["status"])
     .index("by_boardId", ["boardId"])
@@ -287,6 +293,9 @@ export default defineSchema({
     reviewSpecId: v.optional(v.id("reviewSpecs")),
     onRejectStepId: v.optional(v.string()),
     rejectionCount: v.optional(v.number()),
+    // Skip configuration — when true, execution engine bypasses this step.
+    skip: v.optional(v.boolean()),
+    skippedAt: v.optional(v.string()),
   })
     .index("by_taskId", ["taskId"])
     .index("by_status", ["status"]),
@@ -377,7 +386,7 @@ export default defineSchema({
 
   agents: defineTable({
     name: v.string(),
-    displayName: v.string(),
+    displayName: v.optional(v.string()),
     role: v.string(),
     prompt: v.optional(v.string()),
     soul: v.optional(v.string()),
@@ -411,7 +420,6 @@ export default defineSchema({
             historyContent: v.optional(v.string()),
           }),
         ),
-        // Nanobot-only: global workspace backup (not board-scoped)
         globalMemoryContent: v.optional(v.string()),
         globalHistoryContent: v.optional(v.string()),
         lastBackupAt: v.string(),
@@ -505,7 +513,7 @@ export default defineSchema({
 
   agentSpecs: defineTable({
     name: v.string(),
-    displayName: v.string(),
+    displayName: v.optional(v.string()),
     role: v.string(),
     purpose: v.optional(v.string()),
     nonGoals: v.optional(v.array(v.string())),
@@ -521,6 +529,8 @@ export default defineSchema({
     reviewPolicyRef: v.optional(v.string()),
     skills: v.optional(v.array(v.string())),
     model: v.optional(v.string()),
+    prompt: v.optional(v.string()),
+    soul: v.optional(v.string()),
     status: v.union(v.literal("draft"), v.literal("published"), v.literal("archived")),
     version: v.number(),
     compiledAgentId: v.optional(v.id("agents")),
@@ -533,7 +543,7 @@ export default defineSchema({
 
   squadSpecs: defineTable({
     name: v.string(),
-    displayName: v.string(),
+    displayName: v.optional(v.string()),
     description: v.optional(v.string()),
     outcome: v.optional(v.string()),
     reviewPolicy: v.optional(v.string()),
@@ -562,7 +572,6 @@ export default defineSchema({
         type: v.union(
           v.literal("agent"),
           v.literal("human"),
-          v.literal("checkpoint"),
           v.literal("review"),
           v.literal("system"),
         ),
@@ -758,6 +767,9 @@ export default defineSchema({
     controlMode: v.optional(interactiveSessionControlModeValidator),
     manualTakeoverAt: v.optional(v.string()),
     manualCompletionRequestedAt: v.optional(v.string()),
+    hasLiveTranscript: v.optional(v.boolean()),
+    liveStorageMode: v.optional(v.union(v.literal("convex"), v.literal("dual"), v.literal("file"))),
+    liveEventCount: v.optional(v.number()),
     // Provider-CLI metadata (Stories 28-19, 28-22, 28-26)
     bootstrapPrompt: v.optional(v.string()),
     providerSessionId: v.optional(v.string()),
@@ -768,7 +780,8 @@ export default defineSchema({
     .index("by_sessionId", ["sessionId"])
     .index("by_agentName", ["agentName"])
     .index("by_provider", ["provider"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_taskId", ["taskId"]),
 
   // ---------------------------------------------------------------------------
   // Integration Tables (Linear adapter V1)

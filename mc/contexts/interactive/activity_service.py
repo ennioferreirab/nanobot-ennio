@@ -1,45 +1,57 @@
-"""Unified service for persisting interactive session state and activity events.
+"""SHARED: Unified service for persisting session state and activity events.
 
-Provides a single API for all runner strategies (nanobot, provider-cli, future
+Provides a single API for all runner strategies (provider-cli, interactive, future
 runners) to communicate with the dashboard Live tab infrastructure.
 
-Both ``interactiveSessions`` and ``sessionActivityLog`` Convex tables are
-written through this service, eliminating duplicated payload-building logic
-across strategies.
+Session discovery metadata remains in ``interactiveSessions`` while the Live
+transcript itself is persisted in the file-backed ``LiveSessionStore``.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from mc.bridge.overflow import safe_string_for_convex
+from mc.contexts.interactive.live_store import LiveSessionStore
 from mc.infrastructure.runtime_home import get_tasks_dir
 
 logger = logging.getLogger(__name__)
 
 
-def _resolve_overflow_dir(session_id: str) -> Path | None:
+def _resolve_overflow_dir(task_id: str) -> Path | None:
     """Return the overflow directory for large content, or None."""
     try:
-        task_id = session_id.split("-")[0] if "-" in session_id else session_id
         return get_tasks_dir() / task_id / "output" / "_overflow"
     except Exception:
         return None
+
+
+BATCH_SIZE_THRESHOLD = 20
+BATCH_TIME_THRESHOLD_SECONDS = 0.3
 
 
 class SessionActivityService:
     """Unified service for session metadata and activity log persistence.
 
     All runner strategies should use this service instead of calling
-    ``bridge.mutation`` directly for session and activity log writes.
+    ``bridge.mutation`` directly for session and live metadata writes.
+
+    Live transcript events are written directly to the file-backed store.
+    A lightweight in-memory buffer is retained only so existing lifecycle
+    callers can continue to invoke ``flush()`` safely.
     """
 
     def __init__(self, bridge: Any | None = None) -> None:
         self._bridge = bridge
+        self._event_buffer: list[dict[str, Any]] = []
+        self._last_flush_time: float = time.monotonic()
+        self._live_store = LiveSessionStore()
+        self._session_task_ids: dict[str, str] = {}
 
     @property
     def has_bridge(self) -> bool:
@@ -70,8 +82,6 @@ class SessionActivityService:
         (``bootstrap_prompt``, ``provider_session_id``, etc.) pass through
         via ``**extra``.
         """
-        if self._bridge is None:
-            return
         timestamp = datetime.now(UTC).isoformat()
         metadata: dict[str, Any] = {
             "session_id": session_id,
@@ -88,6 +98,8 @@ class SessionActivityService:
         }
         if step_id is not None:
             metadata["step_id"] = step_id
+        if task_id is not None:
+            self._session_task_ids[session_id] = task_id
         if final_result is not None:
             metadata["final_result"] = final_result
             metadata["final_result_source"] = provider
@@ -96,17 +108,25 @@ class SessionActivityService:
             metadata["last_error"] = last_error
         if status in ("ended", "error"):
             metadata["ended_at"] = timestamp
+            # Flush any buffered activity events before session ends
+            self.flush()
+        metadata["has_live_transcript"] = True
+        metadata["live_storage_mode"] = "file"
         # Provider-specific extras (bootstrap_prompt, provider_session_id, …)
         for key, value in extra.items():
             if value is not None:
                 metadata[key] = value
+        stored_meta = self._live_store.upsert_session(metadata)
+        metadata["live_event_count"] = stored_meta.get(
+            "eventCount", metadata.get("live_event_count", 0)
+        )
         try:
             self._bridge.mutation("interactiveSessions:upsert", metadata)
         except Exception:
             logger.debug("[activity-service] Failed to upsert session %s", session_id)
 
     # ------------------------------------------------------------------
-    # Activity log events (sessionActivityLog:append)
+    # Live transcript events (file-backed store)
     # ------------------------------------------------------------------
 
     def append_event(
@@ -135,9 +155,8 @@ class SessionActivityService:
         Extra keyword arguments are included in the payload as-is.
         ``ts`` overrides the event timestamp; defaults to now (UTC).
         """
-        if self._bridge is None:
-            return
-        overflow_dir = _resolve_overflow_dir(session_id)
+        task_id = self._session_task_ids.get(session_id) or session_id
+        overflow_dir = _resolve_overflow_dir(task_id)
         payload: dict[str, Any] = {
             "session_id": session_id,
             "kind": kind,
@@ -167,14 +186,14 @@ class SessionActivityService:
             payload["raw_text"] = safe_string_for_convex(
                 raw_text,
                 field_name="raw_text",
-                task_id=session_id,
+                task_id=task_id,
                 overflow_dir=overflow_dir,
             )
         if raw_json is not None:
             payload["raw_json"] = safe_string_for_convex(
                 raw_json,
                 field_name="raw_json",
-                task_id=session_id,
+                task_id=task_id,
                 overflow_dir=overflow_dir,
             )
 
@@ -182,10 +201,37 @@ class SessionActivityService:
             if value is not None:
                 payload[key] = value
 
-        try:
-            self._bridge.mutation("sessionActivityLog:append", payload)
-        except Exception:
-            logger.debug("[activity-service] Failed to append event kind=%s", kind)
+        # Always persist Live transcripts to the file-backed store.
+        self._live_store.append_event(
+            {**payload, "task_id": task_id, "status": extra.get("status")}
+        )
+
+        self._event_buffer.append(payload)
+
+        # Flush if buffer is full or time threshold exceeded
+        now = time.monotonic()
+        if (
+            len(self._event_buffer) >= BATCH_SIZE_THRESHOLD
+            or now - self._last_flush_time > BATCH_TIME_THRESHOLD_SECONDS
+        ):
+            self._flush_buffer()
+
+    def flush(self) -> None:
+        """Clear any buffered compatibility events.
+
+        Should be called at session boundaries and error paths to avoid
+        retaining stale compatibility state in memory.
+        """
+        if self._event_buffer:
+            self._flush_buffer()
+
+    def _flush_buffer(self) -> None:
+        """Reset the compatibility buffer after file-backed persistence."""
+        if not self._event_buffer:
+            return
+
+        self._event_buffer = []
+        self._last_flush_time = time.monotonic()
 
     def append_result(
         self,
@@ -209,6 +255,8 @@ class SessionActivityService:
             summary=content[:1000],
             raw_text=content,
         )
+        # Result marks end of execution -- flush remaining events
+        self.flush()
 
     def append_parsed_cli_event(
         self,
@@ -228,9 +276,6 @@ class SessionActivityService:
         log format.  This preserves the rich metadata that CLI parsers
         produce (tool_input, turn_id, source_type, etc.).
         """
-        if self._bridge is None:
-            return
-
         metadata = event_metadata or {}
 
         # Base fields
@@ -248,6 +293,8 @@ class SessionActivityService:
                     tool_input_str = raw_tool_input
                 else:
                     tool_input_str = json.dumps(raw_tool_input, ensure_ascii=True, sort_keys=True)
+        elif event_kind == "tool_result":
+            summary = event_text
         elif event_kind == "error":
             error_str = event_text or "Provider CLI error"
         else:

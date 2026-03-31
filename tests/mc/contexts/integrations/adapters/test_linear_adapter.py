@@ -369,7 +369,7 @@ class TestNormalizeWebhookComment:
                 "id": "comment-mc",
                 "issueId": "issue-10",
                 "body": "[MC] **MC Summary** Work complete.",
-                "user": {"name": "nanobot"},
+                "user": {"name": "open-control"},
             },
         }
 
@@ -408,7 +408,7 @@ class TestNormalizeWebhookLoopPrevention:
             "type": "Issue",
             "webhookId": "wh-12",
             "createdAt": "2024-01-12T00:00:00Z",
-            "actor": {"type": "application", "name": "nanobot"},
+            "actor": {"type": "application", "name": "open-control"},
             "data": {"id": "issue-12", "title": "Auto-created"},
         }
 

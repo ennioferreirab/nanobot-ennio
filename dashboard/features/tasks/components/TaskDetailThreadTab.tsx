@@ -5,10 +5,13 @@ import * as motion from "motion/react-client";
 import { X, ChevronDown } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { ThreadInput } from "@/features/thread/components/ThreadInput";
 import { ThreadMessage } from "@/features/thread/components/ThreadMessage";
+import { ChatBubble } from "@/features/thread/components/ChatBubble";
+import { StepDivider } from "@/features/thread/components/StepDivider";
+import { getAvatarHexColor } from "@/lib/agentUtils";
+import { formatDuration } from "@/lib/formatDuration";
 import type {
   MergeSourceThread,
   TaskDetailViewData,
@@ -31,6 +34,7 @@ interface TaskDetailThreadTabProps {
   onMessageSent: () => void;
   filterStepIds?: Set<string>;
   onFilterStepIdsChange?: (stepIds: Set<string>) => void;
+  hideFilterBar?: boolean;
 }
 
 export function TaskDetailThreadTab({
@@ -48,11 +52,25 @@ export function TaskDetailThreadTab({
   onMessageSent,
   filterStepIds,
   onFilterStepIdsChange,
+  hideFilterBar,
 }: TaskDetailThreadTabProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [collapsedSteps, setCollapsedSteps] = useState<Set<string>>(new Set());
 
   const hasFilter = (filterStepIds?.size ?? 0) > 0;
+
+  // Collect ALL artifact paths across every message so any message can
+  // link to any file produced anywhere in the task.
+  const allArtifactPaths = useMemo(() => {
+    const paths = new Set<string>();
+    for (const msg of messages ?? []) {
+      for (const a of msg.artifacts ?? []) {
+        paths.add(a.path);
+      }
+    }
+    return paths;
+  }, [messages]);
 
   const completedSteps = useMemo(
     () => liveSteps?.filter((s) => s.status === "completed") ?? [],
@@ -134,8 +152,8 @@ export function TaskDetailThreadTab({
   }, [dropdownOpen]);
 
   return (
-    <TabsContent value="thread" className="flex-1 min-h-0 m-0 data-[state=active]:flex flex-col">
-      {onFilterStepIdsChange && completedSteps.length > 0 && (
+    <div className="flex-1 min-h-0 flex flex-col">
+      {onFilterStepIdsChange && completedSteps.length > 0 && !hideFilterBar && (
         <div className="flex flex-wrap items-center gap-2 border-b border-border bg-background px-6 py-2">
           <div ref={dropdownRef} className="relative">
             <button
@@ -194,7 +212,7 @@ export function TaskDetailThreadTab({
           )}
         </div>
       )}
-      <ScrollArea ref={scrollAreaRef} className="flex-1">
+      <ScrollArea ref={scrollAreaRef} className="flex-1" constrainWidth>
         {filteredMessages === undefined ? (
           <p className="px-6 py-8 text-center text-sm text-muted-foreground">Loading messages...</p>
         ) : filteredMessages.length === 0 && !hasSourceThreads ? (
@@ -248,6 +266,7 @@ export function TaskDetailThreadTab({
                                   steps={undefined}
                                   onArtifactClick={handleOpenArtifact}
                                   taskIdOverride={sourceThread.taskId}
+                                  allArtifactPaths={allArtifactPaths}
                                 />
                               ))
                             )}
@@ -261,7 +280,7 @@ export function TaskDetailThreadTab({
             )}
             <div
               data-testid="thread-live-messages"
-              className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-2 px-6 py-4"
+              className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-2 px-2 md:px-6 py-4 overflow-hidden"
             >
               {filteredMessages.length === 0 && (
                 <p className="py-8 text-center text-sm text-muted-foreground">
@@ -270,20 +289,119 @@ export function TaskDetailThreadTab({
                     : "No messages yet. Agent activity will appear here."}
                 </p>
               )}
-              {filteredMessages.map((msg) => (
-                <motion.div
-                  key={msg._id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.2 }}
-                >
-                  <ThreadMessage
-                    message={msg}
-                    steps={liveSteps ?? undefined}
-                    onArtifactClick={handleOpenArtifact}
-                  />
-                </motion.div>
-              ))}
+              {(() => {
+                const stepsById = new Map((liveSteps ?? []).map((s) => [s._id, s]));
+                // Build parallel group info
+                const parallelGroups = new Map<number, string[]>();
+                for (const s of liveSteps ?? []) {
+                  const group = parallelGroups.get(s.parallelGroup) ?? [];
+                  group.push(s._id);
+                  parallelGroups.set(s.parallelGroup, group);
+                }
+
+                const nonDeletedSteps = (liveSteps ?? []).filter((s) => s.status !== "deleted");
+                let lastStepId: string | undefined;
+                let dividerIndex = 0;
+                const threadElements: React.ReactNode[] = [];
+
+                for (const msg of filteredMessages) {
+                  // Insert StepDivider when stepId changes
+                  if (msg.stepId && msg.stepId !== lastStepId) {
+                    const step = stepsById.get(msg.stepId);
+                    if (step) {
+                      const pgMembers = parallelGroups.get(step.parallelGroup);
+                      const isParallel = (pgMembers?.length ?? 0) > 1;
+                      const stepIndex = nonDeletedSteps.findIndex((s) => s._id === step._id) + 1;
+
+                      const stepId = step._id;
+                      threadElements.push(
+                        <StepDivider
+                          key={`divider-${msg.stepId}-${dividerIndex++}`}
+                          stepName={
+                            isParallel
+                              ? `Steps ${stepIndex}–${stepIndex + (pgMembers!.length - 1)} (parallel)`
+                              : `Step ${stepIndex}: ${step.title ?? "Untitled"}`
+                          }
+                          status={
+                            step.status === "completed"
+                              ? "done"
+                              : step.status === "running"
+                                ? "running"
+                                : "queued"
+                          }
+                          duration={
+                            step.completedAt && step.startedAt
+                              ? formatDuration(step.startedAt, step.completedAt)
+                              : undefined
+                          }
+                          isParallel={isParallel}
+                          isCollapsed={collapsedSteps.has(stepId)}
+                          onToggleCollapse={() => {
+                            setCollapsedSteps((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(stepId)) next.delete(stepId);
+                              else next.add(stepId);
+                              return next;
+                            });
+                          }}
+                        />,
+                      );
+                    }
+                    lastStepId = msg.stepId;
+                  }
+
+                  // Skip messages for collapsed steps
+                  if (msg.stepId && collapsedSteps.has(msg.stepId)) continue;
+
+                  // Determine step label for parallel messages
+                  const msgStep = msg.stepId ? stepsById.get(msg.stepId) : undefined;
+                  const pgMembers = msgStep ? parallelGroups.get(msgStep.parallelGroup) : undefined;
+                  const isInParallel = (pgMembers?.length ?? 0) > 1;
+                  const stepNumber = msgStep
+                    ? nonDeletedSteps.findIndex((s) => s._id === msgStep._id) + 1
+                    : undefined;
+
+                  threadElements.push(
+                    <motion.div
+                      key={msg._id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.2 }}
+                    >
+                      <ChatBubble
+                        authorType={
+                          msg.authorType === "user"
+                            ? "user"
+                            : msg.type === "system_error" || msg.type === "step_completion"
+                              ? "system"
+                              : "agent"
+                        }
+                        messageType={msg.type ?? undefined}
+                        agentColor={
+                          msg.authorType === "agent"
+                            ? getAvatarHexColor(msg.authorName ?? "agent")
+                            : undefined
+                        }
+                        stepLabel={isInParallel && stepNumber ? `Step ${stepNumber}` : undefined}
+                        stepLabelColor={
+                          msg.authorType === "agent"
+                            ? getAvatarHexColor(msg.authorName ?? "agent")
+                            : undefined
+                        }
+                      >
+                        <ThreadMessage
+                          message={msg}
+                          steps={liveSteps ?? undefined}
+                          onArtifactClick={handleOpenArtifact}
+                          allArtifactPaths={allArtifactPaths}
+                        />
+                      </ChatBubble>
+                    </motion.div>,
+                  );
+                }
+
+                return threadElements;
+              })()}
               <div ref={endRef} />
             </div>
           </>
@@ -292,6 +410,6 @@ export function TaskDetailThreadTab({
       {task && !isMergeLockedSource && (
         <ThreadInput task={task} onMessageSent={handleMessageSent} />
       )}
-    </TabsContent>
+    </div>
   );
 }

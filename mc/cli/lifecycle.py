@@ -20,7 +20,6 @@ def _kill_stale_processes() -> None:
     dashboard_dir = str(_cli._find_dashboard_dir())
     patterns = [
         "mc.runtime.gateway",
-        "-m nanobot gateway",
     ]
     dashboard_patterns = [
         "next dev",
@@ -116,15 +115,15 @@ def register_lifecycle_commands(mc_app: typer.Typer) -> None:
         local: bool = typer.Option(
             False,
             "--local",
-            help="Use a local Convex deployment explicitly (default behavior).",
+            help="Use a local Convex backend instead of cloud.",
         ),
         cloud: bool = typer.Option(
             False,
             "--cloud",
-            help="Use the hosted Convex development deployment instead of local.",
+            help="Use the hosted Convex cloud deployment (default behavior).",
         ),
     ):
-        """Start Open Control (dashboard + agent gateway + nanobot channels)."""
+        """Start Open Control (dashboard + agent gateway)."""
         import mc.cli as _cli
         from mc.cli.process_manager import ProcessManager
 
@@ -133,7 +132,7 @@ def register_lifecycle_commands(mc_app: typer.Typer) -> None:
             raise typer.Exit(1)
 
         resolved_dir = Path(dashboard_dir) if dashboard_dir else _cli._find_dashboard_dir()
-        convex_mode = "cloud" if cloud else "local"
+        convex_mode = "local" if local else "cloud"
 
         if not resolved_dir.is_dir():
             _cli.console.print(f"[red]Dashboard directory not found: {resolved_dir}[/red]")
@@ -143,12 +142,19 @@ def register_lifecycle_commands(mc_app: typer.Typer) -> None:
         if _cli.PID_FILE.exists():
             try:
                 old_pid = int(_cli.PID_FILE.read_text().strip())
-                os.kill(old_pid, 0)
-                _cli.console.print(
-                    f"[yellow]Open Control is already running (PID {old_pid}).[/yellow]"
-                )
-                _cli.console.print("Run [bold]open-control mc down[/bold] first.")
-                raise typer.Exit(1)
+                current_pid = os.getpid()
+                # In Docker, PID 1 is the entrypoint which exec's into us,
+                # so a stale PID file with PID 1 (or our own PID) is not a
+                # different running instance — just clean it up.
+                if old_pid != current_pid and old_pid != 1:
+                    os.kill(old_pid, 0)
+                    _cli.console.print(
+                        f"[yellow]Open Control is already running (PID {old_pid}).[/yellow]"
+                    )
+                    _cli.console.print("Run [bold]open-control mc down[/bold] first.")
+                    raise typer.Exit(1)
+                else:
+                    _cli._cleanup_pid_file()
             except (ValueError, OSError):
                 _cli._cleanup_pid_file()
 
@@ -158,48 +164,16 @@ def register_lifecycle_commands(mc_app: typer.Typer) -> None:
         _cli.PID_FILE.parent.mkdir(parents=True, exist_ok=True)
         _cli.PID_FILE.write_text(str(os.getpid()))
 
-        try:
-            from nanobot.config.loader import load_config
-
-            config = load_config()
-            enabled = []
-            if config.channels.telegram.enabled:
-                enabled.append("telegram")
-            if config.channels.whatsapp.enabled:
-                enabled.append("whatsapp")
-            if config.channels.discord.enabled:
-                enabled.append("discord")
-            if config.channels.slack.enabled:
-                enabled.append("slack")
-            if config.channels.email.enabled:
-                enabled.append("email")
-            if enabled:
-                _cli.console.print(f"[green]✓[/green] Nanobot channels: {', '.join(enabled)}")
-            else:
-                _cli.console.print("[yellow]⚠[/yellow] No nanobot channels enabled")
-        except Exception:
-            pass
-
-        if convex_mode == "cloud":
-            try:
-                bridge = _cli._get_bridge()
-                from mc.infrastructure.agent_bootstrap import sync_nanobot_default_model
-
-                if sync_nanobot_default_model(bridge):
-                    _cli.console.print(
-                        "[green]✓[/green] Synced nanobot default model from dashboard"
-                    )
-            except Exception:
-                pass
-
         async def _run():
-            pm = ProcessManager(dashboard_dir=resolved_dir, convex_mode=convex_mode)
+            pm = ProcessManager(
+                dashboard_dir=resolved_dir,
+                convex_mode=convex_mode,
+            )
             try:
                 await pm.start()
                 _cli.console.print("[green]Open Control is running[/green]")
                 _cli.console.print("  Dashboard: [cyan]http://localhost:3000[/cyan]")
                 _cli.console.print(f"  Convex:    [cyan]{convex_mode}[/cyan]")
-                _cli.console.print("  Nanobot:   [cyan]channels + agent gateway[/cyan]")
                 await pm.wait()
             finally:
                 await pm.stop()

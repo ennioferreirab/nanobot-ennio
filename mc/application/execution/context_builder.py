@@ -35,16 +35,15 @@ from mc.application.execution.file_enricher import (
 from mc.application.execution.request import EntityType, ExecutionRequest
 from mc.application.execution.roster_builder import (
     build_agent_roster,
+    hydrate_agent_data,
     inject_orientation,
     load_agent_config,
-    load_agent_data,
     resolve_tier,
     sync_agent_from_convex,
 )
 from mc.application.execution.thread_context_builder import build_thread_context
 from mc.application.execution.thread_journal_service import ThreadJournalService
 from mc.types import (
-    NANOBOT_AGENT_NAME,
     extract_cc_model_name,
     is_cc_model,
     is_orchestrator_agent,
@@ -317,8 +316,28 @@ class ContextBuilder:
             agent_skills,
         )
 
-        # 2. Sync from Convex (source of truth)
-        convex_agent = await self._fetch_convex_agent(agent_name)
+        # 2+5. Fetch agent config and fresh task data in parallel
+        files_dir, output_dir = resolve_task_dirs(task_id)
+        req.files_dir = files_dir
+        req.output_dir = output_dir
+
+        convex_agent_result, fresh_task_result = await asyncio.gather(
+            self._fetch_convex_agent(agent_name),
+            asyncio.to_thread(self._bridge.query, "tasks:getById", {"task_id": task_id}),
+            return_exceptions=True,
+        )
+
+        # Process agent result
+        convex_agent: dict[str, Any] | None = None
+        if isinstance(convex_agent_result, BaseException):
+            logger.warning(
+                "[context] Could not fetch Convex agent for '%s', using YAML",
+                agent_name,
+                exc_info=convex_agent_result,
+            )
+        else:
+            convex_agent = convex_agent_result
+
         agent_prompt, agent_model, agent_skills = sync_agent_from_convex(
             agent_name,
             agent_prompt,
@@ -342,23 +361,18 @@ class ContextBuilder:
         else:
             req.model = agent_model
 
-        # 5. Fetch fresh task data + build file manifest
-        files_dir, output_dir = resolve_task_dirs(task_id)
-        req.files_dir = files_dir
-        req.output_dir = output_dir
-
+        # Process fresh task result
         fresh_task: dict[str, Any] | None = None
-        try:
-            fresh_task = await asyncio.to_thread(
-                self._bridge.query, "tasks:getById", {"task_id": task_id}
-            )
-            raw_files = (fresh_task or {}).get("files") or []
-        except Exception:
-            logger.warning(
+        if isinstance(fresh_task_result, BaseException):
+            logger.error(
                 "[context] Failed to fetch fresh task for '%s', using snapshot",
                 title,
+                exc_info=fresh_task_result,
             )
             raw_files = (task_data or {}).get("files") or []
+        else:
+            fresh_task = fresh_task_result
+            raw_files = (fresh_task or {}).get("files") or []
 
         req.files = raw_files
         req.file_manifest = build_file_manifest(raw_files)
@@ -372,9 +386,9 @@ class ContextBuilder:
             req.board_name = board_name
             req.memory_workspace = memory_workspace
             req.memory_mode = memory_mode
-        elif agent_name != NANOBOT_AGENT_NAME:
+        else:
             raise RuntimeError(
-                f"Task '{title}' has no board_id — non-nanobot agent '{agent_name}' "
+                f"Task '{title}' has no board_id — agent '{agent_name}' "
                 "requires a board-scoped workspace. Assign a board to the task."
             )
 
@@ -471,10 +485,6 @@ class ContextBuilder:
         # 9. Inject orientation
         agent_prompt = inject_orientation(agent_name, agent_prompt, bridge=self._bridge)
 
-        # System agents (nanobot) use SOUL.md -- skip prompt injection
-        if agent_name == NANOBOT_AGENT_NAME:
-            agent_prompt = None
-
         # Inject agent roster for orchestrator-agent context
         if is_orchestrator_agent(agent_name):
             roster = build_agent_roster()
@@ -487,9 +497,11 @@ class ContextBuilder:
         req.agent_skills = agent_skills
         req.reasoning_level = reasoning_level
 
-        # Load full AgentData if needed (for CC routing)
-        if req.is_cc:
-            req.agent = load_agent_data(agent_name)
+        req.agent = hydrate_agent_data(agent_name, convex_agent=convex_agent)
+        if req.agent is not None:
+            req.agent.prompt = agent_prompt
+            req.agent.model = agent_model
+            req.agent.skills = agent_skills or []
 
         # Assemble the canonical prompt for the CLI bootstrap.
         # agent_prompt carries the system persona/instructions; description carries the
@@ -523,15 +535,13 @@ class ContextBuilder:
         step_id = step.get("id", "")
         step_title = (step.get("title") or "Untitled Step").strip()
         step_description = step.get("description") or ""
-        agent_name = (step.get("assigned_agent") or NANOBOT_AGENT_NAME).strip()
+        agent_name = (step.get("assigned_agent") or "").strip()
 
         if is_orchestrator_agent(agent_name):
-            logger.warning(
-                "[context] Step '%s' assigned to orchestrator-agent; rerouting to '%s'",
-                step_title,
-                NANOBOT_AGENT_NAME,
+            raise RuntimeError(
+                f"Step '{step_title}' is assigned to orchestrator-agent '{agent_name}', "
+                "which cannot execute steps directly. Assign a concrete agent to the step."
             )
-            agent_name = NANOBOT_AGENT_NAME
 
         req = ExecutionRequest(
             entity_type=EntityType.STEP,
@@ -580,8 +590,6 @@ class ContextBuilder:
 
         # 5. Inject orientation
         agent_prompt = inject_orientation(agent_name, agent_prompt, bridge=self._bridge)
-        if agent_name == NANOBOT_AGENT_NAME:
-            agent_prompt = None
 
         # 6. Fetch task data + build file context
         task_data = await asyncio.to_thread(
@@ -600,9 +608,9 @@ class ContextBuilder:
             req.board_name = board_name
             req.memory_workspace = memory_workspace
             req.memory_mode = memory_mode
-        elif agent_name != NANOBOT_AGENT_NAME:
+        else:
             raise RuntimeError(
-                f"Task '{task_title}' has no board_id — non-nanobot agent '{agent_name}' "
+                f"Task '{task_title}' has no board_id — agent '{agent_name}' "
                 "requires a board-scoped workspace. Assign a board to the task."
             )
 
@@ -634,7 +642,31 @@ class ContextBuilder:
         )
 
         # 7. Build thread context with predecessor awareness
-        thread_messages = await asyncio.to_thread(self._bridge.get_task_messages, task_id)
+        # Parallelize thread messages + task steps fetch
+        thread_messages_result, all_task_steps_result = await asyncio.gather(
+            asyncio.to_thread(self._bridge.get_task_messages, task_id),
+            asyncio.to_thread(self._bridge.get_steps_by_task, task_id),
+            return_exceptions=True,
+        )
+        thread_messages = (
+            thread_messages_result if not isinstance(thread_messages_result, BaseException) else []
+        )
+        all_task_steps = (
+            all_task_steps_result if not isinstance(all_task_steps_result, BaseException) else []
+        )
+        if isinstance(thread_messages_result, BaseException):
+            logger.error(
+                "[context] Failed to fetch thread messages for step '%s'",
+                step_title,
+                exc_info=thread_messages_result,
+            )
+        if isinstance(all_task_steps_result, BaseException):
+            logger.error(
+                "[context] Failed to fetch task steps for step '%s'",
+                step_title,
+                exc_info=all_task_steps_result,
+            )
+
         req.thread_messages = thread_messages
         journal_service = ThreadJournalService(bridge=self._bridge)
         journal_snapshot = journal_service.sync_task_thread(
@@ -661,7 +693,6 @@ class ContextBuilder:
         )
 
         review_feedback_context = build_review_feedback_context(thread_messages, step_id)
-        all_task_steps = await asyncio.to_thread(self._bridge.get_steps_by_task, task_id)
         review_output_contract_context = build_review_output_contract_context(
             step, all_task_steps=all_task_steps
         )
@@ -682,9 +713,11 @@ class ContextBuilder:
         req.agent_skills = agent_skills
         req.reasoning_level = reasoning_level
 
-        # Load full AgentData if needed (for CC routing)
-        if req.is_cc:
-            req.agent = load_agent_data(agent_name)
+        req.agent = hydrate_agent_data(agent_name, convex_agent=convex_agent)
+        if req.agent is not None:
+            req.agent.prompt = agent_prompt
+            req.agent.model = agent_model
+            req.agent.skills = agent_skills or []
 
         # Assemble the canonical prompt for the CLI bootstrap.
         # agent_prompt carries the system persona/instructions; description carries the
@@ -717,11 +750,7 @@ class ContextBuilder:
             "tagAttributeValues:getByTask",
             {"task_id": task_id},
         )
-        tag_attr_catalog = await asyncio.to_thread(
-            self._bridge.query,
-            "tagAttributes:list",
-            {},
-        )
+        tag_attr_catalog = await asyncio.to_thread(self._bridge.tag_attributes_cache.get)
         return build_tag_attributes_context(
             task_tags,
             tag_attr_values if isinstance(tag_attr_values, list) else [],

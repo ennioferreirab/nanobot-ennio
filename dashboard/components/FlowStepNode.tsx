@@ -8,13 +8,40 @@ import {
   GitMerge,
   Loader2,
   RefreshCw,
+  SkipForward,
   Square,
   Trash2,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { STATUS_COLORS } from "@/lib/constants";
 import type { EditablePlanStep } from "@/lib/types";
-import { getInitials, getAvatarColor } from "@/lib/agentUtils";
+import { getAvatarColor } from "@/lib/agentUtils";
+
+/* ── Subtle full-border status color ── */
+
+function getStatusBorderClass(status: string): string {
+  const normalized = normalizeStatus(status);
+  switch (normalized) {
+    case "completed":
+      return "border-green-500/30";
+    case "running":
+    case "in_progress":
+      return "border-blue-500/30";
+    case "crashed":
+    case "failed":
+      return "border-red-500/30";
+    case "blocked":
+    case "waiting_human":
+      return "border-amber-500/30";
+    case "assigned":
+      return "border-cyan-500/30";
+    case "skipped":
+      return "border-slate-400/30";
+    default:
+      return "border-border";
+  }
+}
 
 /* ── Status helpers (shared with ExecutionPlanTab) ── */
 
@@ -23,7 +50,15 @@ interface StepStatusMeta {
   iconColorClass: string;
   badgeClass: string;
   runningPulse?: boolean;
-  icon: "completed" | "running" | "failed" | "blocked" | "assigned" | "pending" | "waiting_human";
+  icon:
+    | "completed"
+    | "running"
+    | "failed"
+    | "blocked"
+    | "assigned"
+    | "pending"
+    | "waiting_human"
+    | "skipped";
 }
 
 export function normalizeStatus(status: string | null | undefined): string {
@@ -99,6 +134,13 @@ export function getStatusMeta(status: string): StepStatusMeta {
         badgeClass: "bg-muted text-muted-foreground",
         icon: "pending",
       };
+    case "skipped":
+      return {
+        badgeText: "Skipped",
+        iconColorClass: "text-slate-400",
+        badgeClass: "bg-slate-100 text-slate-500 dark:bg-slate-900 dark:text-slate-400",
+        icon: "skipped",
+      };
     default:
       return {
         badgeText: "Pending",
@@ -127,6 +169,8 @@ function StatusDot({ meta }: { meta: StepStatusMeta }) {
     case "blocked":
     case "waiting_human":
       return <span className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0" />;
+    case "skipped":
+      return <span className="inline-block w-2 h-2 rounded-full bg-slate-400 shrink-0" />;
     default:
       // planned / pending / assigned — gray outline dot
       return (
@@ -135,27 +179,12 @@ function StatusDot({ meta }: { meta: StepStatusMeta }) {
   }
 }
 
-/* ── Border color mapping ── */
-
-function getBorderColorClass(avatarBgClass: string): string {
-  const map: Record<string, string> = {
-    "bg-blue-500": "border-l-blue-500",
-    "bg-emerald-500": "border-l-emerald-500",
-    "bg-violet-500": "border-l-violet-500",
-    "bg-amber-500": "border-l-amber-500",
-    "bg-rose-500": "border-l-rose-500",
-    "bg-cyan-500": "border-l-cyan-500",
-    "bg-indigo-500": "border-l-indigo-500",
-    "bg-teal-500": "border-l-teal-500",
-  };
-  return map[avatarBgClass] ?? "border-l-border";
-}
-
 /* ── Node data type ── */
 
 export type FlowStepNodeData = {
   step: EditablePlanStep;
   status?: string;
+  duration?: string;
   isEditMode?: boolean;
   isVisualOnly?: boolean;
   hasParallelSiblings?: boolean;
@@ -178,6 +207,12 @@ export type FlowStepNodeData = {
   retryError?: string;
   onOpenLive?: (stepId: string) => void;
   isLiveStep?: boolean;
+  /** Whether this node is the currently selected node in the canvas */
+  isSelectedNode?: boolean;
+  outputFiles?: string[];
+  onSkip?: (stepId: string, skip: boolean) => void;
+  isSkipping?: boolean;
+  skipError?: string;
 };
 
 export type FlowStepNodeType = Node<FlowStepNodeData, "flowStep">;
@@ -211,8 +246,12 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
     isVisualOnly,
     onOpenLive,
     isLiveStep,
+    isSelectedNode,
     isPaused,
     stepErrorMessage,
+    onSkip,
+    isSkipping,
+    skipError,
   } = data;
 
   const resolvedStatus = status ?? "planned";
@@ -234,7 +273,10 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
       : step.assignedAgent;
 
   const avatarBgClass = agentName ? getAvatarColor(agentName) : "bg-muted";
-  const borderColorClass = agentName ? getBorderColorClass(avatarBgClass) : "border-l-border";
+
+  const canSkip = !!onSkip && ["assigned", "blocked", "review"].includes(normalizedStatus);
+  const canUnskip = !!onSkip && normalizedStatus === "skipped";
+  const isMarkedForSkip = step.skip === true && normalizedStatus !== "skipped";
 
   const showRetryButton =
     (!isEditMode || isPaused) &&
@@ -253,11 +295,14 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
       <div
         data-testid={`flow-step-node-${step.tempId}`}
         className={cn(
-          "relative rounded-lg border border-l-2 bg-background px-3 py-2 shadow-sm w-[220px]",
-          borderColorClass,
-          selected ? "ring-1 ring-primary/40" : "border-border",
+          "relative rounded-lg border bg-background px-3 py-2 shadow-sm w-[220px]",
+          getStatusBorderClass(resolvedStatus),
+          isSelectedNode && "ring-2 ring-primary shadow-[0_0_20px_rgba(35,131,226,0.15)]",
+          !isSelectedNode && selected && "ring-1 ring-primary/40",
           meta.runningPulse && "motion-safe:animate-pulse",
-          onStepClick && "cursor-pointer hover:border-primary/50 transition-colors",
+          onStepClick && "cursor-pointer hover:bg-muted/50 transition-colors",
+          isMarkedForSkip && "opacity-60",
+          normalizedStatus === "skipped" && "opacity-50",
         )}
         role={onStepClick ? "button" : undefined}
         tabIndex={onStepClick ? 0 : undefined}
@@ -272,7 +317,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
       >
         <Handle
           type="target"
-          position={Position.Left}
+          position={Position.Top}
           className="!opacity-0 !pointer-events-none !w-2 !h-2"
         />
 
@@ -281,17 +326,17 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           {agentName ? (
             <span
               className={cn(
-                "inline-flex items-center justify-center w-6 h-6 rounded-full text-white shrink-0",
-                "text-[9px] font-semibold leading-none",
+                "inline-flex items-center justify-center w-3 h-3 rounded-[3px] text-white shrink-0",
+                "text-[7px] font-bold leading-none",
                 avatarBgClass,
               )}
               aria-hidden="true"
             >
-              {getInitials(agentName)}
+              {agentName.charAt(0).toUpperCase()}
             </span>
           ) : (
             <span
-              className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-muted shrink-0"
+              className="inline-flex items-center justify-center w-3 h-3 rounded-[3px] bg-muted shrink-0"
               aria-hidden="true"
             />
           )}
@@ -300,13 +345,38 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           </span>
         </div>
 
-        {/* Row 2: Status dot + step title + duration placeholder */}
+        {/* Row 2: Status dot + step title + duration */}
         <div className="flex items-center gap-1.5 min-w-0">
           <StatusDot meta={meta} />
-          <span className="text-[13px] font-medium truncate flex-1 leading-tight">
+          <span
+            className={cn(
+              "text-[13px] font-medium truncate flex-1 leading-tight",
+              (isMarkedForSkip || normalizedStatus === "skipped") &&
+                "line-through text-muted-foreground",
+            )}
+          >
             {step.title || "Untitled"}
           </span>
+          {data.duration && normalizedStatus === "completed" && (
+            <span className="text-[10px] font-mono text-muted-foreground whitespace-nowrap">
+              {data.duration}
+            </span>
+          )}
         </div>
+
+        {/* File chips */}
+        {data.outputFiles && data.outputFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {data.outputFiles.map((f) => (
+              <span
+                key={f}
+                className="px-1.5 py-0.5 bg-[var(--canvas-surface,#1e1e1e)] border border-border rounded-full text-[9px] text-primary truncate max-w-[120px]"
+              >
+                {f}
+              </span>
+            ))}
+          </div>
+        )}
 
         {isLiveStep && onOpenLive && !isEditMode && (
           <div className="mt-1">
@@ -320,7 +390,7 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
               }}
               aria-label="Open live session"
             >
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <Zap className="w-2 h-2" />
               Live
             </button>
           </div>
@@ -408,56 +478,87 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
           </div>
         )}
 
+        {(canSkip || canUnskip) && (
+          <div className="mt-1.5">
+            <button
+              type="button"
+              data-testid={`skip-step-${step.tempId}`}
+              disabled={isSkipping}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSkip!(step.tempId, !canUnskip);
+              }}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors",
+                canUnskip
+                  ? "bg-slate-500 text-white hover:bg-slate-600"
+                  : "bg-slate-400 text-white hover:bg-slate-500",
+                "disabled:opacity-60 disabled:cursor-not-allowed",
+              )}
+            >
+              {isSkipping ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <SkipForward className="h-3 w-3" />
+              )}
+              {canUnskip ? "Un-skip" : "Skip"}
+            </button>
+            {skipError && <p className="mt-0.5 text-[10px] text-red-600">{skipError}</p>}
+          </div>
+        )}
+
         <Handle
           type="source"
-          position={Position.Right}
+          position={Position.Bottom}
           className="!opacity-0 !pointer-events-none !w-2 !h-2"
         />
       </div>
 
-      {/* Edit-mode buttons positioned around the card, inside the group hover area */}
+      {/* Edit-mode buttons positioned around the card (TB layout) */}
       {isEditMode && (
         <>
-          {/* Sequential → (right edge) */}
-          <div
-            className={cn(
-              "absolute right-0 top-1/2 -translate-y-1/2 flex flex-col gap-1 transition-opacity",
-              btnVisibility,
-            )}
-          >
-            <button
-              type="button"
-              data-testid={`add-sequential-${step.tempId}`}
-              className={addBtnClass}
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddSequential?.(step.tempId);
-              }}
-              title="Add sequential step"
+          {/* Sequential ↓ (bottom edge) */}
+          {onAddSequential && (
+            <div
+              className={cn(
+                "absolute bottom-0 left-1/2 -translate-x-1/2 flex gap-1 transition-opacity",
+                btnVisibility,
+              )}
             >
-              <ArrowRight className="h-3 w-3" />
-            </button>
-            {hasParallelSiblings && (
               <button
                 type="button"
-                data-testid={`merge-paths-${step.tempId}`}
+                data-testid={`add-sequential-${step.tempId}`}
                 className={addBtnClass}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onMergePaths?.(step.tempId);
+                  onAddSequential(step.tempId);
                 }}
-                title="Merge parallel paths into one step"
+                title="Add sequential step"
               >
-                <GitMerge className="h-3 w-3" />
+                <ArrowRight className="h-3 w-3 rotate-90" />
               </button>
-            )}
-          </div>
+              {hasParallelSiblings && onMergePaths && (
+                <button
+                  type="button"
+                  data-testid={`merge-paths-${step.tempId}`}
+                  className={addBtnClass}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMergePaths(step.tempId);
+                  }}
+                  title="Merge parallel paths into one step"
+                >
+                  <GitMerge className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          )}
           {onAddParallel && (
             <>
-              {/* Parallel ↑ (top edge) */}
+              {/* Parallel ← (left edge) */}
               <div
                 className={cn(
-                  "absolute top-0 left-1/2 -translate-x-1/2 transition-opacity",
+                  "absolute left-0 top-1/2 -translate-y-1/2 transition-opacity",
                   btnVisibility,
                 )}
               >
@@ -471,13 +572,13 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
                   }}
                   title="Add parallel step"
                 >
-                  <ArrowRight className="h-3 w-3 -rotate-90" />
+                  <ArrowRight className="h-3 w-3 rotate-180" />
                 </button>
               </div>
-              {/* Parallel ↓ (bottom edge) */}
+              {/* Parallel → (right edge) */}
               <div
                 className={cn(
-                  "absolute bottom-0 left-1/2 -translate-x-1/2 transition-opacity",
+                  "absolute right-0 top-1/2 -translate-y-1/2 transition-opacity",
                   btnVisibility,
                 )}
               >
@@ -491,31 +592,33 @@ function FlowStepNodeComponent({ data, selected }: NodeProps<FlowStepNodeType>) 
                   }}
                   title="Add parallel step"
                 >
-                  <ArrowRight className="h-3 w-3 rotate-90" />
+                  <ArrowRight className="h-3 w-3" />
                 </button>
               </div>
             </>
           )}
-          {/* Trash (left edge) */}
-          <div
-            className={cn(
-              "absolute left-0 top-1/2 -translate-y-1/2 transition-opacity",
-              btnVisibility,
-            )}
-          >
-            <button
-              type="button"
-              data-testid={`delete-step-${step.tempId}`}
-              className="flex items-center justify-center w-5 h-5 rounded-full bg-muted hover:bg-destructive hover:text-destructive-foreground text-muted-foreground transition-colors shadow-sm border border-border cursor-pointer"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteStep?.(step.tempId);
-              }}
-              title="Delete step"
+          {/* Trash (top edge) */}
+          {onDeleteStep && (
+            <div
+              className={cn(
+                "absolute top-0 left-1/2 -translate-x-1/2 transition-opacity",
+                btnVisibility,
+              )}
             >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          </div>
+              <button
+                type="button"
+                data-testid={`delete-step-${step.tempId}`}
+                className="flex items-center justify-center w-5 h-5 rounded-full bg-muted hover:bg-destructive hover:text-destructive-foreground text-muted-foreground transition-colors shadow-sm border border-border cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteStep(step.tempId);
+                }}
+                title="Delete step"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

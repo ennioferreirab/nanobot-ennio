@@ -37,7 +37,8 @@ class EntityType:
 class RunnerType(StrEnum):
     """Which backend runs the agent work."""
 
-    NANOBOT = "nanobot"
+    # DEPRECATED: CLAUDE_CODE is the legacy Python SDK path.  All new execution
+    # should use PROVIDER_CLI (headless ``-p`` flag, JSONL output).
     CLAUDE_CODE = "claude-code"
     HUMAN = "human"
     # INTERACTIVE_TUI is the legacy PTY/tmux path — kept as an escape hatch only.
@@ -138,7 +139,7 @@ class ExecutionRequest:
     task_data: dict[str, Any] = field(default_factory=dict)
 
     # --- Story 16.2 additions ---
-    runner_type: RunnerType = RunnerType.NANOBOT
+    runner_type: RunnerType = RunnerType.PROVIDER_CLI
     step_id: str | None = None
     session_key: str | None = None
     session_boundary_reason: str | None = None

@@ -123,7 +123,6 @@ def test_start_cloud_mode_runs_bootstrap_bridge(tmp_path) -> None:
         patch("mc.cli.lifecycle._kill_stale_processes"),
         patch("mc.cli.process_manager.ProcessManager", _FakeProcessManager),
         patch("mc.cli._get_bridge", return_value=_FakeBridge()) as get_bridge,
-        patch("mc.infrastructure.agent_bootstrap.sync_nanobot_default_model", return_value=False),
     ):
         result = runner.invoke(mc_app, ["start", "--cloud"])
 

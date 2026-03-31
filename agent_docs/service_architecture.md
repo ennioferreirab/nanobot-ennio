@@ -6,7 +6,7 @@ This document describes the **runtime services**, their boundaries, communicatio
 
 ## Services Overview
 
-The system runs as **four cooperating processes** plus external provider APIs:
+The system runs as **three cooperating processes** plus external provider APIs:
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -22,7 +22,7 @@ The system runs as **four cooperating processes** plus external provider APIs:
 │         ▼                                                   │
 │  ┌──────────────────────────────────────┐                   │
 │  │  Agent Processes                      │                   │
-│  │  (Claude Code, Codex, Nanobot CLI)    │                   │
+│  │  (Claude Code, Codex)                 │                   │
 │  └──────────────────────────────────────┘                   │
 │                                                             │
 │  ┌──────────────┐                                           │
@@ -80,7 +80,7 @@ npx convex dev --local
 | Property | Value |
 |----------|-------|
 | Entry point | `boot.py` → `mc.cli` → `mc.runtime.gateway` |
-| Start command | `mc start` or `nanobot mc start` |
+| Start command | `mc start` |
 | Long-running | Yes — async event loop with subscriptions plus targeted polling |
 | HTTP server | **No** — communicates with Convex via SDK only |
 
@@ -94,7 +94,7 @@ All initialization happens inside `run_gateway()`:
 
 1. Connect to Convex (`ConvexBridge(deployment_url, admin_key)`)
 2. `AgentSyncService` runs once:
-   - Bootstrap system agents (`ensure_nanobot_agent()`, `ensure_low_agent()`)
+   - Bootstrap system agents (`ensure_low_agent()`)
    - Sync agent registry from `~/.nanobot/agents/` YAML files
    - Sync builtin skills and workspace skills to Convex
    - Sync model tier mappings and embedding model config
@@ -264,29 +264,28 @@ The Gateway spawns agent processes and monitors their lifecycle:
 
 | Runner Strategy | Backend | Mechanism |
 |----------------|---------|-----------|
-| `NanobotRunnerStrategy` | Nanobot agent loop | In-process (nanobot `AgentLoop`) |
 | `ClaudeCodeRunnerStrategy` | Claude Code | Subprocess with IPC socket |
 | `ProviderCliRunnerStrategy` | Any CLI provider | Subprocess with stdout parsing |
 | `InteractiveTuiRunnerStrategy` | tmux terminal | PTY attachment (legacy) |
 | `HumanRunnerStrategy` | Human | No process — waits for user action |
 
-All strategies that produce live events use `SessionActivityService` for writing to Convex — see Live Reporting below.
+All strategies that produce live events use `SessionActivityService` for lightweight session metadata plus file-backed Live transcripts — see Live Reporting below.
 
 ### Live Reporting (`SessionActivityService`)
 
-All runner strategies use `SessionActivityService` (`mc/contexts/interactive/activity_service.py`) as the unified layer for communicating with the dashboard Live tab. This service writes to two Convex tables:
+All runner strategies use `SessionActivityService` (`mc/contexts/interactive/activity_service.py`) as the unified layer for communicating with the dashboard Live tab. This service writes lightweight discovery metadata to Convex and persists transcript bytes under `OPEN_CONTROL_LIVE_HOME` (default `<OPEN_CONTROL_HOME>/live-sessions`).
 
-| Table | Mutation | Purpose |
-|-------|----------|---------|
-| `interactiveSessions` | `upsert` | Session lifecycle (ready → ended/error) |
-| `sessionActivityLog` | `append` | Streaming events (text, tool_use, result, error) |
+| Store | Write Path | Purpose |
+|-------|------------|---------|
+| `interactiveSessions` | `interactiveSessions:upsert` | Session lifecycle and lightweight discovery metadata |
+| Live filesystem | `LiveSessionStore` | Streaming transcript events and session meta |
 
 ```text
-┌─────────────────────┐  ┌──────────────┐  ┌──────────────┐
-│  ProviderCliRunner   │  │ NanobotRunner│  │  Future CLI  │
-└────────┬────────────┘  └──────┬───────┘  └──────┬───────┘
-         │                      │                  │
-         ▼                      ▼                  ▼
+┌─────────────────────┐  ┌──────────────┐
+│  ProviderCliRunner   │  │  Future CLI  │
+└────────┬────────────┘  └──────┬───────┘
+         │                      │
+         ▼                      ▼
     ┌─────────────────────────────────────────────────┐
     │         SessionActivityService                   │
     │  upsert_session()        — session lifecycle     │
@@ -296,12 +295,12 @@ All runner strategies use `SessionActivityService` (`mc/contexts/interactive/act
     └────────────────────┬────────────────────────────┘
                          │
                          ▼
-                    bridge.mutation()
+            `interactiveSessions:upsert` + filesystem writes
 ```
 
 **Key behaviors:**
-- No-ops when `bridge=None` (testing/fallback)
-- Swallows bridge exceptions with `logger.debug` (non-fatal)
+- Still writes transcript files when `bridge=None`
+- Swallows `interactiveSessions:upsert` bridge exceptions with `logger.debug` (non-fatal)
 - Applies `safe_string_for_convex()` overflow protection on `raw_text` and `raw_json`
 - Accepts `ts` override for CLI parser events (preserves parser timestamp)
 - Provider-specific fields pass through `**extra` kwargs
@@ -457,20 +456,15 @@ Two daemon threads:
 | Source | Git subtree from [HKUDS/nanobot](https://github.com/HKUDS/nanobot) |
 | Policy | **READ-ONLY** — do not edit without explicit permission |
 
-Nanobot provides the core agent runtime that MC extends:
+Nanobot provides infrastructure components that MC uses:
 
 | Component | What MC uses |
 |-----------|-------------|
-| `AgentLoop` | LLM conversation loop for agent execution |
-| `MessageBus` | Async message queue for agent communication |
 | `SkillsLoader` | Load markdown-based skills |
 | `load_config` | Read nanobot YAML/JSON configuration |
 | Provider registry | `find_by_model`, `find_by_name` for LLM providers |
 | `CronService` | Scheduled task service |
-| Built-in tools | Web, shell, filesystem, MCP tools |
 | Channel integrations | Telegram, Discord, Slack (not used by MC directly) |
-
-MC filters out overlapping tools (`ask_user`, `ask_agent`, `delegate_task`, `send_message`, `cron`) to avoid duplication with its own tool surface.
 
 ### 5.2 Claude Code (`vendor/claude-code/`)
 
@@ -683,7 +677,7 @@ For live agent sessions where a human can observe or take over:
 ```text
 MC Gateway
   → InteractiveSessionCoordinator.create_or_attach()
-    → Select provider adapter (Claude Code / Codex / Nanobot)
+    → Select provider adapter (Claude Code / Codex)
       → Adapter.prepare_launch() → launch spec
         → TmuxSessionManager.ensure_session()
           → Agent runs in tmux with terminal I/O

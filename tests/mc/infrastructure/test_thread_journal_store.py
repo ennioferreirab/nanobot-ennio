@@ -21,7 +21,7 @@ def test_store_writes_initial_journal_and_reloadable_state(tmp_path: Path) -> No
         created_at="2026-03-16T12:00:00Z",
         updated_at="2026-03-16T12:00:00Z",
         status="in_progress",
-        assigned_agent="nanobot",
+        assigned_agent="test-agent",
         board_name="default",
         workflow_spec="workflow-1",
         plan_generated_by="workflow",

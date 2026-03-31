@@ -1,7 +1,7 @@
 """
-ConvexBridge -- Single integration point between nanobot AsyncIO runtime and Convex.
+ConvexBridge -- Single integration point between Python AsyncIO runtime and Convex.
 
-This is the ONLY module in the nanobot codebase that imports the `convex` Python SDK.
+This is the ONLY module in the codebase that imports the `convex` Python SDK.
 All other modules interact with Convex exclusively through this bridge.
 
 This package facade re-exports the entire public API for backward compatibility.
@@ -47,14 +47,16 @@ from mc.bridge.retry import (
     BACKOFF_BASE_SECONDS,
     MAX_RETRIES,
 )
+from mc.bridge.settings_cache import SettingsCache
 from mc.bridge.subscriptions import SubscriptionManager
+from mc.bridge.tag_attributes_cache import TagAttributesCache
 from mc.types import task_safe_id  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
 
 class ConvexBridge(BridgeRepositoryFacadeMixin):
-    """Bridge between nanobot Python runtime and Convex backend."""
+    """Bridge between Python runtime and Convex backend."""
 
     def __init__(self, deployment_url: str, admin_key: str | None = None):
         self._client = ConvexClient(deployment_url)
@@ -66,6 +68,8 @@ class ConvexBridge(BridgeRepositoryFacadeMixin):
                 "internal mutations will fail. Set CONVEX_ADMIN_KEY."
             )
         logger.info("ConvexBridge connected to %s", deployment_url)
+        self.settings_cache = SettingsCache(self)
+        self.tag_attributes_cache = TagAttributesCache(self)
         self._init_repositories()
 
     def _init_repositories(self) -> None:

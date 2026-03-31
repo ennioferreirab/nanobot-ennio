@@ -1,12 +1,16 @@
 "use client";
 
 import { useMemo, useState, useCallback, useRef } from "react";
+import { useMutation } from "convex/react";
 import { Loader2, Plus } from "lucide-react";
 import { ReactFlow, Background, Controls, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { Id } from "@/convex/_generated/dataModel";
+import { api } from "@/convex/_generated/api";
 import { FlowStepNode, normalizeStatus, type FlowStepNodeData } from "@/components/FlowStepNode";
 import { StartNode, EndNode } from "@/components/StartEndNode";
+import { ParallelLabelNode } from "@/components/ParallelLabelNode";
+import { ParallelEdge } from "@/components/ParallelEdge";
 import { AddStepForm, type AddStepData, type ExistingStep } from "@/components/AddStepForm";
 import { EditStepForm, type EditStepData } from "@/components/EditStepForm";
 import { Button } from "@/components/ui/button";
@@ -20,12 +24,23 @@ import {
 } from "@/lib/planUtils";
 import { useExecutionPlanActions } from "@/features/tasks/hooks/useExecutionPlanActions";
 import { StepListView } from "@/components/StepListView";
+import { formatDuration } from "@/lib/formatDuration";
+import { isPausedPlanStepEditable } from "@/lib/pausedPlanEditing";
 
-const nodeTypes = { flowStep: FlowStepNode, start: StartNode, end: EndNode };
+const nodeTypes = {
+  flowStep: FlowStepNode,
+  start: StartNode,
+  end: EndNode,
+  parallelLabel: ParallelLabelNode,
+};
+
+const edgeTypes = { parallel: ParallelEdge };
 
 const defaultEdgeOptions = {
+  type: "smoothstep" as const,
   animated: false,
   style: { stroke: "hsl(var(--foreground))", strokeWidth: 2 },
+  pathOptions: { borderRadius: 0 },
 };
 
 /* ── Types ── */
@@ -36,6 +51,10 @@ export interface ExecutionPlanStep {
   title?: string;
   description: string;
   assignedAgent?: string;
+  workflowStepId?: string;
+  workflowStepType?: "agent" | "human" | "review" | "system";
+  reviewSpecId?: string;
+  onRejectStepId?: string;
   dependsOn?: string[];
   blockedBy?: string[];
   parallelGroup?: string | number;
@@ -49,6 +68,10 @@ interface LiveStep {
   title: string;
   description: string;
   assignedAgent: string;
+  workflowStepId?: string;
+  workflowStepType?: "agent" | "human" | "review" | "system";
+  reviewSpecId?: string;
+  onRejectStepId?: string;
   status: string;
   blockedBy?: string[];
   parallelGroup: number;
@@ -56,6 +79,7 @@ interface LiveStep {
   errorMessage?: string;
   startedAt?: string;
   completedAt?: string;
+  skip?: boolean;
 }
 
 interface MergeAliasDisplay {
@@ -67,7 +91,13 @@ export type ExecutionPlanViewMode = "canvas" | "steps";
 
 interface ExecutionPlanTabProps {
   executionPlan:
-    | { steps: ExecutionPlanStep[]; createdAt?: string; generatedAt?: string }
+    | {
+        steps: ExecutionPlanStep[];
+        createdAt?: string;
+        generatedAt?: string;
+        generatedBy?: "orchestrator-agent" | "workflow";
+        workflowSpecId?: string;
+      }
     | null
     | undefined;
   liveSteps?: LiveStep[];
@@ -96,12 +126,19 @@ interface NormalizedStep {
   title?: string;
   description: string;
   assignedAgent?: string;
+  workflowStepId?: string;
+  workflowStepType?: "agent" | "human" | "review" | "system";
+  reviewSpecId?: string;
+  onRejectStepId?: string;
   dependencies: string[];
   parallelGroup?: string | number;
   status: string;
   order: number;
   errorMessage?: string;
   isVisualOnly?: boolean;
+  startedAt?: string;
+  completedAt?: string;
+  skip?: boolean;
 }
 
 /* ── Utility functions ── */
@@ -112,7 +149,10 @@ function getDependencyIds(step: ExecutionPlanStep): string[] {
   return (step.blockedBy ?? step.dependsOn ?? []).map((id) => String(id));
 }
 
-function normalizePlanSteps(planSteps: ExecutionPlanStep[]): NormalizedStep[] {
+function normalizePlanSteps(
+  planSteps: ExecutionPlanStep[],
+  generatedBy: "orchestrator-agent" | "workflow" | undefined,
+): NormalizedStep[] {
   return planSteps
     .map((step, index) => ({ step, index }))
     .sort((a, b) => {
@@ -121,10 +161,22 @@ function normalizePlanSteps(planSteps: ExecutionPlanStep[]): NormalizedStep[] {
       return aOrder - bOrder;
     })
     .map(({ step }, index) => ({
-      stepId: String(step.stepId ?? step.tempId ?? `step-${index + 1}`),
+      // Keep the plan tempId as the canonical editor/node id so paused-plan edits
+      // never drift onto materialized step document ids.
+      stepId: String(step.tempId ?? step.stepId ?? `step-${index + 1}`),
       title: step.title,
       description: step.description,
       assignedAgent: step.assignedAgent,
+      workflowStepId:
+        step.workflowStepId ??
+        (generatedBy === "workflow"
+          ? String(step.tempId ?? step.stepId ?? `step-${index + 1}`)
+          : undefined),
+      workflowStepType:
+        step.workflowStepType ??
+        (generatedBy === "workflow" && !step.assignedAgent ? "human" : undefined),
+      reviewSpecId: step.reviewSpecId,
+      onRejectStepId: step.onRejectStepId,
       dependencies: getDependencyIds(step),
       parallelGroup: step.parallelGroup,
       status: normalizeStatus(step.status),
@@ -222,6 +274,10 @@ function mergeStepsWithLiveData(
       title: liveStep.title ?? planStep.title,
       description: liveStep.description || planStep.description,
       assignedAgent: liveStep.assignedAgent || planStep.assignedAgent,
+      workflowStepId: liveStep.workflowStepId ?? planStep.workflowStepId,
+      workflowStepType: liveStep.workflowStepType ?? planStep.workflowStepType,
+      reviewSpecId: liveStep.reviewSpecId ?? planStep.reviewSpecId,
+      onRejectStepId: liveStep.onRejectStepId ?? planStep.onRejectStepId,
       dependencies:
         planStep.dependencies.length > 0
           ? planStep.dependencies
@@ -230,6 +286,9 @@ function mergeStepsWithLiveData(
       status: normalizeStatus(liveStep.status) || planStep.status,
       order: liveStep.order ?? planStep.order,
       errorMessage: liveStep.errorMessage ?? planStep.errorMessage,
+      startedAt: liveStep.startedAt,
+      completedAt: liveStep.completedAt,
+      skip: liveStep.skip,
     };
   });
 }
@@ -242,10 +301,15 @@ function normalizedStepsToPlanSteps(steps: NormalizedStep[]): EditablePlanStep[]
     tempId: s.stepId,
     title: s.title ?? "",
     description: s.description,
-    assignedAgent: s.isVisualOnly ? "" : (s.assignedAgent ?? "nanobot"),
+    assignedAgent: s.isVisualOnly ? "" : (s.assignedAgent ?? ""),
     blockedBy: s.dependencies,
     parallelGroup: typeof s.parallelGroup === "number" ? s.parallelGroup : 0,
     order: s.order,
+    workflowStepId: s.workflowStepId,
+    workflowStepType: s.workflowStepType,
+    reviewSpecId: s.reviewSpecId,
+    onRejectStepId: s.onRejectStepId,
+    skip: s.skip,
   }));
 }
 
@@ -275,7 +339,7 @@ function insertRootStepAfterMergeAlias(steps: EditablePlanStep[]): EditablePlanS
       tempId: newId,
       title: "",
       description: "",
-      assignedAgent: "nanobot",
+      assignedAgent: "",
       blockedBy: [],
       parallelGroup: 1,
       order: maxOrder + 1,
@@ -308,12 +372,15 @@ export function ExecutionPlanTab({
 }: ExecutionPlanTabProps) {
   const { acceptHumanStep, retryStep, stopStep, manualMoveStep, addStep, updateStep, deleteStep } =
     useExecutionPlanActions();
+  const skipStepMutation = useMutation(api.steps.skipStep);
   const [acceptingStepId, setAcceptingStepId] = useState<string | null>(null);
   const [acceptErrors, setAcceptErrors] = useState<Record<string, string>>({});
   const [retryingStepId, setRetryingStepId] = useState<string | null>(null);
   const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
   const [stoppingStepId, setStoppingStepId] = useState<string | null>(null);
   const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
+  const [skippingStepIds, setSkippingStepIds] = useState<Set<string>>(new Set());
+  const [skipErrors, setSkipErrors] = useState<Map<string, string>>(new Map());
   const [showAddForm, setShowAddForm] = useState(false);
   const [addStepError, setAddStepError] = useState<string | null>(null);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
@@ -326,7 +393,7 @@ export function ExecutionPlanTab({
 
   const steps = useMemo(() => {
     if (!executionPlan?.steps || executionPlan.steps.length === 0) return [];
-    const normalizedPlan = normalizePlanSteps(executionPlan.steps);
+    const normalizedPlan = normalizePlanSteps(executionPlan.steps, executionPlan.generatedBy);
     return shouldOverlayLiveSteps
       ? mergeStepsWithLiveData(normalizedPlan, liveSteps)
       : normalizedPlan;
@@ -399,9 +466,39 @@ export function ExecutionPlanTab({
     [acceptHumanStep, manualMoveStep, steps],
   );
 
-  const completedCount = steps.filter(
-    (step) => normalizeStatus(step.status) === "completed",
-  ).length;
+  const handleSkip = useCallback(
+    async (stepTempId: string, skip: boolean) => {
+      const foundStep = steps.find((step) => step.stepId === stepTempId);
+      const realStepId = foundStep?.liveId ?? stepTempId;
+
+      setSkippingStepIds((prev) => new Set(prev).add(stepTempId));
+      setSkipErrors((prev) => {
+        const next = new Map(prev);
+        next.delete(stepTempId);
+        return next;
+      });
+
+      try {
+        await skipStepMutation({ stepId: realStepId as Id<"steps">, skip });
+      } catch (err) {
+        setSkipErrors((prev) =>
+          new Map(prev).set(stepTempId, err instanceof Error ? err.message : String(err)),
+        );
+      } finally {
+        setSkippingStepIds((prev) => {
+          const next = new Set(prev);
+          next.delete(stepTempId);
+          return next;
+        });
+      }
+    },
+    [steps, skipStepMutation],
+  );
+
+  const completedCount = steps.filter((step) => {
+    const s = normalizeStatus(step.status);
+    return s === "completed" || s === "skipped";
+  }).length;
 
   // Determine if this is a review (pre-kickoff) mode vs live mode
   const isReviewMode = taskStatus === "review" || taskStatus === "inbox" || isEditMode;
@@ -486,16 +583,24 @@ export function ExecutionPlanTab({
           setEditStepError("Cannot delete the last step. A plan must have at least one step.");
           return;
         }
+        const deletedStep = currentSteps.find((s) => s.tempId === stepId);
+        const deletedStepDeps = deletedStep?.blockedBy ?? [];
         const updatedSteps = currentSteps
           .filter((s) => s.tempId !== stepId)
-          .map((s) => ({
-            ...s,
-            blockedBy: s.blockedBy.filter((dep) => dep !== stepId),
-          }));
+          .map((s) => {
+            if (!s.blockedBy.includes(stepId)) return s;
+            // Reroute: replace deleted step with its own predecessors
+            const newDeps = [
+              ...s.blockedBy.filter((dep) => dep !== stepId),
+              ...deletedStepDeps.filter((dep) => !s.blockedBy.includes(dep)),
+            ];
+            return { ...s, blockedBy: newDeps };
+          });
         const updatedPlan: ExecutionPlan = {
           steps: updatedSteps,
           generatedAt: currentPlan?.generatedAt ?? new Date().toISOString(),
           generatedBy: currentPlan?.generatedBy ?? "orchestrator-agent",
+          workflowSpecId: currentPlan?.workflowSpecId,
         };
         onLocalPlanChange(updatedPlan);
         setEditingStepId(null);
@@ -530,6 +635,7 @@ export function ExecutionPlanTab({
         steps: updatedSteps,
         generatedAt: currentPlan?.generatedAt ?? new Date().toISOString(),
         generatedBy: currentPlan?.generatedBy ?? "orchestrator-agent",
+        workflowSpecId: currentPlan?.workflowSpecId,
       });
     },
     [editablePlanSteps, executionPlan, onLocalPlanChange],
@@ -564,21 +670,31 @@ export function ExecutionPlanTab({
   const handleStepClick = useCallback(
     (stepId: string) => {
       if (stepId === VISUAL_MERGE_ALIAS_ID) return;
+      const foundStep = steps.find((candidate) => candidate.stepId === stepId);
+      if (isPaused && foundStep && !isPausedPlanStepEditable(foundStep.status)) {
+        setEditingStepId(null);
+        setEditStepError(null);
+        return;
+      }
+      // In live/read-only mode (not editing the plan), open the live tab
+      if (!canEditCanvas && onOpenLive) {
+        onOpenLive(stepId);
+        return;
+      }
       if (!canAddOrEdit) return;
       setEditingStepId(stepId);
       setEditStepError(null);
       setShowAddForm(false);
     },
-    [canAddOrEdit],
+    [canAddOrEdit, canEditCanvas, isPaused, onOpenLive, steps],
   );
 
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
       if (node.id === "__start__" || node.id === "__end__") return;
-      if (!canAddOrEdit) return;
       handleStepClick(node.id);
     },
-    [canAddOrEdit, handleStepClick],
+    [handleStepClick],
   );
 
   // Compute leaf steps: steps that no other step depends on (closest to END)
@@ -599,6 +715,11 @@ export function ExecutionPlanTab({
     // Inject status + handlers into node data (skip START/END terminal nodes)
     const statusMap = new Map(displaySteps.map((step) => [step.stepId, step.status]));
     const errorMessageMap = new Map(displaySteps.map((step) => [step.stepId, step.errorMessage]));
+    const durationMap = new Map(
+      displaySteps
+        .filter((s) => s.startedAt && s.completedAt)
+        .map((s) => [s.stepId, formatDuration(s.startedAt!, s.completedAt!)]),
+    );
     const nodesWithStatus = rawNodes.map((n) => {
       if (n.id === "__start__" || n.id === "__end__") return n;
       // Compute hasParallelSiblings for merge button visibility
@@ -609,20 +730,32 @@ export function ExecutionPlanTab({
       const hasParallelSiblings = stepData
         ? !isMergeAliasStep && getMergeableSiblingIds(editablePlanSteps, n.id).length > 1
         : false;
+      const stepStatus = statusMap.get(n.id);
+      const canMutatePausedStep = !isPaused || isPausedPlanStepEditable(stepStatus);
       return {
         ...n,
         data: {
           ...(n.data as FlowStepNodeData),
-          status: statusMap.get(n.id) ?? "planned",
+          status: stepStatus ?? "planned",
+          duration: durationMap.get(n.id),
           isPaused,
           stepErrorMessage: errorMessageMap.get(n.id),
           isEditMode: canEditCanvas,
           hasParallelSiblings,
           isLeafStep: leafStepIds.has(n.id),
-          onAddSequential: canEditCanvas ? handleAddSequential : undefined,
-          onAddParallel: canEditCanvas && !isMergeAliasStep ? handleAddParallel : undefined,
-          onMergePaths: canEditCanvas && !isMergeAliasStep ? handleMergePaths : undefined,
-          onDeleteStep: canEditCanvas && !isVisualOnly ? handleDeleteStep : undefined,
+          onAddSequential: canEditCanvas && canMutatePausedStep ? handleAddSequential : undefined,
+          onAddParallel:
+            canEditCanvas && canMutatePausedStep && !isMergeAliasStep
+              ? handleAddParallel
+              : undefined,
+          onMergePaths:
+            canEditCanvas && canMutatePausedStep && !isMergeAliasStep
+              ? handleMergePaths
+              : undefined,
+          onDeleteStep:
+            canEditCanvas && isPaused && !isVisualOnly && canMutatePausedStep
+              ? handleDeleteStep
+              : undefined,
           onAccept: readOnly || isVisualOnly ? undefined : handleAccept,
           onRetry: readOnly || isVisualOnly ? undefined : handleRetry,
           onStop: readOnly || isVisualOnly ? undefined : handleStop,
@@ -630,7 +763,10 @@ export function ExecutionPlanTab({
           stopError: stopErrors[n.id],
           isAccepting: acceptingStepId === n.id,
           acceptError: acceptErrors[n.id],
-          onStepClick: canAddOrEdit && !isVisualOnly ? handleStepClick : undefined,
+          onStepClick:
+            !isVisualOnly && (canAddOrEdit || onOpenLive) && canMutatePausedStep
+              ? handleStepClick
+              : undefined,
           isRetrying: retryingStepId === n.id,
           retryError: retryErrors[n.id],
           isVisualOnly,
@@ -639,6 +775,9 @@ export function ExecutionPlanTab({
             liveStepIdSet.has(n.id) ||
               (matchedDisplayStep?.liveId != null && liveStepIdSet.has(matchedDisplayStep.liveId)),
           ),
+          onSkip: readOnly || isVisualOnly ? undefined : handleSkip,
+          isSkipping: skippingStepIds.has(n.id),
+          skipError: skipErrors.get(n.id),
         },
       };
     });
@@ -669,12 +808,15 @@ export function ExecutionPlanTab({
     handleStepClick,
     onOpenLive,
     liveStepIdSet,
+    handleSkip,
+    skippingStepIds,
+    skipErrors,
   ]);
 
   // Build existingSteps for the blocked-by selector
   const existingStepsForForm: ExistingStep[] = useMemo(() => {
-    // Prefer live step ids only when the canvas is actually operating in live mode.
-    if (shouldOverlayLiveSteps && liveSteps && liveSteps.length > 0) {
+    // When editing the paused/review plan we must stay on plan tempIds, not materialized ids.
+    if (!canEditCanvas && shouldOverlayLiveSteps && liveSteps && liveSteps.length > 0) {
       return liveSteps.map((ls) => ({
         id: ls._id,
         title: ls.title,
@@ -687,7 +829,7 @@ export function ExecutionPlanTab({
       title: s.title ?? s.description.slice(0, 50),
       status: s.status,
     }));
-  }, [liveSteps, shouldOverlayLiveSteps, steps]);
+  }, [canEditCanvas, liveSteps, shouldOverlayLiveSteps, steps]);
 
   const handleAddStep = useCallback(
     async (data: AddStepData) => {
@@ -736,6 +878,7 @@ export function ExecutionPlanTab({
           steps: [...currentSteps, newStep],
           generatedAt: currentPlan?.generatedAt ?? new Date().toISOString(),
           generatedBy: currentPlan?.generatedBy ?? "orchestrator-agent",
+          workflowSpecId: currentPlan?.workflowSpecId,
         };
         onLocalPlanChange(updatedPlan);
         setAddStepError(null);
@@ -771,19 +914,24 @@ export function ExecutionPlanTab({
     const found = steps.find((s) => s.stepId === editingStepId);
     if (!found) return null;
     const liveBlockedByIds =
-      shouldOverlayLiveSteps && found.liveId
+      !canEditCanvas && shouldOverlayLiveSteps && found.liveId
         ? liveSteps?.find((liveStep) => liveStep._id === found.liveId)?.blockedBy?.map(String)
         : undefined;
     return {
-      stepId: shouldOverlayLiveSteps ? (found.liveId ?? found.stepId) : found.stepId,
+      stepId: canEditCanvas
+        ? found.stepId
+        : shouldOverlayLiveSteps
+          ? (found.liveId ?? found.stepId)
+          : found.stepId,
       liveId: found.liveId,
       title: found.title ?? "",
       description: found.description,
       assignedAgent: found.assignedAgent ?? "",
+      workflowStepType: found.workflowStepType,
       status: found.status,
       blockedByIds: liveBlockedByIds ?? found.dependencies,
     };
-  }, [editingStepId, liveSteps, shouldOverlayLiveSteps, steps]);
+  }, [canEditCanvas, editingStepId, liveSteps, shouldOverlayLiveSteps, steps]);
 
   const handleEditStep = useCallback(
     async (data: EditStepData) => {
@@ -805,6 +953,7 @@ export function ExecutionPlanTab({
           steps: updatedSteps,
           generatedAt: currentPlan?.generatedAt ?? new Date().toISOString(),
           generatedBy: currentPlan?.generatedBy ?? "orchestrator-agent",
+          workflowSpecId: currentPlan?.workflowSpecId,
         };
         onLocalPlanChange(updatedPlan);
         setEditStepError(null);
@@ -944,6 +1093,7 @@ export function ExecutionPlanTab({
             step={editingStep}
             existingSteps={existingStepsForForm}
             boardId={boardId}
+            isPaused={isPaused}
             onSave={handleEditStep}
             onDelete={handleDeleteStep}
             onCancel={() => {
@@ -961,6 +1111,7 @@ export function ExecutionPlanTab({
             nodes={flowNodes}
             edges={flowEdges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             defaultEdgeOptions={defaultEdgeOptions}
             onNodeClick={handleNodeClick}
             onPaneClick={() => {
@@ -994,6 +1145,10 @@ export function ExecutionPlanTab({
               parallelGroup: s.parallelGroup,
               errorMessage: s.errorMessage,
               isLiveStep: !!s.liveId,
+              duration:
+                s.startedAt && s.completedAt
+                  ? formatDuration(s.startedAt, s.completedAt)
+                  : undefined,
             }))}
             onStepClick={(stepId) => {
               handleStepClick(stepId);

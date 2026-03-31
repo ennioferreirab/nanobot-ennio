@@ -1,4 +1,4 @@
-"""Unit tests for timeout detection and escalation (Story 7.2)."""
+"""Unit tests for timeout detection (Story 7.2)."""
 
 from __future__ import annotations
 
@@ -282,128 +282,6 @@ class TestGlobalSettings:
 
 
 # ---------------------------------------------------------------------------
-# Test: Review escalation
-# ---------------------------------------------------------------------------
-
-
-class TestReviewEscalation:
-    """AC #3, #4: Review requests exceeding inter-agent timeout are escalated."""
-
-    @pytest.mark.asyncio
-    async def test_escalates_timed_out_review(self) -> None:
-        """A review task with reviewers exceeding the timeout gets escalated."""
-        bridge = _make_bridge()
-        checker = TimeoutChecker(bridge)
-
-        review_task = _make_task(
-            task_id="review_1",
-            title="Review Task",
-            status="review",
-            updated_at=datetime.now(UTC) - timedelta(minutes=15),
-            reviewers=["reviewer-agent"],
-        )
-
-        bridge.query.side_effect = lambda fn, args=None: {
-            "settings:get": None,
-            "tasks:listByStatusLite": (
-                [review_task] if args and args.get("status") == "review" else []
-            ),
-        }.get(fn, None)
-
-        await checker.check_timeouts()
-
-        # Activity event for escalation
-        bridge.create_activity.assert_called_once()
-        call_args = bridge.create_activity.call_args
-        assert call_args[0][0] == "system_error"
-        assert "timed out" in call_args[0][1].lower()
-        assert "escalating" in call_args[0][1].lower()
-
-        # Thread message
-        bridge.send_message.assert_called_once()
-        msg_args = bridge.send_message.call_args
-        assert msg_args[0][0] == "review_1"
-        assert "escalating" in msg_args[0][3].lower()
-
-    @pytest.mark.asyncio
-    async def test_no_escalation_for_review_without_reviewers(self) -> None:
-        """A review task without reviewers should not be escalated."""
-        bridge = _make_bridge()
-        checker = TimeoutChecker(bridge)
-
-        review_task = _make_task(
-            task_id="review_2",
-            status="review",
-            updated_at=datetime.now(UTC) - timedelta(minutes=15),
-            reviewers=None,
-        )
-
-        bridge.query.side_effect = lambda fn, args=None: {
-            "settings:get": None,
-            "tasks:listByStatusLite": (
-                [review_task] if args and args.get("status") == "review" else []
-            ),
-        }.get(fn, None)
-
-        await checker.check_timeouts()
-
-        bridge.create_activity.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_no_duplicate_escalation(self) -> None:
-        """Already-escalated reviews should not be escalated again."""
-        bridge = _make_bridge()
-        checker = TimeoutChecker(bridge)
-
-        review_task = _make_task(
-            task_id="review_3",
-            title="Review Dup",
-            status="review",
-            updated_at=datetime.now(UTC) - timedelta(minutes=20),
-            reviewers=["agent-a"],
-        )
-
-        bridge.query.side_effect = lambda fn, args=None: {
-            "settings:get": None,
-            "tasks:listByStatusLite": (
-                [review_task] if args and args.get("status") == "review" else []
-            ),
-        }.get(fn, None)
-
-        await checker.check_timeouts()
-        assert bridge.create_activity.call_count == 1
-
-        await checker.check_timeouts()
-        assert bridge.create_activity.call_count == 1  # Still 1
-
-    @pytest.mark.asyncio
-    async def test_per_task_inter_agent_timeout_override(self) -> None:
-        """Per-task inter_agent_timeout overrides global default."""
-        bridge = _make_bridge()
-        checker = TimeoutChecker(bridge)
-
-        # 8 min elapsed, per-task override is 20 min — should NOT escalate
-        review_task = _make_task(
-            task_id="review_4",
-            status="review",
-            updated_at=datetime.now(UTC) - timedelta(minutes=8),
-            reviewers=["agent-a"],
-            inter_agent_timeout=20,
-        )
-
-        bridge.query.side_effect = lambda fn, args=None: {
-            "settings:get": None,
-            "tasks:listByStatusLite": (
-                [review_task] if args and args.get("status") == "review" else []
-            ),
-        }.get(fn, None)
-
-        await checker.check_timeouts()
-
-        bridge.create_activity.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
 # Test: start() loop behavior
 # ---------------------------------------------------------------------------
 
@@ -416,6 +294,7 @@ class TestStartLoop:
         """Shared sleep controller replaces the fixed asyncio.sleep cadence."""
         bridge = _make_bridge()
         controller = MagicMock()
+        controller.mode = "active"
         controller.record_work_found = AsyncMock()
         controller.record_idle = AsyncMock()
         controller.wait_for_next_cycle = AsyncMock(side_effect=asyncio.CancelledError())

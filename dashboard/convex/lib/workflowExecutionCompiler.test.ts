@@ -192,7 +192,7 @@ describe("agent resolution", () => {
     expect(writeStep!.assignedAgent).toBe("post-writer");
   });
 
-  it("assigns empty string for assignedAgent when agentId is absent (human/checkpoint step)", () => {
+  it("assigns empty string for assignedAgent when agentId is absent (human step)", () => {
     const humanWorkflow: WorkflowSpecInput = {
       specId: "wf-human",
       name: "Human Review Workflow",
@@ -206,6 +206,23 @@ describe("agent resolution", () => {
     };
     const plan = compileWorkflowExecutionPlan(humanWorkflow, AGENT_REFS);
     expect(plan.steps[0].assignedAgent).toBe("");
+  });
+
+  it("assigns low-agent for system steps without agentId", () => {
+    const systemWorkflow: WorkflowSpecInput = {
+      specId: "wf-system",
+      name: "System Workflow",
+      steps: [
+        {
+          id: "step-system",
+          title: "Persist learnings",
+          type: "system",
+        },
+      ],
+    };
+
+    const plan = compileWorkflowExecutionPlan(systemWorkflow, AGENT_REFS);
+    expect(plan.steps[0].assignedAgent).toBe("low-agent");
   });
 
   it("throws when an agentId cannot be resolved", () => {
@@ -222,6 +239,22 @@ describe("agent resolution", () => {
       ],
     };
     expect(() => compileWorkflowExecutionPlan(badWorkflow, AGENT_REFS)).toThrow();
+  });
+
+  it("rejects agent steps that are missing agentId", () => {
+    const badWorkflow: WorkflowSpecInput = {
+      specId: "wf-agent-missing-agent",
+      name: "Bad Agent Workflow",
+      steps: [
+        {
+          id: "step-agent",
+          title: "Generate assets",
+          type: "agent",
+        },
+      ],
+    };
+
+    expect(() => compileWorkflowExecutionPlan(badWorkflow, AGENT_REFS)).toThrow(/requires agentId/);
   });
 
   it("rejects review steps that are missing agentId", () => {
@@ -311,6 +344,55 @@ describe("dependency mapping", () => {
 // ---------------------------------------------------------------------------
 // Order and parallelGroup assignment
 // ---------------------------------------------------------------------------
+
+describe("transitive reduction", () => {
+  it("removes redundant transitive dependencies from blockedBy", () => {
+    const workflow: WorkflowSpecInput = {
+      specId: "spec-transitive",
+      name: "Transitive Test",
+      steps: [
+        { id: "A", title: "Step A", type: "agent", agentId: "agent-id-1" },
+        { id: "B", title: "Step B", type: "agent", agentId: "agent-id-2", dependsOn: ["A"] },
+        {
+          id: "C",
+          title: "Step C",
+          type: "agent",
+          agentId: "agent-id-3",
+          dependsOn: ["A", "B"],
+        },
+      ],
+    };
+    const plan = compileWorkflowExecutionPlan(workflow, AGENT_REFS);
+    const stepC = plan.steps.find((s) => s.tempId === "C")!;
+    // A is redundant because B already depends on A
+    expect(stepC.blockedBy).toEqual(["B"]);
+  });
+
+  it("computes correct parallelGroups after reduction", () => {
+    const workflow: WorkflowSpecInput = {
+      specId: "spec-transitive-groups",
+      name: "Transitive Groups",
+      steps: [
+        { id: "A", title: "Step A", type: "agent", agentId: "agent-id-1" },
+        { id: "B", title: "Step B", type: "agent", agentId: "agent-id-2", dependsOn: ["A"] },
+        {
+          id: "C",
+          title: "Step C",
+          type: "agent",
+          agentId: "agent-id-3",
+          dependsOn: ["A", "B"],
+        },
+      ],
+    };
+    const plan = compileWorkflowExecutionPlan(workflow, AGENT_REFS);
+    const stepA = plan.steps.find((s) => s.tempId === "A")!;
+    const stepB = plan.steps.find((s) => s.tempId === "B")!;
+    const stepC = plan.steps.find((s) => s.tempId === "C")!;
+    expect(stepA.parallelGroup).toBe(1);
+    expect(stepB.parallelGroup).toBe(2);
+    expect(stepC.parallelGroup).toBe(3);
+  });
+});
 
 describe("order and parallelGroup", () => {
   it("assigns an order to each step starting at 0", () => {
