@@ -20,7 +20,7 @@ from mc.types import AgentData
 
 
 def _make_request(
-    *, provider: str | None, backend: str = "nanobot", is_cc: bool = False
+    *, provider: str | None, backend: str = "claude-code", is_cc: bool = False
 ) -> ExecutionRequest:
     return ExecutionRequest(
         entity_type=EntityType.STEP,
@@ -144,10 +144,10 @@ def test_off_mode_raises_runtime_error() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_non_interactive_agents_still_route_to_nanobot() -> None:
-    runner = resolve_step_runner_type(_make_request(provider=None, backend="nanobot"))
+def test_non_interactive_agents_route_to_provider_cli() -> None:
+    runner = resolve_step_runner_type(_make_request(provider=None, backend="claude-code"))
 
-    assert runner == RunnerType.NANOBOT
+    assert runner == RunnerType.PROVIDER_CLI
 
 
 # ---------------------------------------------------------------------------

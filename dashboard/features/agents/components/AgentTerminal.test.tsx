@@ -85,22 +85,22 @@ describe("AgentTerminal", () => {
   });
 
   it("renders a terminal container div", () => {
-    render(<AgentTerminal agentName="nanobot" provider="claude-code" />);
+    render(<AgentTerminal agentName="test-agent" provider="claude-code" />);
     expect(screen.getByTestId("agent-terminal-container")).toBeInTheDocument();
   });
 
   it("shows a connecting status while the interactive session is attaching", async () => {
-    render(<AgentTerminal agentName="nanobot" provider="claude-code" />);
+    render(<AgentTerminal agentName="test-agent" provider="claude-code" />);
 
     expect(screen.getByText(/connecting terminal/i)).toBeInTheDocument();
 
     await waitFor(() => expect(socketInstance).not.toBeNull());
-    expect(socketInstance?.url).toContain("agentName=nanobot");
+    expect(socketInstance?.url).toContain("agentName=test-agent");
     expect(socketInstance?.url).toContain("scopeKind=chat");
   });
 
   it("shows an error when the interactive runtime rejects the session", async () => {
-    render(<AgentTerminal agentName="nanobot" provider="claude-code" />);
+    render(<AgentTerminal agentName="test-agent" provider="claude-code" />);
 
     await waitFor(() => expect(socketInstance).not.toBeNull());
 
@@ -109,7 +109,7 @@ describe("AgentTerminal", () => {
         new MessageEvent("message", {
           data: JSON.stringify({
             type: "error",
-            message: "Interactive agent 'nanobot' could not be loaded.",
+            message: "Interactive agent 'test-agent' could not be loaded.",
           }),
         }),
       );

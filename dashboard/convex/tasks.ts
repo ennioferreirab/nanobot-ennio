@@ -7,6 +7,7 @@ import {
   taskFileMetadataValidator,
   taskFilesValidator,
   taskStatusValidator,
+  workflowStepTypeValidator,
 } from "./schema";
 import { buildTaskDetailView } from "./lib/taskDetailView";
 import {
@@ -24,7 +25,12 @@ import {
   updateTaskTags,
   updateTaskTitle,
 } from "./lib/taskMetadata";
-import { appendTaskFiles, removeAttachmentTaskFile, replaceTaskOutputFiles } from "./lib/taskFiles";
+import {
+  appendTaskFiles,
+  removeAttachmentTaskFile,
+  replaceTaskOutputFiles,
+  toggleFileField,
+} from "./lib/taskFiles";
 import { isValidTaskTransition } from "./lib/taskLifecycle";
 import {
   assertExistingMergeTask,
@@ -301,7 +307,6 @@ export const createMergedTask = mutation({
   args: {
     primaryTaskId: v.id("tasks"),
     secondaryTaskId: v.id("tasks"),
-    mode: v.union(v.literal("plan"), v.literal("manual")),
   },
   handler: async (ctx, args) => {
     if (args.primaryTaskId === args.secondaryTaskId) {
@@ -328,7 +333,7 @@ export const createMergedTask = mutation({
       status: "inbox",
       awaitingKickoff: undefined,
       reviewPhase: undefined,
-      isManual: args.mode === "manual" ? true : undefined,
+      isManual: true,
       trustLevel,
       boardId: primaryTask.boardId ?? secondaryTask.boardId,
       tags: dedupeTags(
@@ -463,10 +468,15 @@ const executionPlanSchema = v.object({
       parallelGroup: v.number(),
       order: v.number(),
       attachedFiles: v.optional(v.array(v.string())),
+      workflowStepId: v.optional(v.string()),
+      workflowStepType: v.optional(workflowStepTypeValidator),
+      reviewSpecId: v.optional(v.id("reviewSpecs")),
+      onRejectStepId: v.optional(v.string()),
     }),
   ),
   generatedAt: v.string(),
   generatedBy: v.union(v.literal("orchestrator-agent"), v.literal("workflow")),
+  workflowSpecId: v.optional(v.string()),
 });
 
 /**
@@ -758,9 +768,24 @@ export const updateTaskOutputFiles = internalMutation({
   args: {
     taskId: v.id("tasks"),
     outputFiles: v.array(taskFileMetadataValidator),
+    stepId: v.optional(v.id("steps")),
   },
-  handler: async (ctx, { taskId, outputFiles }) => {
-    await replaceTaskOutputFiles(ctx, taskId, outputFiles);
+  handler: async (ctx, { taskId, outputFiles, stepId }) => {
+    await replaceTaskOutputFiles(ctx, taskId, outputFiles, stepId);
+  },
+});
+
+export const toggleFileFavorite = mutation({
+  args: { taskId: v.id("tasks"), fileName: v.string(), subfolder: v.string() },
+  handler: async (ctx, args) => {
+    await toggleFileField(ctx, args.taskId, args.fileName, args.subfolder, "isFavorite");
+  },
+});
+
+export const toggleFileArchived = mutation({
+  args: { taskId: v.id("tasks"), fileName: v.string(), subfolder: v.string() },
+  handler: async (ctx, args) => {
+    await toggleFileField(ctx, args.taskId, args.fileName, args.subfolder, "isArchived");
   },
 });
 

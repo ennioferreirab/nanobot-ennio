@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ProviderLiveEventRow } from "@/features/interactive/components/ProviderLiveEventRow";
 import {
-  compareProviderLiveCategories,
   type GroupedTimelineNode,
   type ProviderLiveCategory,
   type ProviderLiveEvent,
@@ -30,6 +29,8 @@ interface ProviderLiveChatPanelProps {
   provider: string;
   isLoading: boolean;
   errorMessage?: string;
+  /** Called when user clicks "View" on a write_file tool_use event */
+  onOpenArtifact?: (path: string) => void;
 }
 
 export function ProviderLiveChatPanel({
@@ -41,35 +42,43 @@ export function ProviderLiveChatPanel({
   provider,
   isLoading,
   errorMessage,
+  onOpenArtifact,
 }: ProviderLiveChatPanelProps) {
-  const availableCategories = useMemo(() => {
-    const counts = new Map<ProviderLiveCategory, number>();
-    for (const event of events) {
-      counts.set(event.category, (counts.get(event.category) ?? 0) + 1);
-    }
+  type FilterMode = "all" | "tools" | "text";
+  const [activeFilter, setActiveFilter] = useState<FilterMode>("all");
 
-    return Array.from(counts.entries())
-      .sort(([left], [right]) => compareProviderLiveCategories(left, right))
-      .map(([category, count]) => ({ category, count }));
-  }, [events]);
-  const [hiddenCategories, setHiddenCategories] = useState<Set<ProviderLiveCategory>>(new Set());
+  const matchesFilter = useCallback(
+    (category: ProviderLiveCategory) => {
+      if (activeFilter === "all") return true;
+      if (activeFilter === "tools")
+        return category === "tool" || category === "result" || category === "skill";
+      // "text"
+      return (
+        category === "text" ||
+        category === "action" ||
+        category === "error" ||
+        category === "system"
+      );
+    },
+    [activeFilter],
+  );
 
   const filteredEvents = useMemo(
-    () => events.filter((event) => !hiddenCategories.has(event.category)),
-    [events, hiddenCategories],
+    () => events.filter((event) => matchesFilter(event.category)),
+    [events, matchesFilter],
   );
 
   const filteredNodes = useMemo(() => {
     if (!groupedTimeline?.length) return null;
     return groupedTimeline.filter((node) => {
-      // For groups, show if any event's category is visible
-      return node.events.some((e) => !hiddenCategories.has(e.category));
+      return node.events.some((e) => matchesFilter(e.category));
     });
-  }, [groupedTimeline, hiddenCategories]);
+  }, [groupedTimeline, matchesFilter]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
   const isAtBottomRef = useRef(true);
+  const isMouseSelectingRef = useRef(false);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -78,13 +87,35 @@ export function ProviderLiveChatPanel({
     isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
   }, []);
 
+  // Track mouse selection state — more reliable than window.getSelection()
+  // which can briefly collapse during React DOM mutations.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onMouseDown = () => {
+      isMouseSelectingRef.current = true;
+    };
+    const onMouseUp = () => {
+      isMouseSelectingRef.current = false;
+    };
+    el.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      el.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
   // Track both count and last event id so we scroll when events are added to
   // an existing group (count unchanged) or when filters produce different results.
   const eventCount = filteredNodes?.length ?? filteredEvents.length;
   const lastEventId = filteredEvents[filteredEvents.length - 1]?.id ?? null;
   useEffect(() => {
     if (eventCount === 0) return;
-    // Skip auto-scroll while the user is selecting text to avoid breaking the selection
+    // Skip auto-scroll while the user is selecting text to avoid breaking the selection.
+    // Primary guard: mousedown state (synchronous, unaffected by DOM mutations).
+    // Secondary guard: window.getSelection() for selections made via keyboard or other means.
+    if (isMouseSelectingRef.current) return;
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed) return;
     if (!userScrolledRef.current || isAtBottomRef.current) {
@@ -93,17 +124,11 @@ export function ProviderLiveChatPanel({
     }
   }, [eventCount, lastEventId]);
 
-  const toggleCategory = (category: ProviderLiveCategory) => {
-    setHiddenCategories((current) => {
-      const next = new Set(current);
-      if (next.has(category)) {
-        next.delete(category);
-      } else {
-        next.add(category);
-      }
-      return next;
-    });
-  };
+  const FILTER_OPTIONS: { key: FilterMode; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "tools", label: "Tools" },
+    { key: "text", label: "Text" },
+  ];
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-zinc-950 text-zinc-100">
@@ -151,38 +176,23 @@ export function ProviderLiveChatPanel({
         </div>
       )}
 
-      {availableCategories.length > 0 && (
+      {events.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-3 py-2">
-          <button
-            type="button"
-            className={cn(
-              "rounded-full border px-2 py-0.5 text-[11px] font-medium",
-              hiddenCategories.size === 0
-                ? "border-zinc-500 bg-zinc-100 text-zinc-900"
-                : "border-zinc-700 bg-zinc-900 text-zinc-300",
-            )}
-            onClick={() => setHiddenCategories(new Set())}
-          >
-            All
-          </button>
-          {availableCategories.map(({ category, count }) => {
-            const selected = !hiddenCategories.has(category);
-            return (
-              <button
-                key={category}
-                type="button"
-                className={cn(
-                  "rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize",
-                  selected
-                    ? "border-zinc-500 bg-zinc-100 text-zinc-900"
-                    : "border-zinc-700 bg-zinc-900 text-zinc-300",
-                )}
-                onClick={() => toggleCategory(category)}
-              >
-                {category} ({count})
-              </button>
-            );
-          })}
+          {FILTER_OPTIONS.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                activeFilter === key
+                  ? "bg-primary/10 border-primary/15 text-primary"
+                  : "border-zinc-700 bg-zinc-900 text-muted-foreground",
+              )}
+              onClick={() => setActiveFilter(key)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       )}
 
@@ -209,20 +219,28 @@ export function ProviderLiveChatPanel({
                   className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-1 flex flex-col gap-1"
                 >
                   {node.events
-                    .filter((e) => !hiddenCategories.has(e.category))
+                    .filter((e) => matchesFilter(e.category))
                     .map((event) => (
-                      <ProviderLiveEventRow key={event.id} event={event} />
+                      <ProviderLiveEventRow
+                        key={event.id}
+                        event={event}
+                        onOpenArtifact={onOpenArtifact}
+                      />
                     ))}
                 </div>
               ) : node.events[0] ? (
-                <ProviderLiveEventRow key={node.id} event={node.events[0]} />
+                <ProviderLiveEventRow
+                  key={node.id}
+                  event={node.events[0]}
+                  onOpenArtifact={onOpenArtifact}
+                />
               ) : null,
             )}
           </div>
         ) : (
           <div className="flex flex-col gap-2">
             {filteredEvents.map((event) => (
-              <ProviderLiveEventRow key={event.id} event={event} />
+              <ProviderLiveEventRow key={event.id} event={event} onOpenArtifact={onOpenArtifact} />
             ))}
           </div>
         )}

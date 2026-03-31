@@ -26,7 +26,7 @@ def _cc_execute_patches():
     mocks (CCWorkspaceManager, MCSocketServer, ClaudeCodeProvider).
 
     These cover board resolution, Convex agent sync, description enrichment,
-    output-dir snapshot, orientation loading, nanobot config loading, and
+    output-dir snapshot, orientation loading, config loading, and
     the ask-user handler.
     """
     from contextlib import contextmanager
@@ -34,9 +34,21 @@ def _cc_execute_patches():
     @contextmanager
     def _patches():
         with (
-            patch.object(TaskExecutor, "_resolve_cc_board", new_callable=AsyncMock, return_value=(None, "clean")),
-            patch.object(TaskExecutor, "_sync_cc_convex_agent", new_callable=AsyncMock, return_value=None),
-            patch.object(TaskExecutor, "_enrich_cc_description", new_callable=AsyncMock, side_effect=lambda tid, desc, td: desc or ""),
+            patch.object(
+                TaskExecutor,
+                "_resolve_cc_board",
+                new_callable=AsyncMock,
+                return_value=(None, "clean"),
+            ),
+            patch.object(
+                TaskExecutor, "_sync_cc_convex_agent", new_callable=AsyncMock, return_value=None
+            ),
+            patch.object(
+                TaskExecutor,
+                "_enrich_cc_description",
+                new_callable=AsyncMock,
+                side_effect=lambda tid, desc, td: desc or "",
+            ),
             patch("mc.contexts.execution.cc_executor.snapshot_output_dir", return_value=set()),
             patch("mc.contexts.execution.cc_executor.relocate_invalid_memory_files"),
             patch("mc.contexts.execution.cc_executor.collect_output_artifacts", return_value=[]),
@@ -47,7 +59,9 @@ def _cc_execute_patches():
             mock_cfg.return_value.claude_code.cli_path = "/usr/bin/claude"
             mock_cfg.return_value.claude_code = MagicMock()
             yield
+
     return _patches()
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -129,9 +143,9 @@ class TestSessionStorageOnCompletion:
         # Find the call that stored the task-scoped key
         mutation_calls = bridge.mutation.call_args_list
         task_scoped_calls = [
-            c for c in mutation_calls
-            if c[0][0] == "settings:set"
-            and c[0][1].get("key") == "cc_session:my-cc-agent:task-001"
+            c
+            for c in mutation_calls
+            if c[0][0] == "settings:set" and c[0][1].get("key") == "cc_session:my-cc-agent:task-001"
         ]
         assert task_scoped_calls, "Expected settings:set for task-scoped key"
         assert task_scoped_calls[0][0][1]["value"] == "sess-xyz"
@@ -152,9 +166,9 @@ class TestSessionStorageOnCompletion:
 
         mutation_calls = bridge.mutation.call_args_list
         latest_calls = [
-            c for c in mutation_calls
-            if c[0][0] == "settings:set"
-            and c[0][1].get("key") == "cc_session:my-cc-agent:latest"
+            c
+            for c in mutation_calls
+            if c[0][0] == "settings:set" and c[0][1].get("key") == "cc_session:my-cc-agent:latest"
         ]
         assert latest_calls, "Expected settings:set for latest key"
         assert latest_calls[0][0][1]["value"] == "sess-xyz"
@@ -176,15 +190,19 @@ class TestSessionStorageOnCompletion:
         # No session should be stored when session_id is empty
         mutation_calls = bridge.mutation.call_args_list
         store_calls = [
-            c for c in mutation_calls
+            c
+            for c in mutation_calls
             if c[0][0] == "settings:set"
-            and c[0][1].get("key") in (
+            and c[0][1].get("key")
+            in (
                 "cc_session:my-cc-agent:task-001",
                 "cc_session:my-cc-agent:latest",
             )
             and c[0][1].get("value") != ""
         ]
-        assert not store_calls, f"Should not store session when session_id is empty, got: {store_calls}"
+        assert not store_calls, (
+            f"Should not store session when session_id is empty, got: {store_calls}"
+        )
 
     @pytest.mark.asyncio
     async def test_session_storage_failure_does_not_prevent_completion(self):
@@ -249,9 +267,9 @@ class TestSessionLookupOnExecution:
             # Provider should receive the stored session_id
             mock_provider.execute_task.assert_awaited_once()
             call_kwargs = mock_provider.execute_task.call_args
-            assert call_kwargs.kwargs.get("session_id") == "sess-stored-123" or \
-                   (call_kwargs.args and "sess-stored-123" in call_kwargs.args), \
-                   f"session_id not passed correctly: {call_kwargs}"
+            assert call_kwargs.kwargs.get("session_id") == "sess-stored-123" or (
+                call_kwargs.args and "sess-stored-123" in call_kwargs.args
+            ), f"session_id not passed correctly: {call_kwargs}"
 
     @pytest.mark.asyncio
     async def test_no_session_when_settings_returns_none(self):
@@ -369,8 +387,9 @@ class TestThreadFollowUp:
         # Provider should receive the stored session_id
         mock_provider.execute_task.assert_awaited_once()
         call_kwargs = mock_provider.execute_task.call_args
-        assert call_kwargs.kwargs.get("session_id") == "sess-thread-abc", \
+        assert call_kwargs.kwargs.get("session_id") == "sess-thread-abc", (
             f"Expected session_id='sess-thread-abc', got: {call_kwargs}"
+        )
 
     @pytest.mark.asyncio
     async def test_reply_updates_session_after_response(self):
@@ -404,17 +423,17 @@ class TestThreadFollowUp:
         # Task-scoped session key should be updated with the new session_id
         mutation_calls = bridge.mutation.call_args_list
         task_update_calls = [
-            c for c in mutation_calls
+            c
+            for c in mutation_calls
             if c[0][0] == "settings:set"
             and c[0][1].get("key") == "cc_session:my-cc-agent:task-333"
             and c[0][1].get("value") == "sess-new-after-reply"
         ]
-        assert task_update_calls, (
-            f"Expected task-scoped session update call, got: {mutation_calls}"
-        )
+        assert task_update_calls, f"Expected task-scoped session update call, got: {mutation_calls}"
         # The :latest key should also be updated (L1 fix)
         latest_update_calls = [
-            c for c in mutation_calls
+            c
+            for c in mutation_calls
             if c[0][0] == "settings:set"
             and c[0][1].get("key") == "cc_session:my-cc-agent:latest"
             and c[0][1].get("value") == "sess-new-after-reply"
@@ -505,7 +524,8 @@ class TestSessionCleanupOnDone:
         mutation_calls = bridge.mutation.call_args_list
         # Verify no soft-delete (empty value) was written for the task-scoped key
         soft_delete_calls = [
-            c for c in mutation_calls
+            c
+            for c in mutation_calls
             if c[0][0] == "settings:set"
             and c[0][1].get("key") == "cc_session:my-cc-agent:task-999"
             and c[0][1].get("value") == ""
@@ -515,7 +535,8 @@ class TestSessionCleanupOnDone:
         )
         # Verify the session was stored with the correct value
         store_calls = [
-            c for c in mutation_calls
+            c
+            for c in mutation_calls
             if c[0][0] == "settings:set"
             and c[0][1].get("key") == "cc_session:my-cc-agent:task-999"
             and c[0][1].get("value") == "sess-to-persist"
@@ -540,7 +561,8 @@ class TestSessionCleanupOnDone:
 
         mutation_calls = bridge.mutation.call_args_list
         clear_latest_calls = [
-            c for c in mutation_calls
+            c
+            for c in mutation_calls
             if c[0][0] == "settings:set"
             and c[0][1].get("key") == "cc_session:my-cc-agent:latest"
             and c[0][1].get("value") == ""

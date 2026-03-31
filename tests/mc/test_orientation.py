@@ -5,18 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from mc.infrastructure.orientation import load_orientation
+from mc.infrastructure.orientation import FILE_ATTACHMENT_INSTRUCTION, load_orientation
 
 
 class TestLoadOrientation:
     def test_returns_none_for_orchestrator_agent(self) -> None:
         """Lead-agent should never receive orientation."""
         result = load_orientation("orchestrator-agent")
-        assert result is None
-
-    def test_returns_none_for_nanobot(self) -> None:
-        """nanobot should never receive orientation."""
-        result = load_orientation("nanobot")
         assert result is None
 
     def test_returns_none_when_file_missing(self, tmp_path: Path) -> None:
@@ -52,7 +47,9 @@ class TestLoadOrientation:
             return_value=mc_dir / "agent-orientation.md",
         ):
             result = load_orientation("test-agent")
-        assert result == "You are a helpful agent."
+        assert result is not None
+        assert result.startswith("You are a helpful agent.")
+        assert FILE_ATTACHMENT_INSTRUCTION.strip() in result
 
     def test_saved_setting_overrides_file(self, tmp_path: Path) -> None:
         """A saved global_orientation_prompt should take precedence over the file."""
@@ -68,7 +65,9 @@ class TestLoadOrientation:
         ):
             result = load_orientation("test-agent", bridge=bridge)
 
-        assert result == "Saved orientation"
+        assert result is not None
+        assert "Saved orientation" in result
+        assert FILE_ATTACHMENT_INSTRUCTION.strip() in result
         bridge.query.assert_called_once_with(
             "settings:get",
             {"key": "global_orientation_prompt"},
@@ -88,7 +87,8 @@ class TestLoadOrientation:
         ):
             result = load_orientation("test-agent", bridge=bridge)
 
-        assert result == "Fallback file orientation"
+        assert result is not None
+        assert "Fallback file orientation" in result
 
     def test_interpolates_agent_roster(self, tmp_path: Path) -> None:
         """The {agent_roster} placeholder is interpolated."""

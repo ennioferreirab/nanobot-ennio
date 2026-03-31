@@ -72,6 +72,8 @@ def _collect_output_artifacts(
     for entry in output_dir.rglob("*"):
         if not entry.is_file():
             continue
+        if entry.name.startswith("system_prompt_"):
+            continue
         # relative to task base dir (parent of output/)
         rel = str(entry.relative_to(output_dir.parent))
         size = entry.stat().st_size
@@ -397,7 +399,7 @@ async def _enrich_nanobot_description(
             tag_attr_values = await asyncio.to_thread(
                 bridge.query, "tagAttributeValues:getByTask", {"task_id": task_id}
             )
-            tag_attr_catalog = await asyncio.to_thread(bridge.query, "tagAttributes:list", {})
+            tag_attr_catalog = await asyncio.to_thread(bridge.tag_attributes_cache.get)
             tag_attrs_context = build_tag_attributes_context(
                 task_tags,
                 tag_attr_values if isinstance(tag_attr_values, list) else [],

@@ -325,7 +325,7 @@ describe("tasks.create", () => {
 });
 
 describe("tasks.createMergedTask", () => {
-  it("creates task C in inbox so the lead agent can generate a reviewable plan", async () => {
+  it("creates task C in inbox as a manual review task", async () => {
     const handler = getCreateMergedTaskHandler();
     const patch = vi.fn(async () => undefined);
     const insert = vi.fn(async (table: string) => {
@@ -360,7 +360,7 @@ describe("tasks.createMergedTask", () => {
 
     const taskId = await handler(
       { db: { get, insert, patch } },
-      { primaryTaskId: "task-a", secondaryTaskId: "task-b", mode: "plan" },
+      { primaryTaskId: "task-a", secondaryTaskId: "task-b" },
     );
 
     expect(taskId).toBe("task-c");
@@ -370,6 +370,7 @@ describe("tasks.createMergedTask", () => {
         title: "Merge: Task A + Task B",
         description: 'Merged from "Task A" and "Task B". Continue work in this task.',
         status: "inbox",
+        isManual: true,
         awaitingKickoff: undefined,
         boardId: "board-1",
         trustLevel: "human_approved",
@@ -435,7 +436,7 @@ describe("tasks.createMergedTask", () => {
 
     await handler(
       { db: { get, insert, patch } },
-      { primaryTaskId: "task-a", secondaryTaskId: "task-b", mode: "manual" },
+      { primaryTaskId: "task-a", secondaryTaskId: "task-b" },
     );
 
     expect(insert).toHaveBeenCalledWith(
@@ -491,7 +492,7 @@ describe("tasks.createMergedTask", () => {
     await expect(
       handler(
         { db: { get, insert: vi.fn(), patch: vi.fn() } },
-        { primaryTaskId: "task-a", secondaryTaskId: "task-b", mode: "plan" },
+        { primaryTaskId: "task-a", secondaryTaskId: "task-b" },
       ),
     ).rejects.toThrow(ConvexError);
   });
@@ -530,7 +531,7 @@ describe("tasks.createMergedTask", () => {
     await expect(
       handler(
         { db: { get, insert, patch } },
-        { primaryTaskId: "task-c1", secondaryTaskId: "task-d", mode: "manual" },
+        { primaryTaskId: "task-c1", secondaryTaskId: "task-d" },
       ),
     ).resolves.toBe("task-c2");
 

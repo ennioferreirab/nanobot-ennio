@@ -21,7 +21,7 @@ Each agent lives in `~/.nanobot/agents/{agent_name}/` with a mandatory `config.y
 | `model` | `string` | no | LLM model ID or `tier:standard-low` etc. |
 | `skills` | `list[str]` | no | Skill names available to this agent (default `[]`) |
 | `soul` | `string` | no | Path to or content of SOUL.md personality override |
-| `backend` | `string` | no | `"nanobot"` or `"claude-code"` (default `"nanobot"`) |
+| `backend` | `string` | no | `"claude-code"` (default `"claude-code"`) |
 | `is_system` | `bool` | no | System agents cannot be deleted |
 | `interactive_provider` | `string` | no | `"claude-code"`, `"codex"`, or `"mc"` |
 | `claude_code` | `dict` | no | CC-specific: `permission_mode`, `max_budget_usd`, `max_turns` |
@@ -58,7 +58,6 @@ use, revisit this to implement:
 | Name | Purpose |
 |------|---------|
 | `orchestrator-agent` | Orchestrator — routes tasks, manages workflows |
-| `nanobot` | Default general-purpose agent |
 | `low-agent` | System low-privilege agent |
 | `human` | Placeholder for human participants (HITL) |
 
@@ -117,8 +116,8 @@ Project-specific builtins in `mc/skills/` are distributed to the global workspac
 │  2. SYNC TO CONVEX  (gateway startup)                    │
 │  sync_skills() in agent_bootstrap.py                     │
 │  - SkillsLoader discovers all skills from 3 sources      │
-│  - Detects supported providers (claude-code, codex,      │
-│    nanobot) — presence of agents/openai.yaml → codex     │
+│  - Detects supported providers (claude-code, codex)      │
+│    — presence of agents/openai.yaml → codex              │
 │  - Checks requirements (bins via which(), env vars)      │
 │  - Upserts to Convex via skills:upsertByName             │
 │  - Deactivates skills no longer on disk                  │
@@ -143,7 +142,6 @@ Project-specific builtins in `mc/skills/` are distributed to the global workspac
 ┌──────────────────────────────────────────────────────────┐
 │  4. AGENT RUNTIME                                        │
 │  CC backend:  /skill-name (Skill tool) or Read SKILL.md  │
-│  Nanobot:     SkillsLoader.build_skills_summary()        │
 │  Codex:       agents/openai.yaml + content from Convex   │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -391,4 +389,5 @@ Squad graph publication: `publish_squad_graph(graph)` in `mc/bridge/repositories
 | Board workspace | `mc/infrastructure/boards.py` | `resolve_board_workspace()` |
 | Agent types | `mc/types.py` | `AgentData` dataclass |
 | Convex schema | `dashboard/convex/schema.ts` | `messages`, `agents`, `skills`, `squadSpecs` tables |
-| Skills API | `dashboard/app/api/skills/[skillName]/files/` | REST endpoints for skill file R/W |
+| Skills API | `dashboard/app/api/specs/skills/` | `GET /api/specs/skills` — list all skills (`?available=true` filter); `POST` — register/update skill |
+| Skills file API | `dashboard/app/api/skills/[skillName]/files/` | REST endpoints for skill file R/W |

@@ -13,13 +13,19 @@
  *   distinguish plan sources.
  * - Optional workflow metadata fields (workflowStepId, workflowStepType,
  *   agentId) are attached to each step for downstream use.
+ * - Transitive reduction is applied to dependsOn before mapping to blockedBy,
+ *   removing redundant edges that don't affect execution order.
  */
+
+import { reduceTransitiveDeps } from "./graphUtils";
+
+const SYSTEM_ASSIGNED_AGENT = "low-agent";
 
 // ---------------------------------------------------------------------------
 // Input types
 // ---------------------------------------------------------------------------
 
-export type WorkflowStepType = "agent" | "human" | "checkpoint" | "review" | "system";
+export type WorkflowStepType = "agent" | "human" | "review" | "system";
 
 /** A single step as stored in a workflowSpecs document. */
 export interface WorkflowSpecStep {
@@ -151,18 +157,20 @@ function computeParallelGroups(steps: WorkflowSpecStep[]): Map<string, number> {
 }
 
 function validateWorkflowStep(step: WorkflowSpecStep): void {
-  if (step.type !== "review") {
-    return;
+  if (step.type === "agent" && !step.agentId) {
+    throw new Error(`Agent step "${step.id}" requires agentId`);
   }
 
-  if (!step.agentId) {
-    throw new Error(`Review step "${step.id}" requires agentId`);
-  }
-  if (!step.reviewSpecId) {
-    throw new Error(`Review step "${step.id}" requires reviewSpecId`);
-  }
-  if (!step.onReject) {
-    throw new Error(`Review step "${step.id}" requires onReject`);
+  if (step.type === "review") {
+    if (!step.agentId) {
+      throw new Error(`Review step "${step.id}" requires agentId`);
+    }
+    if (!step.reviewSpecId) {
+      throw new Error(`Review step "${step.id}" requires reviewSpecId`);
+    }
+    if (!step.onReject) {
+      throw new Error(`Review step "${step.id}" requires onReject`);
+    }
   }
 }
 
@@ -177,15 +185,24 @@ export function compileWorkflowExecutionPlan(
     agentLookup.set(ref.agentId, ref.agentName);
   }
 
-  // Compute topological layer groups for parallelGroup assignment
-  const parallelGroups = computeParallelGroups(workflow.steps);
+  // Remove transitive dependencies before computing topology (safety net)
+  const reducedDeps = reduceTransitiveDeps(workflow.steps);
+
+  // Compute topological layer groups from the reduced dependency graph
+  const stepsWithReducedDeps = workflow.steps.map((s) => ({
+    ...s,
+    dependsOn: reducedDeps.get(s.id) ?? s.dependsOn,
+  }));
+  const parallelGroups = computeParallelGroups(stepsWithReducedDeps);
 
   const compiledSteps: WorkflowExecutionPlanStep[] = workflow.steps.map((step, index) => {
     validateWorkflowStep(step);
 
     // Resolve agent name
     let assignedAgent = "";
-    if (step.agentId !== undefined) {
+    if (step.type === "system" && step.agentId === undefined) {
+      assignedAgent = SYSTEM_ASSIGNED_AGENT;
+    } else if (step.agentId !== undefined) {
       const resolvedName = agentLookup.get(step.agentId);
       if (resolvedName === undefined) {
         throw new Error(
@@ -196,8 +213,8 @@ export function compileWorkflowExecutionPlan(
       assignedAgent = resolvedName;
     }
 
-    // Map dependsOn → blockedBy (reuses the workflow step id as tempId directly)
-    const blockedBy: string[] = step.dependsOn ?? [];
+    // Map reduced dependsOn → blockedBy (reuses the workflow step id as tempId directly)
+    const blockedBy: string[] = reducedDeps.get(step.id) ?? step.dependsOn ?? [];
 
     const compiledStep: WorkflowExecutionPlanStep = {
       tempId: step.id,

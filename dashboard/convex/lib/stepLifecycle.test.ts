@@ -8,6 +8,7 @@ import {
   resolveInitialStepStatus,
   findBlockedStepsReadyToUnblock,
   findTransitiveDependents,
+  computeRejectionCascadeResets,
   resolveBlockedByIds,
   validateBatchSteps,
   logStepStatusChange,
@@ -239,6 +240,222 @@ describe("findTransitiveDependents", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Review rejection cascade — bug reproduction & fix
+// ---------------------------------------------------------------------------
+
+describe("review rejection cascade", () => {
+  /**
+   * Models the instagram-post-creation-v2 workflow:
+   *
+   *   company-intel → post-specs → copywriting ──→ creative-review
+   *                  └──────────→ visual-design ─┘
+   *
+   * creative-review rejects to post-specs (onReject: "post-specs").
+   * The rejection handler should reset ALL transitive dependents between
+   * post-specs and creative-review — not just the target + review step.
+   */
+  const companyIntel = asStepId("company-intel");
+  const postSpecs = asStepId("post-specs");
+  const copywriting = asStepId("copywriting");
+  const visualDesign = asStepId("visual-design");
+  const creativeReview = asStepId("creative-review");
+  const approval = asStepId("approval");
+
+  function buildPostRejectionSteps_naiveReset(): Parameters<
+    typeof findBlockedStepsReadyToUnblock
+  >[0] {
+    // BUG: current behavior only resets target (post-specs → assigned)
+    // and review step (creative-review → blocked).
+    // Intermediate steps copywriting + visual-design stay COMPLETED.
+    return [
+      { _id: companyIntel, status: "completed", blockedBy: [] },
+      { _id: postSpecs, status: "assigned", blockedBy: [companyIntel] },
+      { _id: copywriting, status: "completed", blockedBy: [postSpecs] },
+      { _id: visualDesign, status: "completed", blockedBy: [postSpecs, companyIntel] },
+      {
+        _id: creativeReview,
+        status: "blocked",
+        blockedBy: [copywriting, visualDesign],
+        workflowStepType: "review",
+      },
+      { _id: approval, status: "blocked", blockedBy: [creativeReview] },
+    ];
+  }
+
+  it("without cascade reset, review step would unblock immediately on stale deps (regression guard)", () => {
+    // This test proves WHY the cascade reset is needed:
+    // If only target + review are reset (no intermediates), the review step
+    // gets unblocked as soon as the target re-completes.
+    const stepsWithNaiveReset = buildPostRejectionSteps_naiveReset();
+
+    // Simulate post-specs re-completing:
+    const stepsAfterReComplete = stepsWithNaiveReset.map((s) =>
+      s._id === postSpecs ? { ...s, status: "completed" as const } : s,
+    );
+
+    const readyToUnblock = findBlockedStepsReadyToUnblock(stepsAfterReComplete);
+
+    // creative-review WOULD unblock because copywriting + visual-design are
+    // still COMPLETED. This is the broken behavior that cascadeRejectReset prevents.
+    expect(readyToUnblock).toContain(creativeReview);
+  });
+
+  it("computeRejectionCascadeResets returns intermediate steps that need resetting", () => {
+    // All steps in completed state before the review runs
+    const steps: Parameters<typeof computeRejectionCascadeResets>[0]["steps"] = [
+      { _id: companyIntel, status: "completed", blockedBy: [] },
+      { _id: postSpecs, status: "completed", blockedBy: [companyIntel] },
+      { _id: copywriting, status: "completed", blockedBy: [postSpecs] },
+      { _id: visualDesign, status: "completed", blockedBy: [postSpecs, companyIntel] },
+      {
+        _id: creativeReview,
+        status: "running",
+        blockedBy: [copywriting, visualDesign],
+        workflowStepType: "review",
+      },
+      { _id: approval, status: "blocked", blockedBy: [creativeReview] },
+    ];
+
+    const result = computeRejectionCascadeResets({
+      steps,
+      targetStepId: postSpecs,
+      reviewStepId: creativeReview,
+    });
+
+    // Target step should be reset to assigned
+    expect(result.targetStepId).toBe(postSpecs);
+    expect(result.targetToStatus).toBe("assigned");
+
+    // Review step should be set to blocked
+    expect(result.reviewStepId).toBe(creativeReview);
+    expect(result.reviewToStatus).toBe("blocked");
+
+    // Intermediate steps (between target and review) should be reset to blocked
+    expect(result.intermediateStepIds).toHaveLength(2);
+    expect(result.intermediateStepIds).toContain(copywriting);
+    expect(result.intermediateStepIds).toContain(visualDesign);
+    expect(result.intermediateToStatus).toBe("blocked");
+  });
+
+  it("computeRejectionCascadeResets does NOT reset steps outside the cascade path", () => {
+    const steps: Parameters<typeof computeRejectionCascadeResets>[0]["steps"] = [
+      { _id: companyIntel, status: "completed", blockedBy: [] },
+      { _id: postSpecs, status: "completed", blockedBy: [companyIntel] },
+      { _id: copywriting, status: "completed", blockedBy: [postSpecs] },
+      { _id: visualDesign, status: "completed", blockedBy: [postSpecs, companyIntel] },
+      {
+        _id: creativeReview,
+        status: "running",
+        blockedBy: [copywriting, visualDesign],
+        workflowStepType: "review",
+      },
+      { _id: approval, status: "blocked", blockedBy: [creativeReview] },
+    ];
+
+    const result = computeRejectionCascadeResets({
+      steps,
+      targetStepId: postSpecs,
+      reviewStepId: creativeReview,
+    });
+
+    // company-intel is upstream of target — should NOT be reset
+    expect(result.intermediateStepIds).not.toContain(companyIntel);
+
+    // approval is downstream of review — should NOT be touched
+    // (it stays blocked naturally since review won't complete)
+    expect(result.intermediateStepIds).not.toContain(approval);
+  });
+
+  it("after correct cascade reset, review step is NOT prematurely unblockable", () => {
+    // Apply the correct cascade: target=assigned, intermediates=blocked, review=blocked
+    const stepsAfterCorrectReset: Parameters<typeof findBlockedStepsReadyToUnblock>[0] = [
+      { _id: companyIntel, status: "completed", blockedBy: [] },
+      { _id: postSpecs, status: "assigned", blockedBy: [companyIntel] },
+      { _id: copywriting, status: "blocked", blockedBy: [postSpecs] },
+      { _id: visualDesign, status: "blocked", blockedBy: [postSpecs, companyIntel] },
+      {
+        _id: creativeReview,
+        status: "blocked",
+        blockedBy: [copywriting, visualDesign],
+        workflowStepType: "review",
+      },
+      { _id: approval, status: "blocked", blockedBy: [creativeReview] },
+    ];
+
+    // After post-specs re-completes
+    const stepsAfterPostSpecsReCompletes = stepsAfterCorrectReset.map((s) =>
+      s._id === postSpecs ? { ...s, status: "completed" as const } : s,
+    );
+
+    const readyToUnblock = findBlockedStepsReadyToUnblock(stepsAfterPostSpecsReCompletes);
+
+    // copywriting + visual-design should unblock (their deps completed)
+    expect(readyToUnblock).toContain(copywriting);
+    expect(readyToUnblock).toContain(visualDesign);
+
+    // creative-review should NOT unblock yet (copywriting + visual-design are blocked, not completed)
+    expect(readyToUnblock).not.toContain(creativeReview);
+  });
+
+  it("computeRejectionCascadeResets works on second rejection cycle (intermediates already blocked)", () => {
+    // After a first rejection + cascade reset, intermediates are blocked.
+    // If the target re-runs, intermediates unblock, run, then the review
+    // rejects AGAIN. At this point intermediates are completed again.
+    const steps: Parameters<typeof computeRejectionCascadeResets>[0]["steps"] = [
+      { _id: companyIntel, status: "completed", blockedBy: [] },
+      { _id: postSpecs, status: "completed", blockedBy: [companyIntel] },
+      { _id: copywriting, status: "completed", blockedBy: [postSpecs] },
+      { _id: visualDesign, status: "completed", blockedBy: [postSpecs, companyIntel] },
+      {
+        _id: creativeReview,
+        status: "running",
+        blockedBy: [copywriting, visualDesign],
+        workflowStepType: "review",
+      },
+      { _id: approval, status: "blocked", blockedBy: [creativeReview] },
+    ];
+
+    const result = computeRejectionCascadeResets({
+      steps,
+      targetStepId: postSpecs,
+      reviewStepId: creativeReview,
+    });
+
+    // Same result as first cycle — intermediates must be reset again
+    expect(result.intermediateStepIds).toHaveLength(2);
+    expect(result.intermediateStepIds).toContain(copywriting);
+    expect(result.intermediateStepIds).toContain(visualDesign);
+  });
+
+  it("computeRejectionCascadeResets handles direct reject (no intermediates)", () => {
+    // Review rejects to its direct dependency — no intermediates
+    //   strategy → strategy-review (onReject: strategy)
+    const strategy = asStepId("strategy");
+    const strategyReview = asStepId("strategy-review");
+
+    const steps: Parameters<typeof computeRejectionCascadeResets>[0]["steps"] = [
+      { _id: strategy, status: "completed", blockedBy: [] },
+      {
+        _id: strategyReview,
+        status: "running",
+        blockedBy: [strategy],
+        workflowStepType: "review",
+      },
+    ];
+
+    const result = computeRejectionCascadeResets({
+      steps,
+      targetStepId: strategy,
+      reviewStepId: strategyReview,
+    });
+
+    expect(result.targetStepId).toBe(strategy);
+    expect(result.intermediateStepIds).toHaveLength(0);
+    expect(result.reviewStepId).toBe(strategyReview);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // resolveBlockedByIds
 // ---------------------------------------------------------------------------
 
@@ -369,13 +586,13 @@ describe("logStepStatusChange", () => {
       stepTitle: "Deploy to staging",
       previousStatus: "assigned",
       nextStatus: "running",
-      assignedAgent: "nanobot",
+      assignedAgent: "test-agent",
       timestamp: "2026-01-01T00:00:00.000Z",
     });
 
     expect(insert).toHaveBeenCalledWith("activities", {
       taskId: "task-1",
-      agentName: "nanobot",
+      agentName: "test-agent",
       eventType: "step_status_changed",
       description: 'Step status changed from assigned to running: "Deploy to staging"',
       timestamp: "2026-01-01T00:00:00.000Z",
@@ -415,7 +632,93 @@ describe("STEP_TRANSITIONS consistency", () => {
     }
   });
 
-  it("completed can only transition to assigned (review rejection rework)", () => {
-    expect(STEP_TRANSITIONS.completed).toEqual(["assigned"]);
+  it("completed can transition to assigned or blocked (review rejection cascade)", () => {
+    expect(STEP_TRANSITIONS.completed).toEqual(["assigned", "blocked"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// skipped status
+// ---------------------------------------------------------------------------
+
+describe("skipped status", () => {
+  it("skipped is a valid step status", () => {
+    expect(isValidStepStatus("skipped")).toBe(true);
+  });
+
+  it("review -> skipped is valid", () => {
+    expect(isValidStepTransition("review", "skipped")).toBe(true);
+  });
+
+  it("assigned -> skipped is valid", () => {
+    expect(isValidStepTransition("assigned", "skipped")).toBe(true);
+  });
+
+  it("blocked -> skipped is valid", () => {
+    expect(isValidStepTransition("blocked", "skipped")).toBe(true);
+  });
+
+  it("skipped -> assigned is valid (un-skip)", () => {
+    expect(isValidStepTransition("skipped", "assigned")).toBe(true);
+  });
+
+  it("skipped -> blocked is valid (un-skip with pending dependencies)", () => {
+    expect(isValidStepTransition("skipped", "blocked")).toBe(true);
+  });
+
+  it("running -> skipped is NOT valid", () => {
+    expect(isValidStepTransition("running", "skipped")).toBe(false);
+  });
+
+  it("completed -> skipped is NOT valid", () => {
+    expect(isValidStepTransition("completed", "skipped")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findBlockedStepsReadyToUnblock — skipped blockers
+// ---------------------------------------------------------------------------
+
+describe("findBlockedStepsReadyToUnblock with skipped blockers", () => {
+  it("unblocks when all blockers are skipped", () => {
+    const steps = [
+      { _id: "s1", status: "skipped" },
+      { _id: "s2", status: "skipped" },
+      { _id: "s3", status: "blocked", blockedBy: ["s1", "s2"] },
+    ];
+
+    const ready = findBlockedStepsReadyToUnblock(
+      steps as Parameters<typeof findBlockedStepsReadyToUnblock>[0],
+    );
+
+    expect(ready).toEqual(["s3"]);
+  });
+
+  it("unblocks with mixed completed and skipped blockers", () => {
+    const steps = [
+      { _id: "s1", status: "completed" },
+      { _id: "s2", status: "skipped" },
+      { _id: "s3", status: "blocked", blockedBy: ["s1", "s2"] },
+    ];
+
+    const ready = findBlockedStepsReadyToUnblock(
+      steps as Parameters<typeof findBlockedStepsReadyToUnblock>[0],
+    );
+
+    expect(ready).toEqual(["s3"]);
+  });
+
+  it("does NOT unblock when one blocker is still running", () => {
+    const steps = [
+      { _id: "s1", status: "skipped" },
+      { _id: "s2", status: "running" },
+      { _id: "s3", status: "blocked", blockedBy: ["s1", "s2"] },
+    ];
+
+    const ready = findBlockedStepsReadyToUnblock(
+      steps as Parameters<typeof findBlockedStepsReadyToUnblock>[0],
+    );
+
+    expect(ready).toEqual([]);
   });
 });

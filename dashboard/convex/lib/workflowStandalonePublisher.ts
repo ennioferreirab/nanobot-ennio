@@ -1,6 +1,8 @@
 import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
+import { reduceTransitiveDeps } from "./graphUtils";
 import type { DbWriter } from "./types";
+import { validateWorkflowStepReferences } from "./validators/workflowReferences";
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -9,7 +11,7 @@ import type { DbWriter } from "./types";
 export interface WorkflowStandaloneStepInput {
   id?: string;
   title: string;
-  type: "agent" | "human" | "checkpoint" | "review" | "system";
+  type: "agent" | "human" | "review" | "system";
   agentKey?: string;
   reviewSpecId?: Id<"reviewSpecs">;
   inputs?: string[];
@@ -32,7 +34,7 @@ export interface WorkflowStandaloneInput {
 export type ResolvedStep = {
   id: string;
   title: string;
-  type: "agent" | "human" | "checkpoint" | "review" | "system";
+  type: "agent" | "human" | "review" | "system";
   agentId?: Id<"agents">;
   reviewSpecId?: Id<"reviewSpecs">;
   description?: string;
@@ -118,6 +120,22 @@ export async function publishWorkflowStandalone(
     }
   }
 
+  // Step 3b: Validate internal cross-references (dependsOn and onReject must reference existing step ids)
+  const stepsForValidation = workflow.steps.map((step, index) => ({
+    id: step.id ?? `${workflow.name}-${step.title}-${index}`,
+    type: step.type,
+    dependsOn: step.dependsOn,
+    onReject: step.onReject,
+  }));
+  // Guard against synthetic id collisions
+  const idSet = new Set(stepsForValidation.map((s) => s.id));
+  if (idSet.size !== stepsForValidation.length) {
+    throw new ConvexError(
+      `Workflow '${workflow.name}' has duplicate step ids. Ensure each step has a unique id.`,
+    );
+  }
+  validateWorkflowStepReferences(stepsForValidation, `workflow '${workflow.name}'`);
+
   // Step 4: Transform steps — replace agentKey with resolved agentId, generate step id if absent
   const resolvedSteps: ResolvedStep[] = workflow.steps.map((step) => {
     // Deterministic step id: use caller-supplied id, or derive from workflow name + step title
@@ -157,6 +175,17 @@ export async function publishWorkflowStandalone(
 
     return resolved;
   });
+
+  // Step 4b: Remove transitive (redundant) dependencies from resolved steps
+  const reducedDeps = reduceTransitiveDeps(resolvedSteps);
+  for (const step of resolvedSteps) {
+    const trimmed = reducedDeps.get(step.id);
+    if (trimmed && trimmed.length > 0) {
+      step.dependsOn = trimmed;
+    } else {
+      step.dependsOn = undefined;
+    }
+  }
 
   // Step 5: Insert workflowSpec
   const now = new Date().toISOString();

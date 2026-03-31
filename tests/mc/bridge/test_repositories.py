@@ -503,13 +503,13 @@ class TestAgentRepository:
         client = _make_client_mock()
         repo = AgentRepository(client)
         repo.backup_agent_memory(
-            "nanobot",
+            "test-agent",
             boards_data=[],
             global_data={"memory_content": "global_mem", "history_content": None},
         )
 
         args = client.mutation.call_args[0][1]
-        assert args["agent_name"] == "nanobot"
+        assert args["agent_name"] == "test-agent"
         assert args["boards"] == []
         assert args["global_memory_content"] == "global_mem"
 

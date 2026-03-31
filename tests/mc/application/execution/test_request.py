@@ -33,8 +33,8 @@ class TestEntityType:
 
 
 class TestRunnerType:
-    def test_nanobot_value(self) -> None:
-        assert RunnerType.NANOBOT.value == "nanobot"
+    def test_provider_cli_value(self) -> None:
+        assert RunnerType.PROVIDER_CLI.value == "provider-cli"
 
     def test_claude_code_value(self) -> None:
         assert RunnerType.CLAUDE_CODE.value == "claude-code"
@@ -86,7 +86,7 @@ class TestExecutionRequestDefaults:
         assert req.is_cc is False
         assert req.task_data == {}
         # 16.2 defaults
-        assert req.runner_type == RunnerType.NANOBOT
+        assert req.runner_type == RunnerType.PROVIDER_CLI
         assert req.step_id is None
         assert req.session_key is None
 

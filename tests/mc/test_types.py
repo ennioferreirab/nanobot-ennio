@@ -67,7 +67,7 @@ class TestAgentDataBackendFields:
 
     def test_agent_data_default_backend(self) -> None:
         agent = AgentData(name="test-agent", display_name="Test Agent", role="Tester")
-        assert agent.backend == "nanobot"
+        assert agent.backend == "claude-code"
         assert agent.claude_code_opts is None
 
     def test_agent_data_claude_code_backend(self) -> None:
@@ -84,14 +84,14 @@ class TestAgentDataBackendFields:
         assert agent.claude_code_opts.max_budget_usd == 10.0
         assert agent.claude_code_opts.max_turns == 30
 
-    def test_agent_data_nanobot_backend_explicit(self) -> None:
+    def test_agent_data_claude_code_backend_explicit(self) -> None:
         agent = AgentData(
-            name="nano-agent",
-            display_name="Nano Agent",
-            role="Nanobot Agent",
-            backend="nanobot",
+            name="cc-agent-2",
+            display_name="CC Agent 2",
+            role="Claude Code Agent",
+            backend="claude-code",
         )
-        assert agent.backend == "nanobot"
+        assert agent.backend == "claude-code"
         assert agent.claude_code_opts is None
 
     def test_agent_data_claude_code_opts_none_with_claude_code_backend(self) -> None:
@@ -165,7 +165,7 @@ class TestExecutionPlanFromDict:
                     "temp_id": "step_1",
                     "title": "Analyze",
                     "description": "Analyze requirements",
-                    "assigned_agent": "nanobot",
+                    "assigned_agent": "test-agent",
                     "blocked_by": [],
                     "parallel_group": 1,
                     "order": 1,
@@ -191,7 +191,7 @@ class TestExecutionPlanFromDict:
                     "temp_id": "step_2",
                     "title": "Review",
                     "description": "Review output",
-                    "assigned_agent": "nanobot",
+                    "assigned_agent": "test-agent",
                     "blocked_by": [],
                     "parallel_group": 1,
                     "order": 2,
@@ -217,7 +217,7 @@ class TestExecutionPlanFromDict:
                     "temp_id": "step_1",
                     "title": "Plain step",
                     "description": "No workflow metadata",
-                    "assigned_agent": "nanobot",
+                    "assigned_agent": "test-agent",
                     "blocked_by": [],
                     "parallel_group": 1,
                     "order": 1,
@@ -241,7 +241,7 @@ class TestExecutionPlanFromDict:
                     "temp_id": "step_1",
                     "title": "Analyze",
                     "description": "Analyze",
-                    "assigned_agent": "nanobot",
+                    "assigned_agent": "test-agent",
                     "blocked_by": [],
                     "parallel_group": 1,
                     "order": 1,
@@ -271,7 +271,7 @@ class TestExecutionPlanRoundTrip:
             temp_id="step-analyze",
             title="Analyze",
             description="Analyze requirements",
-            assigned_agent="nanobot",
+            assigned_agent="test-agent",
             blocked_by=[],
             parallel_group=1,
             order=0,
@@ -301,7 +301,7 @@ class TestExecutionPlanRoundTrip:
             temp_id="step-review",
             title="Review",
             description="Review output",
-            assigned_agent="nanobot",
+            assigned_agent="test-agent",
             blocked_by=["step-analyze"],
             parallel_group=2,
             order=1,
@@ -335,7 +335,7 @@ class TestExecutionPlanRoundTrip:
             temp_id="plain-step",
             title="Plain",
             description="A plain step",
-            assigned_agent="nanobot",
+            assigned_agent="test-agent",
             blocked_by=[],
             parallel_group=1,
             order=0,

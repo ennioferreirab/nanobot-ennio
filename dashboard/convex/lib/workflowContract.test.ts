@@ -59,8 +59,8 @@ describe("STEP_STATUSES", () => {
     }
   });
 
-  it("has exactly 9 statuses", () => {
-    expect(STEP_STATUSES).toHaveLength(9);
+  it("has exactly 10 statuses", () => {
+    expect(STEP_STATUSES).toHaveLength(10);
   });
 });
 

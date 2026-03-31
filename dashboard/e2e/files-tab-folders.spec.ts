@@ -154,7 +154,6 @@ test.describe("Files tab — folder grouping & source task grouping", () => {
     state.mergeTaskId = await convexMutation("tasks:createMergedTask", {
       primaryTaskId: state.sourceAId,
       secondaryTaskId: state.sourceBId,
-      mode: "manual",
     });
 
     // Derive the merge title that Convex auto-generates

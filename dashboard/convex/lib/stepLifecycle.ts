@@ -23,6 +23,7 @@ export const STEP_STATUSES = [
   "running",
   "review",
   "completed",
+  "skipped",
   "crashed",
   "blocked",
   "waiting_human",
@@ -33,12 +34,22 @@ export type StepStatus = (typeof STEP_STATUSES)[number];
 
 export const STEP_TRANSITIONS: Record<StepStatus, StepStatus[]> = {
   planned: ["assigned", "blocked", "deleted"],
-  assigned: ["running", "review", "completed", "crashed", "blocked", "waiting_human", "deleted"],
+  assigned: [
+    "running",
+    "review",
+    "completed",
+    "skipped",
+    "crashed",
+    "blocked",
+    "waiting_human",
+    "deleted",
+  ],
   running: ["assigned", "blocked", "review", "completed", "crashed", "waiting_human", "deleted"],
-  review: ["assigned", "running", "completed", "crashed", "waiting_human", "deleted"],
-  completed: ["assigned"],
+  review: ["assigned", "running", "completed", "skipped", "crashed", "waiting_human", "deleted"],
+  completed: ["assigned", "blocked"],
+  skipped: ["assigned", "blocked", "deleted"],
   crashed: ["assigned", "deleted"],
-  blocked: ["assigned", "crashed", "deleted"],
+  blocked: ["assigned", "skipped", "crashed", "deleted"],
   waiting_human: ["running", "completed", "crashed", "deleted"],
   deleted: [],
 };
@@ -138,6 +149,49 @@ export function findTransitiveDependents(
 }
 
 /**
+ * Compute which steps need status resets when a review step rejects to a target step.
+ *
+ * Returns the target (→ assigned), all transitive dependents of the target that
+ * are between the target and the review step (→ blocked), and the review step
+ * itself (→ blocked).  Steps downstream of the review step are left untouched
+ * (they stay blocked naturally since the review won't complete).
+ */
+export function computeRejectionCascadeResets(args: {
+  steps: StepWithDependencies[];
+  targetStepId: Id<"steps">;
+  reviewStepId: Id<"steps">;
+}): {
+  targetStepId: Id<"steps">;
+  targetToStatus: "assigned";
+  reviewStepId: Id<"steps">;
+  reviewToStatus: "blocked";
+  intermediateStepIds: Id<"steps">[];
+  intermediateToStatus: "blocked";
+} {
+  const { steps, targetStepId, reviewStepId } = args;
+
+  // Find all transitive dependents of the target step
+  const allDependents = findTransitiveDependents(targetStepId, steps);
+
+  // Filter to only steps between target and review — exclude the review step
+  // itself and anything downstream of the review step.
+  const reviewDependents = new Set(findTransitiveDependents(reviewStepId, steps).map(String));
+
+  const intermediateStepIds = allDependents.filter(
+    (id) => id !== reviewStepId && !reviewDependents.has(String(id)),
+  );
+
+  return {
+    targetStepId,
+    targetToStatus: "assigned",
+    reviewStepId,
+    reviewToStatus: "blocked",
+    intermediateStepIds,
+    intermediateToStatus: "blocked",
+  };
+}
+
+/**
  * Find blocked steps that are ready to be unblocked (all dependencies completed).
  */
 export function findBlockedStepsReadyToUnblock(steps: StepWithDependencies[]): Id<"steps">[] {
@@ -147,9 +201,10 @@ export function findBlockedStepsReadyToUnblock(steps: StepWithDependencies[]): I
     .filter((step) => step.status === "blocked")
     .filter((step) => (step.blockedBy ?? []).length > 0)
     .filter((step) =>
-      (step.blockedBy ?? []).every(
-        (blockedStepId) => stepStatusById.get(blockedStepId) === "completed",
-      ),
+      (step.blockedBy ?? []).every((blockedStepId) => {
+        const s = stepStatusById.get(blockedStepId);
+        return s === "completed" || s === "skipped";
+      }),
     )
     .map((step) => step._id);
 }

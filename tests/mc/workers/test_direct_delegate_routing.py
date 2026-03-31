@@ -145,7 +145,7 @@ class TestInboxWorkerLLMDelegation:
                         "temp_id": "s1",
                         "title": "Step",
                         "description": "Do",
-                        "assigned_agent": "nanobot",
+                        "assigned_agent": "test-agent",
                         "blocked_by": [],
                         "parallel_group": 1,
                         "order": 1,

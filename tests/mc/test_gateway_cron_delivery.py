@@ -216,7 +216,7 @@ class TestOnCronJobDelivery:
 
         # bridge.query returns a task so _requeue_cron_task can succeed
         captured["bridge"].query = MagicMock(
-            return_value={"_id": "t1", "status": "idle", "assigned_agent": "nanobot"}
+            return_value={"_id": "t1", "status": "idle", "assigned_agent": "test-agent"}
         )
         captured["bridge"].send_message = MagicMock()
         captured["bridge"].update_task_status = MagicMock()
@@ -344,7 +344,7 @@ class TestOnCronJobDelivery:
         assert on_job is not None
 
         captured["bridge"].query = MagicMock(
-            return_value={"_id": "t1", "status": "done", "assigned_agent": "nanobot"}
+            return_value={"_id": "t1", "status": "done", "assigned_agent": "test-agent"}
         )
         captured["bridge"].mutation = MagicMock(return_value=None)
         captured["bridge"].send_message = MagicMock()

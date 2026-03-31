@@ -43,7 +43,7 @@ def project_root(tmp_path):
 
 @pytest.mark.asyncio
 async def test_startup_order(dashboard_dir, project_root):
-    """Processes start in correct order: convex, dashboard, gateway, nanobot."""
+    """Processes start in correct order: convex, dashboard, gateway."""
     spawn_order = []
 
     async def mock_create_subprocess(*args, **kwargs):
@@ -58,13 +58,11 @@ async def test_startup_order(dashboard_dir, project_root):
         pm._kill_port = AsyncMock()
         await pm.start()
 
-        assert len(spawn_order) == 4
+        assert len(spawn_order) == 3
         assert spawn_order[0][:3] == ("npm", "run", "dev:backend")
         assert spawn_order[1][:3] == ("npm", "run", "dev:frontend")
         assert "python" in spawn_order[2][0]
         assert spawn_order[2][1:] == ("-m", "mc.runtime.gateway")
-        assert "python" in spawn_order[3][0]
-        assert spawn_order[3][1:] == ("-m", "nanobot", "gateway")
 
         await pm.stop()
 
@@ -75,11 +73,11 @@ async def test_process_configs(dashboard_dir, project_root):
     pm = ProcessManager(dashboard_dir, project_root)
     configs = pm._get_process_configs()
 
-    assert len(configs) == 4
+    assert len(configs) == 3
 
     assert configs[0].label == "convex"
     assert configs[0].command == "npm"
-    assert configs[0].args == ["run", "dev:backend", "--", "--local"]
+    assert configs[0].args == ["run", "dev:backend", "--", "--local", "--local-force-upgrade"]
     assert configs[0].cwd == dashboard_dir
 
     assert configs[1].label == "dashboard"
@@ -90,10 +88,6 @@ async def test_process_configs(dashboard_dir, project_root):
     assert configs[2].label == "gateway"
     assert configs[2].args == ["-m", "mc.runtime.gateway"]
     assert configs[2].cwd == project_root
-
-    assert configs[3].label == "nanobot"
-    assert configs[3].args == ["-m", "nanobot", "gateway"]
-    assert configs[3].cwd == project_root
 
 
 @pytest.mark.asyncio
@@ -138,7 +132,7 @@ async def test_startup_cleans_port_before_spawning_port_bound_process(dashboard_
 async def test_local_mode_injects_local_convex_env_for_python_processes(
     dashboard_dir, project_root
 ):
-    """Gateway and nanobot inherit local Convex URL and admin key when available."""
+    """Gateway inherits local Convex URL and admin key when available."""
     dashboard_path = Path(dashboard_dir)
     (dashboard_path / ".env.local").write_text('NEXT_PUBLIC_CONVEX_URL="http://127.0.0.1:3210"\n')
     local_config = dashboard_path / ".convex" / "local" / "default"
@@ -160,19 +154,16 @@ async def test_local_mode_injects_local_convex_env_for_python_processes(
         await pm.stop()
 
     gateway_env = spawned[2][1]["env"]
-    nanobot_env = spawned[3][1]["env"]
 
     assert gateway_env["CONVEX_URL"] == "http://127.0.0.1:3210"
     assert gateway_env["CONVEX_ADMIN_KEY"] == "local-admin-key-123"
-    assert nanobot_env["CONVEX_URL"] == "http://127.0.0.1:3210"
-    assert nanobot_env["CONVEX_ADMIN_KEY"] == "local-admin-key-123"
 
 
 @pytest.mark.asyncio
 async def test_shutdown_reverse_order(dashboard_dir, project_root):
     """Processes are terminated in reverse startup order."""
     terminate_order = []
-    pids = iter([100, 200, 300, 400])
+    pids = iter([100, 200, 300])
     pid_to_proc = {}
 
     async def mock_create_subprocess(*args, **kwargs):
@@ -198,8 +189,8 @@ async def test_shutdown_reverse_order(dashboard_dir, project_root):
         await pm.start()
         await pm.stop()
 
-    # Reverse of startup: nanobot (400), gateway (300), dashboard (200), convex (100)
-    assert terminate_order == [400, 300, 200, 100]
+    # Reverse of startup: gateway (300), dashboard (200), convex (100)
+    assert terminate_order == [300, 200, 100]
 
 
 @pytest.mark.asyncio

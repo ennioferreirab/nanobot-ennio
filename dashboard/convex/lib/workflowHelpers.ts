@@ -53,6 +53,7 @@ export type ActivityEventType =
   | "step_dispatched"
   | "step_started"
   | "step_completed"
+  | "step_skipped"
   | "step_created"
   | "step_status_changed"
   | "step_unblocked"

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -42,10 +41,10 @@ class AgentRepository:
             args["soul"] = agent_data.soul
         if agent_data.is_system:
             args["is_system"] = True
-        if agent_data.backend != "nanobot":
-            args["backend"] = agent_data.backend
-        if agent_data.interactive_provider is not None:
-            args["interactive_provider"] = agent_data.interactive_provider
+        # Map backend to interactiveProvider for Convex (backend field not in schema)
+        interactive = agent_data.interactive_provider or agent_data.backend
+        if interactive:
+            args["interactive_provider"] = interactive
         cc_opts = agent_data.claude_code_opts
         if cc_opts is not None:
             cc_payload: dict[str, Any] = {}
@@ -112,7 +111,7 @@ class AgentRepository:
         Args:
             name: Agent name.
             boards_data: List of dicts with board_name, memory_content, history_content.
-            global_data: Optional dict with memory_content, history_content for global workspace (nanobot only).
+            global_data: Optional dict with memory_content, history_content for global workspace.
         """
         args: dict[str, Any] = {
             "agent_name": name,
@@ -163,74 +162,6 @@ class AgentRepository:
             description or f"Agent '{agent_name}' status changed to {status}",
         )
         return result
-
-    def write_agent_config(self, agent_data: dict[str, Any], agents_dir: Path) -> None:
-        """Write an agent's config back to local YAML.
-
-        Used for Convex -> local write-back when dashboard edits are newer
-        than the local file.
-
-        Args:
-            agent_data: Agent dict with snake_case keys (from Convex query).
-            agents_dir: Path to the agents directory (e.g. ~/.nanobot/agents/).
-        """
-        import yaml
-
-        from mc.cli.agent_assist import ensure_soul_md
-
-        name = agent_data["name"]
-        agent_dir = agents_dir / name
-        agent_dir.mkdir(parents=True, exist_ok=True)
-        for subdir in ("memory", "skills"):
-            p = agent_dir / subdir
-            # Remove broken symlinks left over from previous runs
-            if p.is_symlink() and not p.exists():
-                p.unlink()
-            p.mkdir(exist_ok=True)
-        config_path = agent_dir / "config.yaml"
-
-        config: dict[str, Any] = {
-            "name": name,
-            "role": agent_data.get("role", ""),
-            "prompt": agent_data.get("prompt", ""),
-        }
-
-        skills = agent_data.get("skills")
-        if skills:
-            config["skills"] = skills
-
-        model = agent_data.get("model")
-        if model:
-            config["model"] = model
-
-        display_name = agent_data.get("display_name")
-        if display_name:
-            config["display_name"] = display_name
-
-        soul = agent_data.get("soul")
-        if soul:
-            config["soul"] = soul
-
-        backend = agent_data.get("backend")
-        if backend and backend != "nanobot":
-            config["backend"] = backend
-        interactive_provider = agent_data.get("interactive_provider")
-        if interactive_provider:
-            config["interactive_provider"] = interactive_provider
-
-        claude_code = agent_data.get("claude_code_opts") or agent_data.get("claude_code")
-        if claude_code and isinstance(claude_code, dict):
-            config["claude_code"] = claude_code
-
-        config_path.write_text(
-            yaml.dump(config, default_flow_style=False, allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
-        )
-        logger.info("Wrote agent config to %s", config_path)
-
-        # Generate SOUL.md if not already present (preserves user edits)
-        role = agent_data.get("role", "Agent")
-        ensure_soul_md(agent_dir, name, role, soul)
 
     @staticmethod
     def _log_state_transition(entity_type: str, description: str) -> None:

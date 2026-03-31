@@ -10,6 +10,7 @@ import {
   resolveInitialStepStatus,
   findBlockedStepsReadyToUnblock,
   findTransitiveDependents,
+  computeRejectionCascadeResets,
   resolveBlockedByIds,
   validateBatchSteps,
 } from "./lib/stepLifecycle";
@@ -18,23 +19,91 @@ import { applyTaskTransition, getTaskStateVersion } from "./lib/taskTransitions"
 import { stepStatusValidator, workflowStepTypeValidator } from "./schema";
 import { logActivity } from "./lib/workflowHelpers";
 
-type ParentTaskTransitionStatus = "assigned" | "in_progress" | "review" | "done" | "crashed";
+type ParentTaskTransitionStatus = "assigned" | "in_progress" | "done" | "crashed";
 
-function deriveManualParentTaskStatus(
+/**
+ * Unblock dependents whose blockers are all completed and return a
+ * snapshot of all task steps.  Shared core for both manual (UI) and
+ * bridge (Python) completion paths.
+ */
+async function unblockReadyDependents(
+  ctx: MutationCtx,
+  taskId: Id<"tasks">,
+  timestamp: string,
+  statusOverride?: { stepId: Id<"steps">; status: StepStatus },
+): Promise<{ unblockedIds: Id<"steps">[]; currentTaskSteps: StepWithDependencies[] }> {
+  const allTaskSteps = await ctx.db
+    .query("steps")
+    .withIndex("by_taskId", (q) => q.eq("taskId", taskId))
+    .collect();
+  const currentTaskSteps: StepWithDependencies[] = allTaskSteps.map((s) => ({
+    _id: s._id,
+    status: (statusOverride && s._id === statusOverride.stepId
+      ? statusOverride.status
+      : s.status) as StepStatus,
+    blockedBy: s.blockedBy,
+    workflowStepType: s.workflowStepType,
+  }));
+
+  const unblockedIds = findBlockedStepsReadyToUnblock(currentTaskSteps);
+  const stepsById = new Map(allTaskSteps.map((s) => [s._id, s] as const));
+  for (const unblockedStepId of unblockedIds) {
+    const blockedStep = stepsById.get(unblockedStepId);
+    if (!blockedStep) continue;
+    await applyStepTransition(ctx, blockedStep as Parameters<typeof applyStepTransition>[1], {
+      stepId: unblockedStepId,
+      fromStatus: blockedStep.status,
+      expectedStateVersion: getStepStateVersion(blockedStep),
+      toStatus: "assigned",
+      reason: "Dependencies resolved",
+      idempotencyKey: `unblock:${String(unblockedStepId)}:${getStepStateVersion(blockedStep)}`,
+    });
+    await logActivity(ctx, {
+      taskId: blockedStep.taskId,
+      agentName: blockedStep.assignedAgent,
+      eventType: "step_unblocked",
+      description: `Step unblocked and assigned: "${blockedStep.title}"`,
+      timestamp,
+    });
+  }
+
+  return { unblockedIds, currentTaskSteps };
+}
+
+/**
+ * After a step is completed, unblock dependents and reconcile parent task.
+ * Used by acceptHumanStep (gate path) and manualMoveStep (completion path).
+ */
+async function completeStepAndUnblockDependents(
+  ctx: MutationCtx,
+  step: Doc<"steps">,
+  stepId: Id<"steps">,
+  timestamp: string,
+): Promise<void> {
+  const task = await ctx.db.get(step.taskId);
+  if (!task) throw new ConvexError("Parent task not found");
+
+  const { currentTaskSteps } = await unblockReadyDependents(ctx, step.taskId, timestamp, {
+    stepId,
+    status: "completed",
+  });
+  await applyManualParentTaskTransition(ctx, { task, step, currentTaskSteps });
+}
+
+export function deriveManualParentTaskStatus(
   steps: Array<{
     status?: string;
-    workflowStepType?: string;
   }>,
-): "done" | "crashed" | "in_progress" | "review" {
+): "done" | "crashed" | "in_progress" {
   const activeSteps = steps.filter((step) => step.status !== "deleted");
-  if (activeSteps.length > 0 && activeSteps.every((step) => step.status === "completed")) {
+  if (
+    activeSteps.length > 0 &&
+    activeSteps.every((step) => step.status === "completed" || step.status === "skipped")
+  ) {
     return "done";
   }
   if (activeSteps.some((step) => step.status === "crashed")) {
     return "crashed";
-  }
-  if (activeSteps.some((step) => step.status === "review" && step.workflowStepType === "review")) {
-    return "review";
   }
   return "in_progress";
 }
@@ -62,14 +131,12 @@ async function applyManualParentTaskTransition(
       ? `All ${currentTaskSteps.filter((taskStep) => taskStep.status !== "deleted").length} steps completed`
       : nextTaskStatus === "crashed"
         ? "One or more steps crashed"
-        : nextTaskStatus === "review"
-          ? "Workflow review is pending"
-          : "Step state changed; task returned to in_progress";
+        : "Step state changed; task returned to in_progress";
 
   const transitionStatuses: ParentTaskTransitionStatus[] = [];
   let transitionStartStatus = task.status;
 
-  if (transitionStartStatus === "done" && nextTaskStatus !== "review") {
+  if (transitionStartStatus === "done") {
     transitionStatuses.push("assigned");
     transitionStartStatus = "assigned";
   }
@@ -225,6 +292,7 @@ export const batchCreate = internalMutation({
         agentId: v.optional(v.id("agents")),
         reviewSpecId: v.optional(v.id("reviewSpecs")),
         onRejectStepId: v.optional(v.string()),
+        skip: v.optional(v.boolean()),
       }),
     ),
   },
@@ -266,6 +334,7 @@ export const batchCreate = internalMutation({
         ...(step.agentId !== undefined ? { agentId: step.agentId } : {}),
         ...(step.reviewSpecId !== undefined ? { reviewSpecId: step.reviewSpecId } : {}),
         ...(step.onRejectStepId !== undefined ? { onRejectStepId: step.onRejectStepId } : {}),
+        ...(step.skip ? { skip: step.skip } : {}),
       });
 
       tempIdToRealId[step.tempId] = stepId;
@@ -386,14 +455,21 @@ export const acceptHumanStep = mutation({
     }
 
     const timestamp = new Date().toISOString();
+
+    // Accept = complete. Every step accepted from waiting_human completes
+    // directly and unblocks dependents. No intermediate "running" state —
+    // there is no executor to pick it up, so "running" causes a deadlock
+    // in the dispatch loop.
     await applyStepTransition(ctx, step as Parameters<typeof applyStepTransition>[1], {
       stepId: args.stepId,
       fromStatus: step.status,
       expectedStateVersion: getStepStateVersion(step),
-      toStatus: "running",
+      toStatus: "completed",
       reason: "Human accepted step",
       idempotencyKey: `accept:${String(args.stepId)}:${getStepStateVersion(step)}`,
     });
+
+    await completeStepAndUnblockDependents(ctx, step, args.stepId, timestamp);
 
     await logActivity(ctx, {
       taskId: step.taskId,
@@ -421,8 +497,7 @@ export const manualMoveStep = mutation({
     if (!step) {
       throw new ConvexError("Step not found");
     }
-    const isWorkflowGate =
-      step.workflowStepType === "human" || step.workflowStepType === "checkpoint";
+    const isWorkflowGate = step.workflowStepType === "human";
     if (step.assignedAgent !== "human" && !isWorkflowGate) {
       throw new ConvexError("Only human-assigned steps or workflow gates can be manually moved");
     }
@@ -451,65 +526,33 @@ export const manualMoveStep = mutation({
       return step.taskId;
     }
 
-    const task = await ctx.db.get(step.taskId);
-    if (!task) {
-      throw new ConvexError("Parent task not found");
-    }
-
-    const allTaskSteps = await ctx.db
-      .query("steps")
-      .withIndex("by_taskId", (q) => q.eq("taskId", step.taskId))
-      .collect();
-    const currentTaskSteps: StepWithDependencies[] = allTaskSteps.map((taskStep) =>
-      taskStep._id === args.stepId
-        ? {
-            _id: taskStep._id,
-            status: args.newStatus as StepStatus,
-            blockedBy: taskStep.blockedBy,
-            workflowStepType: taskStep.workflowStepType,
-          }
-        : {
-            _id: taskStep._id,
-            status: taskStep.status as StepStatus,
-            blockedBy: taskStep.blockedBy,
-            workflowStepType: taskStep.workflowStepType,
-          },
-    );
-
     if (args.newStatus === "completed") {
-      // Note: step metric increment is handled by applyStepTransition (Story 31.11)
-
-      const unblockedIds = findBlockedStepsReadyToUnblock(currentTaskSteps);
-      const stepsById = new Map(allTaskSteps.map((s) => [s._id, s] as const));
-
-      for (const unblockedStepId of unblockedIds) {
-        const blockedStep = stepsById.get(unblockedStepId);
-        if (!blockedStep) continue;
-
-        await applyStepTransition(ctx, blockedStep as Parameters<typeof applyStepTransition>[1], {
-          stepId: unblockedStepId,
-          fromStatus: blockedStep.status,
-          expectedStateVersion: getStepStateVersion(blockedStep),
-          toStatus: "assigned",
-          reason: "Dependencies resolved",
-          idempotencyKey: `unblock:${String(unblockedStepId)}:${getStepStateVersion(blockedStep)}`,
-        });
-
-        await ctx.db.insert("activities", {
-          taskId: blockedStep.taskId,
-          agentName: blockedStep.assignedAgent,
-          eventType: "step_unblocked",
-          description: `Step unblocked and assigned: "${blockedStep.title}"`,
-          timestamp,
-        });
-      }
+      await completeStepAndUnblockDependents(ctx, step, args.stepId, timestamp);
+    } else {
+      // Non-completion moves still need parent task reconciliation
+      const task = await ctx.db.get(step.taskId);
+      if (!task) throw new ConvexError("Parent task not found");
+      const allTaskSteps = await ctx.db
+        .query("steps")
+        .withIndex("by_taskId", (q) => q.eq("taskId", step.taskId))
+        .collect();
+      const currentTaskSteps: StepWithDependencies[] = allTaskSteps.map((taskStep) =>
+        taskStep._id === args.stepId
+          ? {
+              _id: taskStep._id,
+              status: args.newStatus as StepStatus,
+              blockedBy: taskStep.blockedBy,
+              workflowStepType: taskStep.workflowStepType,
+            }
+          : {
+              _id: taskStep._id,
+              status: taskStep.status as StepStatus,
+              blockedBy: taskStep.blockedBy,
+              workflowStepType: taskStep.workflowStepType,
+            },
+      );
+      await applyManualParentTaskTransition(ctx, { task, step, currentTaskSteps });
     }
-
-    await applyManualParentTaskTransition(ctx, {
-      task,
-      step,
-      currentTaskSteps,
-    });
 
     return step.taskId;
   },
@@ -885,7 +928,9 @@ export const addStep = mutation({
     } else {
       // Check if all blockers are completed
       const blockerSteps = existingSteps.filter((s) => blockedByIds.includes(s._id));
-      const allBlockersCompleted = blockerSteps.every((s) => s.status === "completed");
+      const allBlockersCompleted = blockerSteps.every(
+        (s) => s.status === "completed" || s.status === "skipped",
+      );
       status = allBlockersCompleted ? "planned" : "blocked";
     }
 
@@ -976,6 +1021,7 @@ export const updateStep = mutation({
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     assignedAgent: v.optional(v.string()),
+    reviewSpecId: v.optional(v.id("reviewSpecs")),
     blockedByStepIds: v.optional(v.array(v.id("steps"))),
   },
   handler: async (ctx, args) => {
@@ -1005,12 +1051,25 @@ export const updateStep = mutation({
         throw new ConvexError("orchestrator-agent cannot be assigned to steps");
       }
     }
+    if (args.reviewSpecId !== undefined) {
+      if (step.workflowStepType !== "review") {
+        throw new ConvexError("reviewSpecId can only be set on review steps");
+      }
+      const reviewSpec = await ctx.db.get(args.reviewSpecId);
+      if (!reviewSpec) {
+        throw new ConvexError(`Review spec not found: ${args.reviewSpecId}`);
+      }
+      if (reviewSpec.status !== "published") {
+        throw new ConvexError("Review spec must be published");
+      }
+    }
 
     const patch: Record<string, unknown> = {};
     let nextStepStatus: StepStatus | null = null;
     if (args.title !== undefined) patch.title = args.title;
     if (args.description !== undefined) patch.description = args.description;
     if (args.assignedAgent !== undefined) patch.assignedAgent = args.assignedAgent;
+    if (args.reviewSpecId !== undefined) patch.reviewSpecId = args.reviewSpecId;
 
     // Handle blockedBy update
     if (args.blockedByStepIds !== undefined) {
@@ -1034,7 +1093,9 @@ export const updateStep = mutation({
           .withIndex("by_taskId", (q) => q.eq("taskId", step.taskId))
           .collect();
         const blockerSteps = existingSteps.filter((s) => args.blockedByStepIds!.includes(s._id));
-        const allDone = blockerSteps.every((s) => s.status === "completed");
+        const allDone = blockerSteps.every(
+          (s) => s.status === "completed" || s.status === "skipped",
+        );
         nextStepStatus = allDone ? "planned" : "blocked";
       }
     }
@@ -1116,6 +1177,112 @@ export const deleteStep = mutation({
   },
 });
 
+export const skipStep = mutation({
+  args: {
+    stepId: v.id("steps"),
+    skip: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const step = await ctx.db.get(args.stepId);
+    if (!step) {
+      throw new ConvexError("Step not found");
+    }
+    if (step.status === "deleted") {
+      throw new ConvexError("Cannot skip a deleted step");
+    }
+
+    const timestamp = new Date().toISOString();
+
+    if (args.skip) {
+      const skippableStatuses = ["assigned", "blocked", "review"];
+      if (!skippableStatuses.includes(step.status)) {
+        throw new ConvexError(
+          `Cannot skip a step in '${step.status}' status. Step must be assigned, blocked, or in review.`,
+        );
+      }
+
+      await ctx.db.patch(args.stepId, { skip: true, skippedAt: timestamp });
+
+      await applyStepTransition(ctx, step as Parameters<typeof applyStepTransition>[1], {
+        stepId: args.stepId,
+        fromStatus: step.status,
+        expectedStateVersion: getStepStateVersion(step),
+        toStatus: "skipped",
+        reason: "Step skipped by user",
+        idempotencyKey: `skip:${String(args.stepId)}:${getStepStateVersion(step)}`,
+      });
+
+      const { currentTaskSteps } = await unblockReadyDependents(ctx, step.taskId, timestamp, {
+        stepId: args.stepId,
+        status: "skipped",
+      });
+
+      // Only reconcile parent task to 'done' if all steps are terminal.
+      // Never unpause a paused task — skip should not resume execution.
+      const nextTaskStatus = deriveManualParentTaskStatus(
+        currentTaskSteps.map((s) => ({ status: s.status })),
+      );
+      if (nextTaskStatus === "done") {
+        const task = await ctx.db.get(step.taskId);
+        if (task) {
+          await applyManualParentTaskTransition(ctx, { task, step, currentTaskSteps });
+        }
+      }
+
+      await logActivity(ctx, {
+        taskId: step.taskId,
+        agentName: step.assignedAgent,
+        eventType: "step_skipped",
+        description: `Step skipped: "${step.title}"`,
+        timestamp,
+      });
+    } else {
+      if (step.status !== "skipped") {
+        throw new ConvexError(
+          `Cannot un-skip a step in '${step.status}' status. Step must be in 'skipped' status.`,
+        );
+      }
+
+      await ctx.db.patch(args.stepId, { skip: false, skippedAt: undefined });
+
+      const blockedBy = step.blockedBy ?? [];
+      let toStatus: StepStatus = "assigned";
+      if (blockedBy.length > 0) {
+        const allSteps = await ctx.db
+          .query("steps")
+          .withIndex("by_taskId", (q) => q.eq("taskId", step.taskId))
+          .collect();
+        const blockerSteps = allSteps.filter((s) => blockedBy.includes(s._id));
+        const allBlockersDone = blockerSteps.every(
+          (s) => s.status === "completed" || s.status === "skipped",
+        );
+        if (!allBlockersDone) {
+          toStatus = "blocked";
+        }
+      }
+
+      await applyStepTransition(ctx, step as Parameters<typeof applyStepTransition>[1], {
+        stepId: args.stepId,
+        fromStatus: step.status,
+        expectedStateVersion: getStepStateVersion(step),
+        toStatus,
+        reason: "Step un-skipped by user",
+        idempotencyKey: `unskip:${String(args.stepId)}:${getStepStateVersion(step)}`,
+      });
+
+      await logActivity(ctx, {
+        taskId: step.taskId,
+        agentName: step.assignedAgent,
+        eventType: "step_status_changed",
+        description: `Step un-skipped and set to ${toStatus}: "${step.title}"`,
+        timestamp,
+      });
+    }
+
+    return args.stepId;
+  },
+});
+
 export const incrementRejectionCount = internalMutation({
   args: {
     stepId: v.id("steps"),
@@ -1145,43 +1312,110 @@ export const checkAndUnblockDependents = internalMutation({
       return [];
     }
 
+    const { unblockedIds } = await unblockReadyDependents(
+      ctx,
+      completedStep.taskId,
+      new Date().toISOString(),
+    );
+    return unblockedIds;
+  },
+});
+
+/**
+ * Cascade reset for review rejection: reset the target step to assigned,
+ * all intermediate dependents to blocked, and the review step to blocked.
+ * This prevents stale completed steps from immediately unblocking the review.
+ */
+export const cascadeRejectReset = internalMutation({
+  args: {
+    reviewStepId: v.id("steps"),
+    targetStepId: v.id("steps"),
+  },
+  handler: async (ctx, args) => {
+    const reviewStep = await ctx.db.get(args.reviewStepId);
+    if (!reviewStep) throw new ConvexError("Review step not found");
+    const targetStep = await ctx.db.get(args.targetStepId);
+    if (!targetStep) throw new ConvexError("Target step not found");
+
+    if (String(reviewStep.taskId) !== String(targetStep.taskId)) {
+      throw new ConvexError(
+        `Review step and target step belong to different tasks: ${String(reviewStep.taskId)} vs ${String(targetStep.taskId)}`,
+      );
+    }
+
     const allTaskSteps = await ctx.db
       .query("steps")
-      .withIndex("by_taskId", (q) => q.eq("taskId", completedStep.taskId))
+      .withIndex("by_taskId", (q) => q.eq("taskId", reviewStep.taskId))
       .collect();
 
-    const unblockedIds = findBlockedStepsReadyToUnblock(allTaskSteps);
-    if (unblockedIds.length === 0) {
-      return [];
-    }
+    const stepsForComputation: StepWithDependencies[] = allTaskSteps.map((s) => ({
+      _id: s._id,
+      status: s.status as StepStatus,
+      blockedBy: s.blockedBy,
+      workflowStepType: s.workflowStepType,
+    }));
 
-    const timestamp = new Date().toISOString();
-    const stepsById = new Map(allTaskSteps.map((step) => [step._id, step] as const));
+    const cascade = computeRejectionCascadeResets({
+      steps: stepsForComputation,
+      targetStepId: args.targetStepId,
+      reviewStepId: args.reviewStepId,
+    });
 
-    for (const stepId of unblockedIds) {
-      const blockedStep = stepsById.get(stepId);
-      if (!blockedStep) {
-        continue;
-      }
+    const now = new Date().toISOString();
+    const stepsById = new Map(allTaskSteps.map((s) => [String(s._id), s] as const));
 
-      await applyStepTransition(ctx, blockedStep as Parameters<typeof applyStepTransition>[1], {
+    // 1. Reset review step → blocked
+    const review = stepsById.get(String(cascade.reviewStepId));
+    if (!review)
+      throw new ConvexError(`Review step ${String(cascade.reviewStepId)} not in task steps`);
+    await applyStepTransition(ctx, review as Parameters<typeof applyStepTransition>[1], {
+      stepId: cascade.reviewStepId,
+      fromStatus: review.status,
+      expectedStateVersion: getStepStateVersion(review),
+      toStatus: cascade.reviewToStatus,
+      reason: "Review rejection — cascade reset",
+      idempotencyKey: `reject-cascade:review:${String(cascade.reviewStepId)}:${getStepStateVersion(review)}`,
+    });
+
+    // 2. Reset intermediate steps → blocked
+    for (const stepId of cascade.intermediateStepIds) {
+      const step = stepsById.get(String(stepId));
+      if (!step || step.status === "deleted") continue;
+      await applyStepTransition(ctx, step as Parameters<typeof applyStepTransition>[1], {
         stepId,
-        fromStatus: blockedStep.status,
-        expectedStateVersion: getStepStateVersion(blockedStep),
-        toStatus: "assigned",
-        reason: "Dependencies resolved",
-        idempotencyKey: `unblock:${String(stepId)}:${getStepStateVersion(blockedStep)}`,
-      });
-
-      await logActivity(ctx, {
-        taskId: blockedStep.taskId,
-        agentName: blockedStep.assignedAgent,
-        eventType: "step_unblocked",
-        description: `Step unblocked and assigned: "${blockedStep.title}"`,
-        timestamp,
+        fromStatus: step.status,
+        expectedStateVersion: getStepStateVersion(step),
+        toStatus: cascade.intermediateToStatus,
+        reason: "Review rejection — cascade reset (intermediate)",
+        idempotencyKey: `reject-cascade:intermediate:${String(stepId)}:${getStepStateVersion(step)}`,
       });
     }
 
-    return unblockedIds;
+    // 3. Reset target step → assigned
+    const target = stepsById.get(String(cascade.targetStepId));
+    if (!target)
+      throw new ConvexError(`Target step ${String(cascade.targetStepId)} not in task steps`);
+    await applyStepTransition(ctx, target as Parameters<typeof applyStepTransition>[1], {
+      stepId: cascade.targetStepId,
+      fromStatus: target.status,
+      expectedStateVersion: getStepStateVersion(target),
+      toStatus: cascade.targetToStatus,
+      reason: "Review rejection — cascade reset (target)",
+      idempotencyKey: `reject-cascade:target:${String(cascade.targetStepId)}:${getStepStateVersion(target)}`,
+    });
+
+    await logActivity(ctx, {
+      taskId: reviewStep.taskId,
+      agentName: reviewStep.assignedAgent,
+      eventType: "step_status_changed",
+      description: `Review rejection cascade: reset ${cascade.intermediateStepIds.length} intermediate step(s) to blocked`,
+      timestamp: now,
+    });
+
+    return {
+      reviewStepId: cascade.reviewStepId,
+      targetStepId: cascade.targetStepId,
+      intermediateStepIds: cascade.intermediateStepIds,
+    };
   },
 });

@@ -7,9 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
 export type EditableWorkflowStep = {
-  key: string;
+  id: string;
   title: string;
-  type: "agent" | "human" | "checkpoint" | "review" | "system";
+  type: "agent" | "human" | "review" | "system";
   description?: string;
   agentKey?: string;
   reviewSpecId?: string;
@@ -34,7 +34,7 @@ interface SquadWorkflowEditorProps {
 
 function createEmptyStep(): EditableWorkflowStep {
   return {
-    key: `step-${Math.random().toString(36).slice(2, 8)}`,
+    id: `step-${Math.random().toString(36).slice(2, 8)}`,
     title: "",
     type: "agent",
     dependsOn: [],
@@ -62,11 +62,7 @@ export function SquadWorkflowEditor({
     );
   };
 
-  const updateStep = (
-    workflowId: string,
-    stepKey: string,
-    patch: Partial<EditableWorkflowStep>,
-  ) => {
+  const updateStep = (workflowId: string, stepId: string, patch: Partial<EditableWorkflowStep>) => {
     onChange(
       workflows.map((workflow) =>
         workflow.id !== workflowId
@@ -74,7 +70,7 @@ export function SquadWorkflowEditor({
           : {
               ...workflow,
               steps: workflow.steps.map((step) =>
-                step.key === stepKey ? { ...step, ...patch } : step,
+                step.id === stepId ? { ...step, ...patch } : step,
               ),
             },
       ),
@@ -91,12 +87,12 @@ export function SquadWorkflowEditor({
     );
   };
 
-  const removeStep = (workflowId: string, stepKey: string) => {
+  const removeStep = (workflowId: string, stepId: string) => {
     onChange(
       workflows.map((workflow) =>
         workflow.id !== workflowId
           ? workflow
-          : { ...workflow, steps: workflow.steps.filter((step) => step.key !== stepKey) },
+          : { ...workflow, steps: workflow.steps.filter((step) => step.id !== stepId) },
       ),
     );
   };
@@ -153,11 +149,11 @@ export function SquadWorkflowEditor({
 
           <div className="space-y-3">
             {workflow.steps.map((step, index) => (
-              <div key={step.key} className="rounded-lg border bg-muted/20 p-3 space-y-3">
+              <div key={step.id} className="rounded-lg border bg-muted/20 p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">Step {index + 1}</Badge>
-                    <span className="text-xs text-muted-foreground">{step.key}</span>
+                    <span className="text-xs text-muted-foreground">{step.id}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -180,7 +176,7 @@ export function SquadWorkflowEditor({
                       type="button"
                       size="sm"
                       variant="ghost"
-                      onClick={() => removeStep(workflow.id, step.key)}
+                      onClick={() => removeStep(workflow.id, step.id)}
                     >
                       Remove
                     </Button>
@@ -195,7 +191,7 @@ export function SquadWorkflowEditor({
                       className="mt-1"
                       value={step.title}
                       onChange={(event) =>
-                        updateStep(workflow.id, step.key, { title: event.target.value })
+                        updateStep(workflow.id, step.id, { title: event.target.value })
                       }
                     />
                   </label>
@@ -206,14 +202,13 @@ export function SquadWorkflowEditor({
                       className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       value={step.type}
                       onChange={(event) =>
-                        updateStep(workflow.id, step.key, {
+                        updateStep(workflow.id, step.id, {
                           type: event.target.value as EditableWorkflowStep["type"],
                         })
                       }
                     >
                       <option value="agent">agent</option>
                       <option value="human">human</option>
-                      <option value="checkpoint">checkpoint</option>
                       <option value="review">review</option>
                       <option value="system">system</option>
                     </select>
@@ -227,7 +222,7 @@ export function SquadWorkflowEditor({
                     className="mt-1 min-h-20"
                     value={step.description ?? ""}
                     onChange={(event) =>
-                      updateStep(workflow.id, step.key, { description: event.target.value })
+                      updateStep(workflow.id, step.id, { description: event.target.value })
                     }
                   />
                 </label>
@@ -241,13 +236,13 @@ export function SquadWorkflowEditor({
                         className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         value={step.agentKey ?? ""}
                         onChange={(event) =>
-                          updateStep(workflow.id, step.key, { agentKey: event.target.value })
+                          updateStep(workflow.id, step.id, { agentKey: event.target.value })
                         }
                       >
                         <option value="">Unassigned</option>
                         {agents.map((agent) => (
                           <option key={agent._id} value={agent.name}>
-                            {agent.displayName}
+                            {agent.name}
                           </option>
                         ))}
                       </select>
@@ -276,7 +271,7 @@ export function SquadWorkflowEditor({
                         className="mt-1"
                         value={step.reviewSpecId ?? ""}
                         onChange={(event) =>
-                          updateStep(workflow.id, step.key, { reviewSpecId: event.target.value })
+                          updateStep(workflow.id, step.id, { reviewSpecId: event.target.value })
                         }
                       />
                     </label>
@@ -287,7 +282,7 @@ export function SquadWorkflowEditor({
                         className="mt-1"
                         value={step.onReject ?? ""}
                         onChange={(event) =>
-                          updateStep(workflow.id, step.key, { onReject: event.target.value })
+                          updateStep(workflow.id, step.id, { onReject: event.target.value })
                         }
                       />
                     </label>
@@ -301,7 +296,7 @@ export function SquadWorkflowEditor({
                     className="mt-1"
                     value={step.dependsOn.join(", ")}
                     onChange={(event) =>
-                      updateStep(workflow.id, step.key, {
+                      updateStep(workflow.id, step.id, {
                         dependsOn: parseDependsOn(event.target.value),
                       })
                     }

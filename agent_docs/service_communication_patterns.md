@@ -304,7 +304,65 @@ The Python side uses two modes, both in `mc/bridge/subscriptions.py`:
 
 The `review` and `in_progress` loops each serve two consumers via fan-out. Consumers that don't need heavy fields (`executionPlan`, `routingDecision`, `files`, merge fields) use `tasks:listByStatusLite`.
 
-### 2.6 All Convex Functions Called from Python
+### 2.6 Python-Side Caches
+
+The Python backend caches frequently-read Convex data to reduce query volume during active execution.
+
+#### SettingsCache
+
+**File:** `mc/bridge/settings_cache.py`
+
+TTL-based cache for `settings:get` queries. Attached to `ConvexBridge` as `bridge.settings_cache`.
+
+| Setting Key | TTL | Consumer |
+|-------------|-----|----------|
+| `global_orientation_prompt` | 60s | `mc/infrastructure/orientation.py` |
+| `task_timeout_minutes` | 60s | `mc/runtime/timeout_checker.py` |
+
+**Stale fallback:** On query failure, returns the last cached value if available (prevents transient Convex errors from crashing execution).
+
+**Rule:** All `settings:get` queries from Python must go through `bridge.settings_cache.get(key)`, not direct `bridge.query("settings:get", ...)`. The `TierResolver` has its own 60s cache for `model_tiers` and `tier_reasoning_levels`.
+
+#### TagAttributesCache
+
+**File:** `mc/bridge/tag_attributes_cache.py`
+
+5-minute TTL cache for `tagAttributes:list` (catalog data that rarely changes). Attached to `ConvexBridge` as `bridge.tag_attributes_cache`.
+
+| Consumer | File |
+|----------|------|
+| Context builder tag attrs | `mc/application/execution/context_builder.py` |
+| Post-processing tag attrs | `mc/contexts/execution/post_processing.py` |
+| CC executor tag attrs | `mc/contexts/execution/cc_executor.py` |
+
+**Rule:** Never query `tagAttributes:list` directly. Use `bridge.tag_attributes_cache.get()`.
+
+#### InteractiveSessionRegistry Cache
+
+**File:** `mc/contexts/interactive/registry.py`
+
+In-memory cache of session documents with 30s TTL and 500-entry cap. Eliminates redundant `interactiveSessions:getForRuntime` queries during supervision event handling (which fires 10-50x/sec during active execution).
+
+- `get()` checks cache → on miss or TTL expired, queries Convex
+- `_upsert()` updates cache with written data + resets timestamp
+- `end_session()` / `terminate()` evict from cache
+
+#### Activity Log Batching
+
+**File:** `mc/contexts/interactive/activity_service.py`
+
+`sessionActivityLog:append` mutations are buffered and flushed in batches via `sessionActivityLog:appendBatch`. This reduces Convex mutation volume from ~30/sec to ~3/sec during active execution.
+
+| Trigger | Threshold |
+|---------|-----------|
+| Buffer size | 20 events |
+| Time since last flush | 300ms |
+| Session end / result | Explicit `flush()` call |
+| Exception paths | Explicit `flush()` in strategy error handlers |
+
+**Rule:** All new code calling `activity_service.append_event()` must ensure `flush()` is called in error/finally paths. Lost buffer events are not recoverable.
+
+### 2.7 All Convex Functions Called from Python
 
 #### Tasks
 
@@ -400,9 +458,8 @@ The MCP bridge translates agent tool calls into IPC socket requests. There are *
 | Bridge | Entry Point | Used By | Tools |
 |--------|------------|---------|-------|
 | CC bridge | `vendor/claude-code/claude_code/mcp_bridge.py` | ClaudeCodeRunner + ProviderCliRunner (Claude Code parser) | 8 tools |
-| MC bridge | `mc/runtime/mcp/bridge.py` | NanobotRunner (in-process AgentLoop) | 9 tools (Phase 1) |
 
-Both are **stdio MCP servers** launched as subprocesses by the agent runtime.
+The CC bridge is a **stdio MCP server** launched as a subprocess by the agent runtime.
 
 ### 3.2 Launch Mechanism
 
@@ -411,7 +468,7 @@ Both are **stdio MCP servers** launched as subprocesses by the agent runtime.
 ```json
 {
   "mcpServers": {
-    "nanobot": {
+    "mc": {
       "command": "uv",
       "args": ["run", "python", "-m", "claude_code.mcp_bridge"],
       "env": {
@@ -428,7 +485,7 @@ Both are **stdio MCP servers** launched as subprocesses by the agent runtime.
 }
 ```
 
-The agent process (Claude Code CLI or nanobot) reads `.mcp.json` on startup and spawns the bridge. The JSON key is `"openmc"` and the MCP `Server` name is `"mc"` — tools appear as `mcp__mc__<tool_name>` in the agent's tool palette (the prefix comes from the server name, not the JSON key).
+The agent process (Claude Code CLI) reads `.mcp.json` on startup and spawns the bridge. The JSON key `"mc"` determines the tool prefix — tools appear as `mcp__mc__<tool_name>` in the agent's tool palette.
 
 ### 3.3 Tool Catalog
 
@@ -443,16 +500,7 @@ The agent process (Claude Code CLI or nanobot) reads `.mcp.json` on startup and 
 | `cron` | `cron` | `CronService` |
 | `search_memory` | *(local, no IPC)* | `mc.memory.create_memory_store().search()` |
 
-**MC bridge (7 Phase 1 tools)** — defined in `mc/runtime/mcp/tool_specs.py`:
-
-Same as CC bridge minus `search_memory`, plus:
-
-| Tool | IPC Method | Target |
-|------|-----------|--------|
-| `create_agent_spec` | `create_agent_spec` | `agentSpecs:createDraft` + `agentSpecs:publish` |
-| `publish_squad_graph` | `publish_squad_graph` | `squadSpecs:publishGraph` |
-
-Tool registration is **static** — hardcoded lists in both bridges.
+Tool registration is **static** — hardcoded list in the CC bridge.
 
 ### 3.4 Data Flow
 
@@ -496,7 +544,6 @@ The Gateway uses the **Strategy pattern** to dispatch work to different executio
 
 | Strategy | File | Spawn | IPC | Output |
 |----------|------|-------|-----|--------|
-| `NanobotRunnerStrategy` | `mc/application/execution/strategies/nanobot.py` | In-process coroutine (but MCP bridge spawns subprocess) | MCP bridge subprocess → direct Convex (no socket) | Direct Python return |
 | `ClaudeCodeRunnerStrategy` | `mc/application/execution/strategies/claude_code.py` | `asyncio.create_subprocess_exec` (stderr=PIPE, separate) | NDJSON stdout + Unix socket (starts MCSocketServer) | `type="result"` NDJSON message |
 | `ProviderCliRunnerStrategy` | `mc/application/execution/strategies/provider_cli.py` | `asyncio.create_subprocess_exec` (stderr=STDOUT, merged; new session) | Chunked stdout + Unix socket (reuses existing .mcp.json, does NOT start MCSocketServer) | Parsed `kind="result"` events |
 | `InteractiveTuiRunnerStrategy` | `mc/application/execution/strategies/interactive.py` | Delegates to `SessionCoordinator` | Polls Convex every 250ms | `interactiveSessions.final_result` |
@@ -544,7 +591,6 @@ claude -p "<prompt>" --output-format stream-json --verbose
 |--------|------|------|
 | `ClaudeCodeCLIParser` | `mc/contexts/provider_cli/providers/claude_code.py` | NDJSON (same as above) |
 | `CodexCLIParser` | `mc/contexts/provider_cli/providers/codex.py` | Regex-based plain text |
-| `NanobotCLIParser` | `mc/contexts/provider_cli/providers/nanobot.py` | Prefix-based (`[progress]`, `[tool]`, `[nanobot-live]`) |
 
 **Event types from parsers** (`ParsedCliEvent(kind=...)`):
 
@@ -552,16 +598,13 @@ claude -p "<prompt>" --output-format stream-json --verbose
 |------|-----------|
 | `text` | ClaudeCodeCLIParser, CodexCLIParser |
 | `tool_use` | ClaudeCodeCLIParser |
-| `result` | ClaudeCodeCLIParser only (Codex/Nanobot never emit this — fall back to text concatenation) |
+| `result` | ClaudeCodeCLIParser only (Codex never emits this — falls back to text concatenation) |
 | `error` | ClaudeCodeCLIParser, CodexCLIParser |
 | `session_id` | ClaudeCodeCLIParser |
 | `session_discovered` | CodexCLIParser |
 | `ask_user_requested` | ClaudeCodeCLIParser |
 | `approval_requested` | CodexCLIParser |
-| `output` | CodexCLIParser, NanobotCLIParser |
-| `tool` | NanobotCLIParser |
-| `progress` | NanobotCLIParser |
-| `session_ready` / `session_failed` | NanobotCLIParser |
+| `output` | CodexCLIParser |
 
 **Process lifecycle:**
 
@@ -575,7 +618,7 @@ claude -p "<prompt>" --output-format stream-json --verbose
 
 ### Provider-to-Live Canonical Translation
 
-All runner strategies write to `sessionActivityLog` via `SessionActivityService` (`mc/contexts/interactive/activity_service.py`). This service is the **single point** for Live tab persistence — both nanobot and provider-cli runners use it.
+All runner strategies write to `sessionActivityLog` via `SessionActivityService` (`mc/contexts/interactive/activity_service.py`). This service is the **single point** for Live tab persistence.
 
 | Python metadata key | Convex field | Description |
 |---------------------|-------------|-------------|
@@ -590,19 +633,13 @@ The service provides four write methods, each targeting a different event source
 | Method | Used by | Purpose |
 |--------|---------|---------|
 | `upsert_session()` | All runners | Create/update session in `interactiveSessions` |
-| `append_event()` | Nanobot `on_progress` callback | Generic event (text, tool_use) |
+| `append_event()` | Generic callers | Generic event (text, tool_use) |
 | `append_result()` | All runners | Result event after execution |
 | `append_parsed_cli_event()` | Provider-CLI | Translates `ParsedCliEvent` into unified format |
 
 The frontend normalizer in `providerLiveEvents.ts` prefers canonical `sourceType` for classification when present, falling back to the existing heuristic path for legacy rows without canonical metadata.
 
-### 4.4 Nanobot Runner — In-Process
-
-The agent loop runs **in-process** as an async coroutine (`AgentLoop.process_direct_result()`). The nanobot `AgentLoop` has a built-in `on_progress(text, *, tool_hint=False)` callback that `NanobotRunnerStrategy` wires to `SessionActivityService.append_event()` for real-time Live tab events. Session lifecycle (ready/ended/error) and result events also go through the service.
-
-When the model calls MC tools, the `AgentLoop` spawns a child `mc.runtime.mcp.bridge` subprocess via MCP stdio transport. This child process uses `InteractionService` (direct Convex HTTP) rather than a Unix socket — `MC_SOCKET_PATH` is **not set** for the nanobot MCP bridge; only `TASK_ID`, `AGENT_NAME`, `CONVEX_URL`, and `CONVEX_ADMIN_KEY` are injected.
-
-### 4.5 Environment Variable Injection
+### 4.4 Environment Variable Injection
 
 All runners inject environment variables into their subprocess. The base set:
 
@@ -761,6 +798,50 @@ The dashboard connects to Convex via the JS SDK WebSocket (reactive). Key subscr
 
 **Pattern:** Feature hooks abstract all Convex access. Components never call `useQuery`/`useMutation` directly — they go through hooks like `useTaskDetailView(taskId)`, `useBoardView(filters)`, `useAgentConfigSheetData(name)`.
 
+#### Subscription Deduplication: AppDataProvider
+
+**File:** `dashboard/components/AppDataProvider.tsx`
+
+Four global queries are subscribed once via a React Context provider and shared across all consuming hooks:
+
+| Query | Consumers |
+|-------|-----------|
+| `agents.list` | `useBoardSelectorData`, `useAgentSidebarData` |
+| `boards.list` | `useBoardProviderData`, `useBoardSelectorData` |
+| `taskTags.list` | `useSearchBarFilters`, `useTaskInputData` |
+| `tagAttributes.list` | `useSearchBarFilters`, `useTaskInputData` |
+
+**Rule:** Never add a new `useQuery(api.agents.list)`, `useQuery(api.boards.list)`, `useQuery(api.taskTags.list)`, or `useQuery(api.tagAttributes.list)` in a hook. Use `useAppData()` instead. Adding a direct `useQuery` for these creates a duplicate subscription.
+
+#### Lazy Subscriptions
+
+Some components use the `"skip"` pattern or conditional mounting to avoid subscribing when their data isn't needed:
+
+| Component | Query | Strategy |
+|-----------|-------|----------|
+| `TrashBinSheet` | `tasks.listDeleted` | Only mounted when sheet is open (`{trashOpen && <TrashBinSheet>}`) |
+| `DoneTasksSheet` | `tasks.listDoneHistory` | Only mounted when sheet is open (`{doneSheetOpen && <DoneTasksSheet>}`) |
+| `ActivityFeed` | `activities.listRecent` | Skip pattern when `enabled=false` (panel collapsed) |
+| `useTaskInteractiveSession` | `interactiveSessions.listSessions` | Skip when no `taskId`; filters by `taskId` via index |
+| `useTaskInteractiveSession` | `agents.getByName` | Skip when no target agent |
+
+**Rule:** Sheets, modals, and collapsible panels must NOT subscribe to Convex when closed/collapsed. Either use conditional mounting (`{open && <Component>}`) or the `"skip"` pattern.
+
+#### Invalidation Surface
+
+Every Convex `useQuery` subscription re-evaluates when ANY document in its read-set tables changes. Wider read-sets = more frequent re-evaluations.
+
+| Query | Tables Read | Invalidation Trigger |
+|-------|------------|---------------------|
+| `boards.getBoardView` | boards, tasks, steps, tagAttributeValues | Any task/step status change, board update |
+| `tasks.getDetailView` | tasks, boards, messages, steps, tagAttributeValues, squadSpecs, workflowSpecs, agents | Any message/step for the task |
+| `agents.list` | agents | Any agent mutation (including metric updates) |
+| `activities.listRecent` | activities | Every activity insert (very frequent during execution) |
+| `interactiveSessions.listSessions` | interactiveSessions (via `by_taskId` index) | Session upserts for the specific task |
+| `sessionActivityLog.listForSession` | sessionActivityLog (via `by_session_seq` index) | Activity log appends for the specific session |
+
+**Rule:** When adding queries to `getBoardView` or `getDetailView`, avoid adding new table reads — each table widens the invalidation surface. Prefer separate small queries over mega-queries.
+
 ### 6.2 Key Convex Mutations from Dashboard
 
 #### Task Lifecycle
@@ -868,6 +949,12 @@ All routes under `dashboard/app/api/`. These handle operations requiring server-
 |--------|-------|---------|
 | `POST` | `/api/specs/agent` | `agentSpecs:createDraft` + `agentSpecs:publish` via `ConvexHttpClient` (admin key) |
 | `POST` | `/api/specs/squad` | `squadSpecs:publishGraph` via `ConvexHttpClient` (admin key) |
+| `GET` | `/api/specs/skills` | Lists all skills (supports `?available=true` filter) |
+| `POST` | `/api/specs/skills` | Registers or updates a skill via `skills:upsertByName` |
+| `DELETE` | `/api/specs/skills?name=x` | Deletes a skill from Convex and disk |
+| `PATCH` | `/api/specs/agent` | Updates agent config (skills, model, prompt, etc.) via `agents:updateConfig` |
+| `DELETE` | `/api/specs/squad?squadSpecId=x` | Archives a squad (`status → archived`) |
+| `DELETE` | `/api/specs/workflow?workflowSpecId=x` | Archives a workflow (`status → archived`) |
 | `GET` | `/api/specs/squad/context` | Queries Convex for agents, skills, reviewSpecs, models |
 
 #### Other

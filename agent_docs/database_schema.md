@@ -43,7 +43,7 @@ Core task records with status lifecycle and execution plans.
 | `tags` | `v.optional(v.array(v.string()))` | |
 | `taskTimeout` | `v.optional(v.number())` | Milliseconds |
 | `interAgentTimeout` | `v.optional(v.number())` | Milliseconds |
-| `executionPlan` | `v.optional(v.any())` | Polymorphic plan shape |
+| `executionPlan` | `v.optional(v.any())` | Polymorphic plan shape. Workflow-generated plans persist per-step workflow metadata (`workflowStepId`, `workflowStepType`, `reviewSpecId`, `onRejectStepId`) plus optional plan-level `workflowSpecId` so paused-plan editing can reconcile materialized steps without losing human/review/system semantics. |
 | `supervisionMode` | `v.optional(v.union("autonomous", "supervised"))` | |
 | `stalledAt` | `v.optional(v.string())` | |
 | `isManual` | `v.optional(v.boolean())` | |
@@ -104,7 +104,7 @@ Sub-steps within tasks, with dependencies and parallel groups.
 | `errorMessage` | `v.optional(v.string())` | |
 | `attachedFiles` | `v.optional(v.array(v.string()))` | |
 | `workflowStepId` | `v.optional(v.string())` | Ref to workflow spec step |
-| `workflowStepType` | `v.optional(workflowStepTypeValidator)` | `agent\|human\|checkpoint\|review\|system` |
+| `workflowStepType` | `v.optional(workflowStepTypeValidator)` | `agent\|human\|review\|system` |
 | `agentId` | `v.optional(v.id("agents"))` | |
 | `reviewSpecId` | `v.optional(v.id("reviewSpecs"))` | |
 | `onRejectStepId` | `v.optional(v.string())` | Fallback on rejection |
@@ -161,7 +161,7 @@ Agent registry with config, status, and metrics.
 | Field | Type | Notes |
 |-------|------|-------|
 | `name` | `v.string()` | Unique identifier |
-| `displayName` | `v.string()` | |
+| `displayName` | `v.optional(v.string())` | Optional — UI displays `name` (slug) as primary identifier |
 | `role` | `v.string()` | |
 | `prompt` | `v.optional(v.string())` | |
 | `soul` | `v.optional(v.string())` | |
@@ -453,7 +453,7 @@ Agent specification templates (draft → published → archived).
 | Field | Type | Notes |
 |-------|------|-------|
 | `name` | `v.string()` | |
-| `displayName` | `v.string()` | |
+| `displayName` | `v.optional(v.string())` | Optional — UI displays `name` (slug) as primary identifier |
 | `role` | `v.string()` | |
 | `purpose` | `v.optional(v.string())` | |
 | `nonGoals` | `v.optional(v.array(v.string()))` | |
@@ -487,7 +487,7 @@ Squad specification templates defining teams of agents.
 | Field | Type | Notes |
 |-------|------|-------|
 | `name` | `v.string()` | |
-| `displayName` | `v.string()` | |
+| `displayName` | `v.optional(v.string())` | Optional — UI displays `name` (slug) as primary identifier |
 | `description` | `v.optional(v.string())` | |
 | `outcome` | `v.optional(v.string())` | |
 | `reviewPolicy` | `v.optional(v.string())` | |

@@ -58,7 +58,7 @@ class AgentConfig(BaseModel):
     def validate_backend(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        valid = {"nanobot", "claude-code"}
+        valid = {"claude-code"}
         if v not in valid:
             raise ValueError(f"Invalid backend '{v}'. Valid options: {', '.join(sorted(valid))}")
         return v
@@ -275,7 +275,7 @@ def _config_to_agent_data(config: AgentConfig) -> AgentData | list[str]:
     Returns AgentData on success, or a list of error strings if claude_code values
     fail type validation.
     """
-    backend = config.backend or "nanobot"
+    backend = config.backend or "claude-code"
     cc_opts = None
     uses_cc_model = config.model is not None and config.model.startswith("cc/")
     if (backend == "claude-code" or uses_cc_model) and config.claude_code:

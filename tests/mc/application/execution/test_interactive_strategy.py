@@ -28,7 +28,7 @@ def _request(*, provider: str = "claude-code") -> ExecutionRequest:
             display_name="Interactive Agent",
             role="Engineer",
             model="claude-sonnet-4-6" if provider == "claude-code" else "openai-codex/gpt-5.4",
-            backend="claude-code" if provider == "claude-code" else "nanobot",
+            backend="claude-code",
             interactive_provider=provider,
         ),
         runner_type=RunnerType.INTERACTIVE_TUI,

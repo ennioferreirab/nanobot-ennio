@@ -1,5 +1,5 @@
 """
-Init Wizard — business logic for `nanobot mc init`.
+Init Wizard — business logic for `open-control mc init`.
 
 Pure functions and data structures for the guided agent setup wizard.
 No CLI interaction, no I/O — all user-facing prompts live in ``mc.cli``.
@@ -149,7 +149,7 @@ class CreationResult:
 
 
 def agent_exists(name: str) -> bool:
-    """Return True if ``~/.nanobot/agents/<name>/config.yaml`` exists."""
+    """Return True if ``<agents_dir>/<name>/config.yaml`` exists."""
     return (AGENTS_DIR / name / "config.yaml").is_file()
 
 

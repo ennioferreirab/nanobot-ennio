@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 
 function getClient(): ConvexHttpClient {
   const client = new ConvexHttpClient(
@@ -35,6 +36,34 @@ export async function POST(request: NextRequest) {
     console.error("Squad publish failed:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to publish squad" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const squadSpecId = searchParams.get("squadSpecId");
+
+    if (!squadSpecId) {
+      return NextResponse.json(
+        { error: "squadSpecId query parameter is required" },
+        { status: 400 },
+      );
+    }
+
+    const convex = getClient();
+
+    await convex.mutation(api.squadSpecs.archiveSquad, {
+      squadSpecId: squadSpecId as Id<"squadSpecs">,
+    });
+
+    return NextResponse.json({ success: true, squadSpecId });
+  } catch (error) {
+    console.error("Squad archive failed:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to archive squad" },
       { status: 500 },
     );
   }

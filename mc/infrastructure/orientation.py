@@ -14,14 +14,29 @@ from mc.infrastructure.runtime_home import get_runtime_path
 
 logger = logging.getLogger(__name__)
 
+FILE_ATTACHMENT_INSTRUCTION = (
+    "\n\nIMPORTANT: When user messages include <UserAttached> tags, these are files "
+    "the user explicitly attached for your analysis. Read these files FIRST before "
+    "proceeding with your task — they contain critical context for the request."
+)
+
 
 def _read_saved_orientation(bridge: Any | None) -> str | None:
-    """Read the saved global orientation prompt from Convex settings."""
+    """Read the saved global orientation prompt from Convex settings.
+
+    Uses the bridge's settings_cache if available for TTL-based caching.
+    """
     if bridge is None:
         return None
 
     try:
-        saved = bridge.query("settings:get", {"key": "global_orientation_prompt"})
+        from mc.bridge.settings_cache import SettingsCache
+
+        settings_cache = getattr(bridge, "settings_cache", None)
+        if isinstance(settings_cache, SettingsCache):
+            saved = settings_cache.get("global_orientation_prompt")
+        else:
+            saved = bridge.query("settings:get", {"key": "global_orientation_prompt"})
     except Exception:
         logger.warning("[orientation] Failed to fetch saved global orientation", exc_info=True)
         return None
@@ -59,12 +74,12 @@ def load_orientation(agent_name: str, bridge: Any | None = None) -> str | None:
     2. ``mc/agent-orientation.md`` in the configured runtime home (fallback file)
 
     Returns None if:
-    - agent is orchestrator-agent or nanobot
+    - agent is orchestrator-agent
     - orientation file doesn't exist or is empty
     """
-    from mc.types import NANOBOT_AGENT_NAME, is_orchestrator_agent
+    from mc.types import is_orchestrator_agent
 
-    if is_orchestrator_agent(agent_name) or agent_name == NANOBOT_AGENT_NAME:
+    if is_orchestrator_agent(agent_name):
         return None
 
     orientation = _read_saved_orientation(bridge)
@@ -77,5 +92,8 @@ def load_orientation(agent_name: str, bridge: Any | None = None) -> str | None:
             return None
 
     orientation = _interpolate_orientation(orientation)
+    # Always append — orientation is loaded once at agent startup before any
+    # messages arrive, so we cannot know whether attachments will appear later.
+    orientation += FILE_ATTACHMENT_INSTRUCTION
     logger.info("[orientation] Global orientation loaded for agent '%s'", agent_name)
     return orientation

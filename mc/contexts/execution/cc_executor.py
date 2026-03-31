@@ -17,10 +17,7 @@ from mc.application.execution.background_tasks import (
     create_background_task,
     get_background_tasks,
 )
-from mc.application.execution.completion_status import (
-    resolve_completion_review_phase,
-    resolve_completion_status,
-)
+from mc.application.execution.completion_status import resolve_completion_status
 from mc.application.execution.file_enricher import (
     build_merged_source_context,
     load_merged_source_payloads,
@@ -152,9 +149,7 @@ class CCExecutorMixin:
                 tag_attr_values = await asyncio.to_thread(
                     self._bridge.query, "tagAttributeValues:getByTask", {"task_id": task_id}
                 )
-                tag_attr_catalog = await asyncio.to_thread(
-                    self._bridge.query, "tagAttributes:list", {}
-                )
+                tag_attr_catalog = await asyncio.to_thread(self._bridge.tag_attributes_cache.get)
                 tag_attrs_context = build_tag_attributes_context(
                     task_tags,
                     tag_attr_values if isinstance(tag_attr_values, list) else [],
@@ -391,10 +386,8 @@ class CCExecutorMixin:
     ) -> tuple[str | None, str]:
         """Resolve board-scoped workspace for CC. Returns (board_name, memory_mode).
 
-        Raises RuntimeError for non-nanobot agents when board_id is missing.
+        Raises RuntimeError when board_id is missing.
         """
-        from mc.types import NANOBOT_AGENT_NAME
-
         _cc_board_name: str | None = None
         _cc_memory_mode: str = "clean"
         _board_id = (task_data or {}).get("board_id")
@@ -419,11 +412,10 @@ class CCExecutorMixin:
                     title,
                     exc_info=True,
                 )
-                if agent_name != NANOBOT_AGENT_NAME:
-                    raise
-        elif agent_name != NANOBOT_AGENT_NAME:
+                raise
+        else:
             raise RuntimeError(
-                f"Task '{title}' has no board_id — non-nanobot agent '{agent_name}' "
+                f"Task '{title}' has no board_id — agent '{agent_name}' "
                 "requires a board-scoped workspace."
             )
         return _cc_board_name, _cc_memory_mode
@@ -551,15 +543,13 @@ class CCExecutorMixin:
         if result.session_id:
             await self._store_cc_session(agent_name, task_id, result.session_id)
 
-        final_status = resolve_completion_status(task_data)
+        final_status = resolve_completion_status()
         await asyncio.to_thread(
             self._bridge.update_task_status,
             task_id,
             final_status,
             agent_name,
             f"Agent {agent_name} completed task '{title}'",
-            None,
-            resolve_completion_review_phase(task_data),
         )
 
         # Write completion to global HEARTBEAT.md

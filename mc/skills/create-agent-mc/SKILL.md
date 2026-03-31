@@ -1,125 +1,126 @@
 ---
 name: create-agent-mc
-description: "Guided wizard to design and publish an agent specification to Mission Control. Use this skill whenever the user wants to create a new agent, add an agent to MC, design an agent from a description, says 'new agent', 'create agent', 'add agent', or asks about building a specialist agent for their team."
+description: guided mission control agent-spec builder and updater. use when the user wants to create, redesign, or update an agent spec, define responsibilities, choose skills and model, or publish a reusable agent configuration that follows the mission control agent schema.
 disable-model-invocation: true
 ---
 
-# Create Agent for Mission Control
+# Create or Update Agent for Mission Control
 
-Walk the user through designing an agent specification conversationally, then publish it to Mission Control via the dashboard API.
+This skill builds agent specs that follow the Mission Control `agent` entity schema.
 
-The conversation follows 4 phases. Keep it natural — ask 1-2 questions at a time, never dump a form.
+Keep the interaction conversational, but do not stay vague. The goal is a valid payload, not a brainstorm.
 
-## Phase 1: Discovery & Identity
+## Operating Modes
 
-Start by understanding what the user needs. Present presets as inspiration:
+- **Create mode**: use when the user wants a new agent spec.
+- **Update mode**: use when the user wants to improve an existing agent.
 
-| Preset | Role | Skills |
-|--------|------|--------|
-| `developer` | Software Developer | coding, debugging, code-review, testing |
-| `researcher` | Research Analyst | research, summarization, analysis |
-| `writer` | Technical Writer | writing, documentation, editing |
-| `data-analyst` | Data Analyst | data-analysis, visualization, statistics |
-| `devops` | DevOps Engineer | ci-cd, docker, infrastructure, monitoring |
+Pick the mode early and say which payload shape you are building.
 
-Ask what this agent should do and if a preset is close.
+## Required field discipline
 
-Then collect identity:
-- **Name** — slug format (`^[a-z0-9]+(-[a-z0-9]+)*$`). Suggest one from their description.
-- **Display Name** — human-readable. Auto-generate from name if omitted.
-- **Role** — one specific sentence. "Developer" is too vague; "Python backend developer focused on API design" is better.
+Always collect or confirm:
 
-Confirm before proceeding.
+- `name`
+- `role`
 
-## Phase 2: Behavior & Responsibilities
+In create mode, strongly prefer collecting the full operational shape:
 
-Collect through natural conversation:
+- `displayName`
+- `prompt`
+- `soul`
+- `skills`
+- `model`
+- `responsibilities`
+- `nonGoals`
+- `principles`
+- `workingStyle`
+- `qualityRules`
+- `antiPatterns`
+- `outputContract`
+- `toolPolicy`
+- `memoryPolicy`
+- `executionPolicy`
+- `reviewPolicyRef`
 
-- **Responsibilities** (required) — What this agent does. Each item should be actionable.
-  Example: `["Write clean, well-tested Python code", "Review PRs for correctness"]`
-- **Non-Goals** (optional) — What it should NOT do. Often more important than capabilities.
-  Example: `["Do not deploy to production", "Do not make infra changes"]`
-- **Principles** (optional) — Guiding values for decision-making.
-  Example: `["Prefer simplicity over cleverness", "Test before you ship"]`
-- **Working Style** (optional) — How the agent approaches work.
-  Example: `"Methodical. Breaks problems into small steps. Asks clarifying questions first."`
+## Before assigning skills
 
-Confirm the behavioral summary.
-
-## Phase 3: Guardrails & Config (condensed — skip if not needed)
-
-Ask: "Do you want to configure quality rules, policies, or model selection? These are optional — I can use sensible defaults."
-
-If yes, collect any of these the user cares about:
-- **Quality Rules** — standards to meet (e.g., ">80% test coverage")
-- **Anti-Patterns** — things to avoid (e.g., "no global state")
-- **Output Contract** — expected output format
-- **Tool Policy** — rules about tool usage
-- **Memory Policy** — context/memory handling
-- **Execution Policy** — how tasks are executed
-- **Model** — `claude-haiku-4-5` (fast), `claude-sonnet-4-6` (default), `claude-opus-4-6` (complex)
-- **Skills** — from: coding, debugging, code-review, testing, research, summarization, writing, data-analysis, etc.
-- **Review Policy Ref** — reference to a review policy
-
-## Phase 4: Review & Publish
-
-Present a clear summary:
-
-```
-═══════════════════════════════════════
-  Agent Specification Summary
-═══════════════════════════════════════
-  Name:         {name}
-  Display Name: {displayName}
-  Role:         {role}
-
-  Responsibilities:
-    - {each responsibility}
-
-  Non-Goals:     {if any}
-  Principles:    {if any}
-  Working Style: {if set}
-  Quality Rules: {if any}
-  Anti-Patterns: {if any}
-  Model:         {if set}
-  Skills:        {if any}
-═══════════════════════════════════════
-```
-
-On confirmation, publish via Bash:
+Load the available skills catalog first. Never invent skill names.
 
 ```bash
-curl -s -X POST http://localhost:3000/api/specs/agent \
-  -H "Content-Type: application/json" \
-  -d '{ "name": "...", "displayName": "...", "role": "...", ... }'
+curl -s http://localhost:3000/api/specs/skills?available=true
 ```
 
-Only include fields that were collected — omit null/empty fields from the JSON.
+Present only relevant skills and explain why each one is a fit.
 
-A response of `{"success": true, "specId": "..."}` means it worked. Report the result and offer to create another agent or finish.
+## Discovery sequence
 
-## Schema Reference
+Ask for the minimum information in this order:
 
-### Required
-| Field | Type | Rules |
-|-------|------|-------|
-| `name` | string | Lowercase slug: `^[a-z0-9]+(-[a-z0-9]+)*$` |
-| `displayName` | string | Human-readable name |
-| `role` | string | Brief role description |
+1. What exact job the agent owns
+2. What it must not do
+3. What good output looks like
+4. Which tools or skills it needs
+5. Which review policy should gate its output
 
-### Optional
-| Field | Type |
-|-------|------|
-| `responsibilities` | string[] |
-| `nonGoals` | string[] |
-| `principles` | string[] |
-| `workingStyle` | string |
-| `qualityRules` | string[] |
-| `antiPatterns` | string[] |
-| `outputContract` | string |
-| `toolPolicy` | string |
-| `memoryPolicy` | string |
-| `executionPolicy` | string |
-| `reviewPolicyRef` | string |
-| `skills` | string[] |
-| `model` | string |
+Prefer 1–2 questions at a time.
+
+## Output design rules
+
+The agent spec must be operational, not aspirational.
+
+Good patterns:
+
+- responsibilities are observable
+- nonGoals are explicit
+- principles resolve tradeoffs
+- outputContract is concrete
+- toolPolicy names when tools should or should not be used
+- executionPolicy describes the working loop
+
+Bad patterns:
+
+- role is generic
+- qualityRules are subjective only
+- skills are guessed
+- prompt duplicates the role without workflow
+
+## Review before publish
+
+Before calling the API, present a compact summary that includes:
+
+- identity
+- role
+- model
+- skills
+- responsibilities
+- nonGoals
+- outputContract
+- policies
+
+Ask for confirmation only once the summary is concrete.
+
+## API calls
+
+Create:
+
+```bash
+curl -s -X POST http://localhost:3000/api/specs/agent       -H "Content-Type: application/json"       -d '{ ... }'
+```
+
+Update:
+
+```bash
+curl -s -X PATCH http://localhost:3000/api/specs/agent       -H "Content-Type: application/json"       -d '{ ... }'
+```
+
+Omit null or empty fields.
+
+## Validation checklist
+
+- `name` is a slug
+- `role` is specific
+- all skill names exist in the catalog
+- policies do not contradict each other
+- outputContract is concrete enough for downstream review
+- prompt and soul do not fight each other

@@ -1,11 +1,10 @@
 """
 ProcessManager — Spawns and manages Mission Control subprocesses.
 
-Manages 4 child processes:
+Manages 3 child processes:
 1. Convex dev server (npm run dev:backend)
 2. Next.js dev server (npm run dev:frontend)
 3. Agent Gateway (python -m mc.runtime.gateway)
-4. Nanobot Gateway — channels/Telegram (python -m nanobot gateway)
 """
 
 from __future__ import annotations
@@ -68,7 +67,7 @@ class ProcessManager:
 
         Args:
             dashboard_dir: Absolute path to the dashboard/ directory
-            project_root: Absolute path to the nanobot project root
+            project_root: Absolute path to the project root
                           (defaults to dashboard_dir parent)
             on_crash: Optional async callback(process_label, exit_code)
                       called when a child crashes
@@ -214,24 +213,16 @@ class ProcessManager:
                     f"{config.label} exited immediately with code {managed.process.returncode}"
                 )
 
-    def _get_venv_python(self) -> str:
-        """Return venv Python if available, otherwise sys.executable."""
-        venv_python = Path(self._project_root) / ".venv" / "bin" / "python3"
-        if venv_python.exists():
-            return str(venv_python)
-        return sys.executable
-
     def _get_process_configs(self) -> list[ProcessConfig]:
         """Return the process configurations in startup order.
 
         Start Convex and Next separately so frontend boot is not blocked by
         ``predev`` hooks attached to ``npm run dev``.
         """
-        venv_python = self._get_venv_python()
         convex_args = ["run", "dev:backend"]
         if self._convex_mode == "local":
-            convex_args.extend(["--", "--local"])
-        return [
+            convex_args.extend(["--", "--local", "--local-force-upgrade"])
+        configs = [
             ProcessConfig(
                 label="convex",
                 command="npm",
@@ -240,7 +231,7 @@ class ProcessManager:
                 env={"NODE_OPTIONS": "--max-old-space-size=1536"},
                 critical=False,
                 restart_on_crash=True,
-                port=3210,
+                port=3210 if self._convex_mode == "local" else None,
             ),
             ProcessConfig(
                 label="dashboard",
@@ -257,14 +248,8 @@ class ProcessManager:
                 args=["-m", "mc.runtime.gateway"],
                 cwd=self._project_root,
             ),
-            ProcessConfig(
-                label="nanobot",
-                command=venv_python,
-                args=["-m", "nanobot", "gateway"],
-                cwd=self._project_root,
-                critical=False,
-            ),
         ]
+        return configs
 
     def _build_process_env(self, config: ProcessConfig) -> dict[str, str]:
         """Build child process environment, including local Convex overrides."""

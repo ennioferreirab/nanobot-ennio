@@ -48,7 +48,7 @@ export function WorkflowAuthoringWizard({ open, onClose }: WorkflowAuthoringWiza
         <div className="flex-1 min-h-0">
           {open && (
             <AgentTerminal
-              agentName="nanobot"
+              agentName="orchestrator-agent"
               provider={provider}
               scopeId={scopeId}
               prompt="/create-workflow-mc"

@@ -4,7 +4,9 @@ import type {
   SquadGraphWorkflowInput,
   SquadGraphWorkflowStepInput,
 } from "./squadGraphPublisher";
+import { reduceTransitiveDeps } from "./graphUtils";
 import type { DbWriter } from "./types";
+import { validateWorkflowStepReferences } from "./validators/workflowReferences";
 
 export interface EditableSquadGraphWorkflowInput extends SquadGraphWorkflowInput {
   id?: string;
@@ -13,7 +15,7 @@ export interface EditableSquadGraphWorkflowInput extends SquadGraphWorkflowInput
 export interface EditableSquadGraphInput {
   squad: {
     name: string;
-    displayName: string;
+    displayName?: string;
     description?: string;
     outcome?: string;
   };
@@ -22,34 +24,17 @@ export interface EditableSquadGraphInput {
   reviewPolicy?: string;
 }
 
-function validateStepReferences(
-  stepKeys: Set<string>,
-  workflow: EditableSquadGraphWorkflowInput,
-): void {
+function validateReviewStepFields(workflow: EditableSquadGraphWorkflowInput): void {
   for (const step of workflow.steps) {
-    for (const dep of step.dependsOn ?? []) {
-      if (!stepKeys.has(dep)) {
-        throw new ConvexError(`Step "${step.key}" has invalid dependency "${dep}"`);
-      }
-    }
-
     if (step.type !== "review") {
       continue;
     }
 
     if (!step.agentKey) {
-      throw new ConvexError(`Review step "${step.key}" requires agentKey`);
+      throw new ConvexError(`Review step "${step.id}" requires agentKey`);
     }
     if (!step.reviewSpecId) {
-      throw new ConvexError(`Review step "${step.key}" requires reviewSpecId`);
-    }
-    if (!step.onReject) {
-      throw new ConvexError(`Review step "${step.key}" requires onReject`);
-    }
-    if (!stepKeys.has(step.onReject)) {
-      throw new ConvexError(
-        `Review step "${step.key}" has invalid onReject target "${step.onReject}"`,
-      );
+      throw new ConvexError(`Review step "${step.id}" requires reviewSpecId`);
     }
   }
 }
@@ -81,21 +66,25 @@ function buildStoredSteps(
   workflow: EditableSquadGraphWorkflowInput,
   agentKeyToId: Map<string, string>,
 ): Record<string, unknown>[] {
-  const stepKeys = new Set(workflow.steps.map((step) => step.key));
-  validateStepReferences(stepKeys, workflow);
+  validateReviewStepFields(workflow);
+  validateWorkflowStepReferences(workflow.steps, `workflow '${workflow.name}'`);
+
+  // Remove transitive (redundant) dependencies before storing
+  const reducedDeps = reduceTransitiveDeps(workflow.steps);
 
   return workflow.steps.map((step: SquadGraphWorkflowStepInput) => {
     const stored: Record<string, unknown> = {
-      id: step.key,
-      title: step.title ?? step.key,
+      id: step.id,
+      title: step.title ?? step.id,
       type: step.type,
     };
 
     if (step.description !== undefined) {
       stored.description = step.description;
     }
-    if (step.dependsOn?.length) {
-      stored.dependsOn = step.dependsOn;
+    const trimmedDeps = reducedDeps.get(step.id);
+    if (trimmedDeps?.length) {
+      stored.dependsOn = trimmedDeps;
     }
     if (step.agentKey !== undefined) {
       const agentId = agentKeyToId.get(step.agentKey);

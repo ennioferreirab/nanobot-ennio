@@ -12,7 +12,7 @@ const mockSkills = [
     content: "# GitHub",
     source: "builtin" as const,
     available: true,
-    metadata: JSON.stringify({ nanobot: { emoji: "\uD83D\uDC19" } }),
+    metadata: JSON.stringify({ agent: { emoji: "\uD83D\uDC19" } }),
   },
   {
     _id: "s2" as never,

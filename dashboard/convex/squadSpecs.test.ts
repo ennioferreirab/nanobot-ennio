@@ -270,8 +270,8 @@ const GRAPH_FIXTURE = {
       key: "default",
       name: "Default Workflow",
       steps: [
-        { key: "research", type: "agent", agentKey: "researcher" },
-        { key: "write", type: "agent", agentKey: "writer", dependsOn: ["research"] },
+        { id: "research", type: "agent", agentKey: "researcher" },
+        { id: "write", type: "agent", agentKey: "writer", dependsOn: ["research"] },
       ],
     },
   ],
@@ -558,13 +558,13 @@ describe("squadSpecs.updatePublishedGraph", () => {
             name: "Default Workflow",
             steps: [
               {
-                key: "research",
+                id: "research",
                 type: "agent",
                 agentKey: "researcher",
                 title: "Research",
               },
               {
-                key: "review",
+                id: "review",
                 type: "review",
                 agentKey: "researcher",
                 title: "Review",
@@ -637,7 +637,7 @@ describe("squadSpecs.updatePublishedGraph", () => {
               name: "Default Workflow",
               steps: [
                 {
-                  key: "review",
+                  id: "review",
                   type: "review",
                   agentKey: "researcher",
                   reviewSpecId: "review-spec-1",
@@ -648,7 +648,7 @@ describe("squadSpecs.updatePublishedGraph", () => {
           ],
         },
       }),
-    ).rejects.toThrow('Review step "review" has invalid onReject target "missing-step"');
+    ).rejects.toThrow('invalid onReject target "missing-step"');
 
     expect(patches).toHaveLength(0);
   });

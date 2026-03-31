@@ -116,6 +116,23 @@ describe("computeUiFlags", () => {
     const flags = computeUiFlags({ status: "done" }, []);
     expect(flags.hasUnexecutedSteps).toBe(false);
   });
+
+  it("hasUnexecutedSteps is false when all steps are completed, skipped, or deleted", () => {
+    const steps: StepForFlags[] = [
+      { status: "completed" },
+      { status: "skipped" },
+      { status: "deleted" },
+    ];
+    const flags = computeUiFlags({ status: "done" }, steps);
+    expect(flags.hasUnexecutedSteps).toBe(false);
+  });
+
+  it("isPaused is false when review but all steps completed or skipped", () => {
+    const task: TaskForFlags = { status: "review" };
+    const steps: StepForFlags[] = [{ status: "completed" }, { status: "skipped" }];
+    const flags = computeUiFlags(task, steps);
+    expect(flags.isPaused).toBe(false);
+  });
 });
 
 // --- computeAllowedActions ---

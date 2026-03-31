@@ -1,3 +1,4 @@
+import { reduceTransitiveDeps } from "./graphUtils";
 import { validateSquadGraph } from "./squadGraphValidator";
 
 /**
@@ -42,10 +43,10 @@ export interface SquadGraphAgentInput {
 }
 
 export interface SquadGraphWorkflowStepInput {
-  /** Short key identifying this step within the workflow. */
-  key: string;
+  /** Short identifier for this step within the workflow. */
+  id: string;
   /** Step type — determines execution semantics. */
-  type: "agent" | "human" | "checkpoint" | "review" | "system";
+  type: "agent" | "human" | "review" | "system";
   /**
    * Key of the agent in the `agents` array that owns this step.
    * Only meaningful when type is "agent".
@@ -77,7 +78,7 @@ export interface SquadGraphWorkflowInput {
 export interface SquadGraphInput {
   squad: {
     name: string;
-    displayName: string;
+    displayName?: string;
     description?: string;
     outcome?: string;
     [key: string]: unknown;
@@ -101,13 +102,13 @@ function validateReviewStep(step: SquadGraphWorkflowStepInput): void {
   }
 
   if (!step.agentKey) {
-    throw new ConvexError(`Review step "${step.key}" requires agentKey`);
+    throw new ConvexError(`Review step "${step.id}" requires agentKey`);
   }
   if (!step.reviewSpecId) {
-    throw new ConvexError(`Review step "${step.key}" requires reviewSpecId`);
+    throw new ConvexError(`Review step "${step.id}" requires reviewSpecId`);
   }
   if (!step.onReject) {
-    throw new ConvexError(`Review step "${step.key}" requires onReject`);
+    throw new ConvexError(`Review step "${step.id}" requires onReject`);
   }
 }
 
@@ -179,12 +180,15 @@ export async function publishSquadGraph(ctx: DbWriter, graph: SquadGraphInput): 
   const workflowSpecIds: string[] = [];
 
   for (const workflow of graph.workflows) {
+    // Remove transitive (redundant) dependencies before storing
+    const reducedDeps = reduceTransitiveDeps(workflow.steps);
+
     const resolvedSteps = workflow.steps.map((step) => {
       validateReviewStep(step);
 
       const resolvedStep: Record<string, unknown> = {
-        id: step.key,
-        title: step.title ?? step.key,
+        id: step.id,
+        title: step.title ?? step.id,
         type: step.type,
       };
 
@@ -195,8 +199,9 @@ export async function publishSquadGraph(ctx: DbWriter, graph: SquadGraphInput): 
         }
       }
 
-      if (step.dependsOn !== undefined && step.dependsOn.length > 0) {
-        resolvedStep.dependsOn = step.dependsOn;
+      const trimmedDeps = reducedDeps.get(step.id);
+      if (trimmedDeps !== undefined && trimmedDeps.length > 0) {
+        resolvedStep.dependsOn = trimmedDeps;
       }
 
       if (step.description !== undefined) {
